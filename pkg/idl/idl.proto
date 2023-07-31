@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+option go_package = "./idl";
+
+package idl;
+
+// The placement algorithm service definition.
+service PlacementAlgorithm {
+  rpc Init(AlgorithmName) returns (google.protobuf.Empty) {}
+	rpc CalculatePlacement(Data) returns (Workload) {}
+}
+
+// The algorithm name.
+message AlgorithmName {
+	string name = 1;
+}
+
+message ResourceQuantity {
+	string value = 1;
+  	string format = 2;
+}
+
+message Data {
+	Workload workload = 1;
+  	Infrastructure infrastructure = 2;
+}
+
+// The Infrastructure
+message Infrastructure {
+	repeated Region regions = 1;
+	repeated Link links   = 2;
+}
+
+message Region {
+  	string id  = 1;
+	string location = 2;
+	int32 tier  = 3; 
+	repeated string extendpoint_ids = 4;
+	repeated Node nodes = 5;
+}
+
+message Node {
+	string name = 1;
+	ResourceQuantity cpu_used  = 2; 
+	ResourceQuantity mem_used = 3;  
+	ResourceQuantity cpu_cap  = 4;  
+	ResourceQuantity mem_cap  = 5;  
+}
+
+message Link {
+	string id = 1;    
+	string endpoint_a = 2; 
+	string endpoint_b = 3;
+	ResourceQuantity bandwidth = 4;  
+	ResourceQuantity latency  = 5; // in ms
+	ResourceQuantity bandwidth_used = 6; 
+}
+
+message Workload {
+	repeated Application applications = 1;
+}
+
+message Application {
+	string name = 1;   
+	int32 order = 2;        
+	repeated string external_endpoints = 3; 
+	repeated Microservice microservices  = 4;  
+	repeated DataFlow data_flows = 5;       
+	repeated Placement placements  = 6;     
+}
+
+message Microservice {
+	string name = 1;      
+	string region_recommended = 2;   
+	bool no_reschedule  = 3;     
+	int32 disruption_budget = 4;   
+	int32 budget_4_1_reschedule = 5;
+	int32 replicas = 6; 
+	ResourceQuantity prev_cpu_required = 7;     
+	ResourceQuantity prev_mem_required = 8;              
+	ResourceQuantity cpu_required = 9;     
+	ResourceQuantity mem_required = 10;     
+}
+
+message DataFlow {
+	string name = 1;
+	ResourceQuantity prev_bandwidth_required = 2;
+	ResourceQuantity bandwidth_required = 3;
+	ResourceQuantity latency_required   = 4;
+	repeated string vertices = 5; 
+}
+
+// One placement for each microservice
+message Placement {
+	string microservice_name = 1;
+	int32 order = 2;
+	bool must_reschedule   = 3;
+// For all the replicas	
+	repeated ReplicaScores replica_scores = 4;
+// Nodes selected for each replica
+	repeated string node_selected = 5;
+}
+
+message ReplicaScores {
+	repeated Score scores = 1;
+}
+
+message Score {
+	string node = 1;
+	int32 score = 2;
+}
