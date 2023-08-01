@@ -8,11 +8,10 @@ import (
 	"net"
 
 	log "github.com/sirupsen/logrus"
+	"gitlab.fbk.eu/fogatlas-k8s/algorithms/pkg/silly/server-go/idl"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	empty "github.com/golang/protobuf/ptypes/empty"
-
-	idl "gitlab.fbk.eu/fogatlas-k8s/algorithms/pkg/silly/server-go/idl"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

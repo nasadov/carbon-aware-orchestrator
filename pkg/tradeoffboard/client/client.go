@@ -27,7 +27,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	idl "gitlab.fbk.eu/fogatlas-k8s/algorithms/pkg/silly/client/idl"
+	idl "gitlab.fbk.eu/fogatlas-k8s/algorithms/pkg/tradeoffboard/client/idl"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
