@@ -1,5 +1,8 @@
 /*
+ * Derivative work:
+ * Copyright 2023 Fondazione Bruno Kessler
  *
+ * Original/Previous work:
  * Copyright 2015 gRPC authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +29,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
-	"gitlab.fbk.eu/fogatlas-k8s/algorithms/pkg/silly/client/idl"
+	"gitlab.fbk.eu/fogatlas-k8s/algorithms/pkg/generated-go/idl"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 

@@ -1,5 +1,8 @@
 /*
+ * Derivative work:
+ * Copyright 2023 Fondazione Bruno Kessler
  *
+ * Original/Previous work:
  * Copyright 2015 gRPC authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +30,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	idl "gitlab.fbk.eu/fogatlas-k8s/algorithms/pkg/tradeoffboard/client/idl"
+	idl "gitlab.fbk.eu/fogatlas-k8s/algorithms/pkg/generated-go/idl"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

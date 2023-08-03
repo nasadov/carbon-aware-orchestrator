@@ -54,16 +54,16 @@ Check [this quick start guide](https://grpc.io/docs/languages/go/quickstart/).
 
 Recall that gRPC uses `protocol buffer`, Google’s open source mechanism for serializing structured data. Protocol buffer data is structured in `messages`. You define gRPC services in ordinary `.proto` files, with RPC method parameters and return types specified as protocol buffer messages.
 
-You use the protocol buffer compiler `protoc` to generate the serialization and client/server code. In case of `silly` algorithm:
+You use the protocol buffer compiler `protoc` to generate the serialization and client/server code:
 ```
-protoc -I./pkg/idl --go_out=./pkg/silly/client --go_out=./pkg/silly/server-go --go-grpc_out=./pkg/silly/client --go-grpc_out=./pkg/silly/server-go  ./pkg/idl/idl.proto
+make generate-go
 ```    
 
 ### Python
 
 Check [this quick start guide](https://grpc.io/docs/languages/python/quickstart/).
 
-In case of `silly` algorithm:
+First of all, you need to create a python environment and activate it:
 
 ```
 # Create an environment with `conda` and activate it.
@@ -75,24 +75,23 @@ conda create -n grpc grpcio grpcio-tools python-kubernetes python=3.10
 
 # activate it
 conda activate grpc
-
-# generate the code
-python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/silly/server-python --pyi_out=./pkg/silly/server-python --grpc_python_out=./pkg/silly/server-python ./pkg/idl/idl.proto
+```
+Then:
+```
+make generate-py
 ```
 
 ### Docker container
 
 Generate a Docker image with the following command (example for `silly-go`)
 ```
-docker build -f ./pkg/silly/silly-go/Dockerfile -t gitlab-registry.fbk.eu/fogatlas/algorithms/silly-go .
+make build-silly
 ```
 
 Push it with:
 ```
-docker push gitlab-registry.fbk.eu/fogatlas/algorithms:silly-go
+make push-silly
 ```
-
-These commands are also inside the `Makefile`.
 
 ## Test
 
@@ -110,7 +109,7 @@ go run client.go
 
 ## License
 
-Copyright 2023 FBK CREATE-NET
+Copyright 2023 Fondazione Bruno Kessler.
 
 Licensed under the Apache License, Version 2.0 (the “License”); you may not use this
 file except in compliance with the License. You may obtain a copy of the License
