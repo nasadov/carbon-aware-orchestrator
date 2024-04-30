@@ -14,11 +14,12 @@ The workflow is this:
 
 Currently, the following algorithms have been implemented:
 * Silly algorithm
-* Tradeoffboard algorithm
+* TradeoffBoard algorithm
+* CostMinimization algorithm (not yet released)
 
 ### Silly algorithm
 
-This is jsut for test. Silly algorithm assigns scores to the nodes based on the alphabetical order of their names. We have two implementation: `server-go` and `server-python`.
+This is just for test. Silly algorithm assigns scores to the nodes based on the alphabetical order of their names. We have two implementation: `server-go` and `server-python`.
 
 The client (`.pkg/silly/client-go`) sends the following cluster status:
 * Infrastructure
@@ -45,6 +46,11 @@ which one should be deployed first. The order is the reversed wrt the one passed
 ### TradeoffBoard algorithm
 
 [TradeoffBoard algorithm](https://github.com/stfbk/CryptoAC/tree/CryptoAC_Demo_FogAtlas) is able to place the microservices of a cloud-native application according to the imposed requirements in terms of security and resource availability. Also in this case we have a client written in go (only for testing purposes) and a server (written in Python) that implements the algorithm. 
+
+### CostMinimization algorithm (not yet released)
+
+CostMinimization algorithm is able to place the microservices of a cloud-native application on a multi-region k8s cluster minimizing the resource cost while satisfying the resource requested by the microservices (e.g. cpu, memory, latency, bandwidth). Currently, it works on a two region cluster (e.g. Private and Public region) where the Private region is assumed to be no cost and the Public region has a simplified cost model where only the `resource allocation` is considered (i.e. a unit of cost for each VM allocated) but not the `resource usage`.
+We provide a client written in go (only for testing purposes) and a server (written in Python) that implements the algorithm. 
 
 ## Code generation 
 
@@ -95,7 +101,7 @@ make push-silly
 
 ## Test
 
-Open a terminal and rum the server. For example in case of silly algorithm:
+Open a terminal and run the server. For example in case of silly algorithm:
 ```
 cd ./pk/silly/silly.go
 go run server.go

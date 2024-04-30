@@ -23,6 +23,13 @@ IMAGE := $(ACCOUNT)/$(REPO)
 registry-login:    
 	docker login $(REGISTRY)
 
+
+#build-costminimization:                 
+#	@docker build -f ./pkg/costminimization/server/Dockerfile -t $(REGISTRY)/$(IMAGE)/costminimization:latest .
+
+#push-costminimization:                  
+#	@docker push $(REGISTRY)/$(IMAGE)/costminimization:latest
+
 build-tradeoffboard:                 
 	@docker build -f ./pkg/tradeoffboard/server/Dockerfile -t $(REGISTRY)/$(IMAGE)/tradeoffboard:latest .
 
@@ -43,3 +50,4 @@ generate-py:
 	@echo "Recall to activate the conda grpc environment otherwise the following commands will fail"
 	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/silly/server-python --pyi_out=./pkg/silly/server-python --grpc_python_out=./pkg/silly/server-python ./pkg/idl/idl.proto	
 	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/tradeoffboard/server --pyi_out=./pkg/tradeoffboard/server --grpc_python_out=./pkg/tradeoffboard/server ./pkg/idl/idl.proto	
+#	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/costminimization/server --pyi_out=./pkg/costminimization/server --grpc_python_out=./pkg/costminimization/server ./pkg/idl/idl.proto	

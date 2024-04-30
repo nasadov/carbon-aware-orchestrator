@@ -24,7 +24,7 @@ package idl;
 
 // The placement algorithm service definition.
 service PlacementAlgorithm {
-  rpc Init(AlgorithmName) returns (google.protobuf.Empty) {}
+	rpc Init(AlgorithmName) returns (google.protobuf.Empty) {}
 	rpc CalculatePlacement(Data) returns (Workload) {}
 }
 
