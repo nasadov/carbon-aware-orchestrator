@@ -95,27 +95,20 @@ func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Wor
 	q, _ := resource.ParseQuantity(node.CpuUsed.Value)
 	log.Tracef("Node cpu used is: (%s)", q.String())
 
-	for i, app := range inWorkload.Applications {
-		application := new(idl.Application)
-		for j, ms := range app.GetMicroservices() {
-			placement := new(idl.Placement)
-			placement.MicroserviceName = ms.GetName()
-			placement.Order = int32(len(app.GetDataFlows()) - j)
-			placement.MustReschedule = true
-			// Assume just one replica
-			replicaScore := new(idl.ReplicaScores)
-			for k, node := range nodeList {
-				score := new(idl.Score)
-				score.Node = node.Name
-				score.Score = int32(k + 1)
-				replicaScore.Scores = append(replicaScore.Scores, score)
-			}
-			placement.ReplicaScores = append(placement.ReplicaScores, replicaScore)
-			application.Placements = append(application.Placements, placement)
+	for j, ms := range inWorkload.GetMicroservices() {
+		placement := new(idl.Placement)
+		placement.MicroserviceName = ms.GetName()
+		placement.Order = int32(len(inWorkload.GetDataFlows()) - j)
+		// Assume just one replica
+		replicaScore := new(idl.ReplicaScores)
+		for k, node := range nodeList {
+			score := new(idl.Score)
+			score.Node = node.Name
+			score.Score = int32(k + 1)
+			replicaScore.Scores = append(replicaScore.Scores, score)
 		}
-		application.Name = app.Name
-		application.Order = int32(len(inWorkload.Applications) - i)
-		outWorkload.Applications = append(outWorkload.Applications, application)
+		placement.ReplicaScores = append(placement.ReplicaScores, replicaScore)
+		outWorkload.Placements = append(outWorkload.Placements, placement)
 	}
 
 	strout, err := json.Marshal(&outWorkload)

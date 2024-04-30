@@ -67,32 +67,22 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         # and the memory ...
         q = k8sutils.parse_quantity(node.mem_used.value)
         logging.debug(f"Node mem used is: {q}")
-        posApp = 0
-        for app in inWorkload.applications:
-            logging.debug(f"app is: {app}")
-            application = idl_pb2.Application()
-            posMs = 0
-            for ms in app.microservices:
-                placement = idl_pb2.Placement()
-                placement.microservice_name = ms.name
-                placement.order = len(app.microservices) - posMs 
-                posMs += 1
-                placement.must_reschedule = True
-                replicaScore = idl_pb2.ReplicaScores()
-                counter = 1
-                for node in nodeList:
-                    score = idl_pb2.Score()
-                    score.node = node.name
-                    score.score = counter
-                    counter += 1
-                    replicaScore.scores.append(score)
-                placement.replica_scores.append(replicaScore)
-                application.placements.append(placement)  
-            application.name = app.name  
-            application.order = len(inWorkload.applications) - posApp
-            posApp += 1
-            logging.debug(f"app name is {application.name}")
-            outWorkload.applications.append(application)
+        posMs = 0
+        for ms in inWorkload.microservices:
+            placement = idl_pb2.Placement()
+            placement.microservice_name = ms.name
+            placement.order = len(inWorkload.microservices) - posMs 
+            posMs += 1
+            replicaScore = idl_pb2.ReplicaScores()
+            counter = 1
+            for node in nodeList:
+                score = idl_pb2.Score()
+                score.node = node.name
+                score.score = counter
+                counter += 1
+                replicaScore.scores.append(score)
+            placement.replica_scores.append(replicaScore)
+            outWorkload.placements.append(placement)  
 
         return outWorkload    
 

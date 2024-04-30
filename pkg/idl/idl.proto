@@ -53,8 +53,7 @@ message Region {
   	string id  = 1;
 	string location = 2;
 	int32 tier  = 3; 
-	repeated string extendpoint_ids = 4;
-	repeated Node nodes = 5;
+	repeated Node nodes = 4;
 }
 
 message Node {
@@ -75,48 +74,33 @@ message Link {
 }
 
 message Workload {
-	repeated Application applications = 1;
-}
-
-message Application {
-	string name = 1;   
-	int32 order = 2;        
-	repeated string external_endpoints = 3; 
-	repeated Microservice microservices  = 4;  
-	repeated DataFlow data_flows = 5;       
-	repeated Placement placements  = 6;     
+	repeated Microservice microservices  = 1;  
+	repeated DataFlow data_flows = 2;       
+	repeated Placement placements  = 3;    
 }
 
 message Microservice {
 	string name = 1;      
-	string region_recommended = 2;   
-	bool no_reschedule  = 3;     
-	int32 disruption_budget = 4;   
-	int32 budget_4_1_reschedule = 5;
-	int32 replicas = 6; 
-	ResourceQuantity prev_cpu_required = 7;     
-	ResourceQuantity prev_mem_required = 8;              
-	ResourceQuantity cpu_required = 9;     
-	ResourceQuantity mem_required = 10;     
+	int32 replicas = 2;            
+	ResourceQuantity cpu_required = 3;     
+	ResourceQuantity mem_required = 4;     
 }
 
 message DataFlow {
 	string name = 1;
-	ResourceQuantity prev_bandwidth_required = 2;
-	ResourceQuantity bandwidth_required = 3;
-	ResourceQuantity latency_required   = 4;
-	repeated string vertices = 5; 
+	ResourceQuantity bandwidth_required = 2;
+	ResourceQuantity latency_required   = 3;
+	repeated string vertices = 4; 
 }
 
 // One placement for each microservice
 message Placement {
 	string microservice_name = 1;
 	int32 order = 2;
-	bool must_reschedule   = 3;
 // For all the replicas	
-	repeated ReplicaScores replica_scores = 4;
+	repeated ReplicaScores replica_scores = 3;
 // Nodes selected for each replica
-	repeated string node_selected = 5;
+	repeated string node_selected = 4;
 }
 
 message ReplicaScores {

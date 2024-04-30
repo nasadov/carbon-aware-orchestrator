@@ -150,18 +150,11 @@ func loadInfra() *idl.Infrastructure {
 
 	var regions []*idl.Region
 	for i := 0; i < 3; i++ {
-		var extIds []string
-
-		for i := 0; i < 3; i++ {
-			extep := fmt.Sprintf("E_%d", i)
-			extIds = append(extIds, extep)
-		}
 		region := idl.Region{
-			Id:             fmt.Sprintf("R_%d", i),
-			Location:       fmt.Sprintf("L_%d", i),
-			Tier:           int32(i),
-			ExtendpointIds: extIds,
-			Nodes:          nodes,
+			Id:       fmt.Sprintf("R_%d", i),
+			Location: fmt.Sprintf("L_%d", i),
+			Tier:     int32(i),
+			Nodes:    nodes,
 		}
 		regions = append(regions, &region)
 	}
@@ -178,25 +171,13 @@ func getWorkload() *idl.Workload {
 		cpu := resource.MustParse("100m")
 		mem := resource.MustParse("100M")
 		microservice := idl.Microservice{
-			Name:                 fmt.Sprintf("M_%d", i),
-			RegionRecommended:    fmt.Sprintf("R_%d", i),
-			NoReschedule:         false,
-			DisruptionBudget:     int32(i),
-			Budget_4_1Reschedule: int32(i),
-			Replicas:             int32(i),
+			Name:     fmt.Sprintf("M_%d", i),
+			Replicas: int32(i),
 			CpuRequired: &idl.ResourceQuantity{
 				Value:  cpu.String(),
 				Format: string(cpu.Format),
 			},
 			MemRequired: &idl.ResourceQuantity{
-				Value:  mem.String(),
-				Format: string(mem.Format),
-			},
-			PrevCpuRequired: &idl.ResourceQuantity{
-				Value:  cpu.String(),
-				Format: string(cpu.Format),
-			},
-			PrevMemRequired: &idl.ResourceQuantity{
 				Value:  mem.String(),
 				Format: string(mem.Format),
 			},
@@ -214,10 +195,6 @@ func getWorkload() *idl.Workload {
 				Value:  bw.String(),
 				Format: string(bw.Format),
 			},
-			PrevBandwidthRequired: &idl.ResourceQuantity{
-				Value:  bw.String(),
-				Format: string(bw.Format),
-			},
 			LatencyRequired: &idl.ResourceQuantity{
 				Value:  lat.String(),
 				Format: string(lat.Format),
@@ -232,22 +209,14 @@ func getWorkload() *idl.Workload {
 	for i := 0; i < 3; i++ {
 		placement := idl.Placement{
 			MicroserviceName: fmt.Sprintf("M_%d", i),
-			MustReschedule:   false,
 			ReplicaScores:    replicaScoreList,
 			NodeSelected:     []string{"A", "B", "C"},
 		}
 		placementList = append(placementList, &placement)
 	}
 
-	for i := 0; i < 3; i++ {
-		application := idl.Application{
-			Name:              fmt.Sprintf("A_%d", i),
-			ExternalEndpoints: []string{"A", "B", "C"},
-			Microservices:     msList,
-			DataFlows:         dfList,
-			Placements:        placementList,
-		}
-		workload.Applications = append(workload.Applications, &application)
-	}
+	workload.Microservices = msList
+	workload.DataFlows = dfList
+	workload.Placements = placementList
 	return &workload
 }

@@ -2,6 +2,8 @@
 
 This repository contains (i) the definition of the interface between the [FogAtlas controller](https://gitlab.fbk.eu/fogatlas/fadepl-controller) and the placement algorithms and (ii) the implementation of the different placement algorithms. A placement algorithm ingests the status of the infrastructure and the workload to be placed/deployed on it and provides back the scores (for each microservice for each node) that will be used by [a custom scheduler plugin](https://gitlab.fbk.eu/fogatlas/scheduler-plugins) inside K8s Scheduling cycle.
 
+**The version v2.x is not backwards compatible with version v1.x. Currently, only `silly` algorithm has an implementation in v2.x. Therefore, refer to tag v1.x for the implementation of `tradeoffBoard` algorithm.** 
+
 ## The IDL 
 
 The definition of the interface is in the `./pkg/idl/idl.proto` file. It aims at decoupling the code written for the FogAtlas controller (in golang) from the code of the placement algorithm that can be written in (almost) whatever programming language. 
@@ -14,7 +16,7 @@ The workflow is this:
 
 Currently, the following algorithms have been implemented:
 * Silly algorithm
-* TradeoffBoard algorithm
+* TradeoffBoard algorithm (only v1.x)
 * CostMinimization algorithm (not yet released)
 
 ### Silly algorithm
@@ -103,8 +105,8 @@ make push-silly
 
 Open a terminal and run the server. For example in case of silly algorithm:
 ```
-cd ./pk/silly/silly.go
-go run server.go
+cd ./pk/silly/server-go
+go run silly.go
 ```
 
 Open another terminal and run the client. In case of silly:
