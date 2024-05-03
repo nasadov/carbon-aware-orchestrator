@@ -98,7 +98,7 @@ func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Wor
 	for j, ms := range inWorkload.GetMicroservices() {
 		placement := new(idl.Placement)
 		placement.MicroserviceName = ms.GetName()
-		placement.Order = int32(len(inWorkload.GetDataFlows()) - j)
+		placement.Order = int32(len(inWorkload.GetMicroservices()) - j)
 		// Assume just one replica
 		replicaScore := new(idl.ReplicaScores)
 		for k, node := range nodeList {

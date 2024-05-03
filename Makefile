@@ -42,6 +42,9 @@ build-silly:
 push-silly:                  
 	@docker push $(REGISTRY)/$(IMAGE)/silly:latest
 
+build-silly-local:                 
+	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o silly pkg/silly/server-go/silly.go
+
 generate-go:
 	@rm -rf ./pkg/generated-go; mkdir ./pkg/generated-go
 	@protoc -I./pkg/idl --go_out=./pkg/generated-go --go-grpc_out=./pkg/generated-go ./pkg/idl/idl.proto
