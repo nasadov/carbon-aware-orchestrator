@@ -30,6 +30,8 @@ import (
 
 	empty "github.com/golang/protobuf/ptypes/empty"
 
+	"math"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -104,7 +106,7 @@ func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Wor
 		for k, node := range nodeList {
 			score := new(idl.Score)
 			score.Node = node.Name
-			score.Score = int32(k + 1)
+			score.Score = int32(math.Pow(float64(k+1), 3))
 			replicaScore.Scores = append(replicaScore.Scores, score)
 		}
 		placement.ReplicaScores = append(placement.ReplicaScores, replicaScore)
