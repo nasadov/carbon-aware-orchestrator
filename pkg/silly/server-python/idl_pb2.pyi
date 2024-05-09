@@ -37,16 +37,16 @@ class Infrastructure(_message.Message):
     def __init__(self, regions: _Optional[_Iterable[_Union[Region, _Mapping]]] = ..., links: _Optional[_Iterable[_Union[Link, _Mapping]]] = ...) -> None: ...
 
 class Region(_message.Message):
-    __slots__ = ("id", "location", "tier", "nodes")
+    __slots__ = ("id", "location", "resource_cost", "nodes")
     ID_FIELD_NUMBER: _ClassVar[int]
     LOCATION_FIELD_NUMBER: _ClassVar[int]
-    TIER_FIELD_NUMBER: _ClassVar[int]
+    RESOURCE_COST_FIELD_NUMBER: _ClassVar[int]
     NODES_FIELD_NUMBER: _ClassVar[int]
     id: str
     location: str
-    tier: int
+    resource_cost: int
     nodes: _containers.RepeatedCompositeFieldContainer[Node]
-    def __init__(self, id: _Optional[str] = ..., location: _Optional[str] = ..., tier: _Optional[int] = ..., nodes: _Optional[_Iterable[_Union[Node, _Mapping]]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., location: _Optional[str] = ..., resource_cost: _Optional[int] = ..., nodes: _Optional[_Iterable[_Union[Node, _Mapping]]] = ...) -> None: ...
 
 class Node(_message.Message):
     __slots__ = ("name", "cpu_used", "mem_used", "cpu_cap", "mem_cap")

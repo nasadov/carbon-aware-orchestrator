@@ -1,12 +1,12 @@
 # Placement algorithms and their interface
 
-This repository contains (i) the definition of the interface (GRPC) exposed by the placement algorithms and (ii) the implementation of different placement algorithms. A placement algorithm ingests the status of the infrastructure and the workload to be placed/deployed on it and provides back the scores (for each pod and for each node) that will be used by [a custom scheduler plugin](https://gitlab.fbk.eu/fogatlas/scheduler-plugins) inside K8s Scheduling cycle.
+This repository contains (i) the definition of the interface (gRPC) exposed by the placement algorithms and (ii) the implementation of different placement algorithms. A placement algorithm ingests the status of the infrastructure and the workload to be placed/deployed on it and provides back the scores (for each pod and for each node) that will be used by [a custom scheduler plugin](https://gitlab.fbk.eu/fogatlas/scheduler-plugins) inside K8s Scheduling cycle.
 
 ## The IDL 
 
 The definition of the interface is in the `./pkg/idl/idl.proto` file. It aims at modelling the snapshot of a k8s cluster in terms of infrastructure and workload deployed. Such an IDL/GRPC interface allows to decouple the code written in FogAtlas (golang) from the code of the placement algorithms that could be written in (almost) any programming language.
 
-**Note that the IDL definition in branch `feature/reschedule` is different and not backward compatible with the one on `main`.**
+**Note that the IDL definition on branch `feature/reschedule` is different and not backward compatible with the one on branch `main`.**
 
 ## The algorithms 
 
@@ -70,7 +70,7 @@ First of all, you need to create a python environment and activate it:
 
 ```
 # Create an environment with `conda` and activate it.
-# Needed for k8s client package
+# conda-forge is needed for k8s client package
 conda config --append channels conda-forge
 
 # create it
@@ -91,7 +91,7 @@ Generate a Docker image with the following command (example for `silly-go`)
 make build-silly
 ```
 
-Push it with:
+Push it with (you need permission to write in the docker registry):
 ```
 make push-silly
 ```

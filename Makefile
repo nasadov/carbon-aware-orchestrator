@@ -52,5 +52,6 @@ generate-go:
 generate-py:
 	@echo "Recall to activate the conda grpc environment otherwise the following commands will fail"
 	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/silly/server-python --pyi_out=./pkg/silly/server-python --grpc_python_out=./pkg/silly/server-python ./pkg/idl/idl.proto	
+# Commented out because they do not work with the feature/reschedule interface
 #	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/tradeoffboard/server --pyi_out=./pkg/tradeoffboard/server --grpc_python_out=./pkg/tradeoffboard/server ./pkg/idl/idl.proto	
 #	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/costminimization/server --pyi_out=./pkg/costminimization/server --grpc_python_out=./pkg/costminimization/server ./pkg/idl/idl.proto	

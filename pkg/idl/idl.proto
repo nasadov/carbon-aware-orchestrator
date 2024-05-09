@@ -52,7 +52,7 @@ message Infrastructure {
 message Region {
   	string id  = 1;
 	string location = 2;
-	int32 tier  = 3; 
+	int32 resource_cost = 3;
 	repeated Node nodes = 4;
 }
 

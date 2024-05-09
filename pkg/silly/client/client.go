@@ -151,10 +151,10 @@ func loadInfra() *idl.Infrastructure {
 	var regions []*idl.Region
 	for i := 0; i < 3; i++ {
 		region := idl.Region{
-			Id:       fmt.Sprintf("R_%d", i),
-			Location: fmt.Sprintf("L_%d", i),
-			Tier:     int32(i),
-			Nodes:    nodes,
+			Id:           fmt.Sprintf("R_%d", i),
+			Location:     fmt.Sprintf("L_%d", i),
+			ResourceCost: int32(i),
+			Nodes:        nodes,
 		}
 		regions = append(regions, &region)
 	}
