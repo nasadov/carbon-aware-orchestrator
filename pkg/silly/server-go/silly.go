@@ -40,6 +40,7 @@ import (
 var (
 	port     = flag.Int("port", 50051, "The server port")
 	logLevel = flag.String("loglevel", "trace", "The log level")
+	modulo   = flag.Int("modulo", 1, "Modulo division to create groups of deployments")
 )
 
 type server struct {
@@ -100,7 +101,8 @@ func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Wor
 	for j, ms := range inWorkload.GetMicroservices() {
 		placement := new(idl.Placement)
 		placement.MicroserviceName = ms.GetName()
-		placement.Order = int32(len(inWorkload.GetMicroservices()) - j)
+		// Group together some microservices
+		placement.Order = int32((len(inWorkload.GetMicroservices()) - j) % (*modulo))
 		// Assume just one replica
 		replicaScore := new(idl.ReplicaScores)
 		for k, node := range nodeList {
@@ -125,7 +127,7 @@ func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Wor
 func main() {
 	flag.Parse()
 	configureLog(*logLevel)
-	log.Trace("This is a test for log level")
+	log.Tracef("Starting with port (%d) and modulo (%d)", *port, *modulo)
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
