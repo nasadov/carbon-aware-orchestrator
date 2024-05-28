@@ -45,6 +45,10 @@ push-silly:
 build-silly-local:                 
 	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o silly pkg/silly/server-go/silly.go
 
+build-costminimization-local: 
+	@echo "Recall to activate the conda costmin environment otherwise the following commands will fail"
+	cd ./pkg/costminimization/server; pyinstaller -F costminimizationhc.py
+
 generate-go:
 	@rm -rf ./pkg/generated-go; mkdir ./pkg/generated-go
 	@protoc -I./pkg/idl --go_out=./pkg/generated-go --go-grpc_out=./pkg/generated-go ./pkg/idl/idl.proto
@@ -54,4 +58,4 @@ generate-py:
 	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/silly/server-python --pyi_out=./pkg/silly/server-python --grpc_python_out=./pkg/silly/server-python ./pkg/idl/idl.proto	
 # Commented out because they do not work with the feature/reschedule interface
 #	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/tradeoffboard/server --pyi_out=./pkg/tradeoffboard/server --grpc_python_out=./pkg/tradeoffboard/server ./pkg/idl/idl.proto	
-#	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/costminimization/server --pyi_out=./pkg/costminimization/server --grpc_python_out=./pkg/costminimization/server ./pkg/idl/idl.proto	
+	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/costminimization/server --pyi_out=./pkg/costminimization/server --grpc_python_out=./pkg/costminimization/server ./pkg/idl/idl.proto	

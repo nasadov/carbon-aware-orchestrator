@@ -21,7 +21,10 @@ The usage workflow is this:
 
 ### Silly algorithm
 
-This is just for testing purposes. Silly algorithm assigns scores to the nodes based on the alphabetical order of their names. We have two implementation: `server-go` and `server-python`.
+This is just for testing purposes. It comes with two implementation (golang and python) but only the golang one is maintained.
+Silly algorithm can be launched in two different modes:
+* `modulo`: scores are assigned based on nodes alphabetical order. Microservices are ordered LIFO and grouped according to the value of the modulo passed on the command line.
+* `config`: scores are assigned according to the configuration set at the beginning of the `silly.go` file. No microservice order is given.
 
 The client (`.pkg/silly/client-go`) sends the following cluster status:
 * Infrastructure
@@ -37,9 +40,6 @@ The client (`.pkg/silly/client-go`) sends the following cluster status:
 and expects back:
 * 3 Placements (one for each Microservice)
    * 9 Scores (one for each node that are 3 for each region)
-
-Moreover, the placement info is ordered according to the microservices it refers to, so as to specify
-which one should be deployed first. The order is reversed wrt the one passed by the client to the server.
 
 ### TradeoffBoard algorithm (not in feature/reschedule)
 
@@ -103,6 +103,7 @@ Open a terminal and run the server. For example in case of `silly` algorithm:
 cd ./pk/silly/server-go
 go run silly.go
 ```
+Note: without any argument, `silly` works in `modulo` mode.
 
 Open another terminal and run the client. In case of `silly`:
 ```
