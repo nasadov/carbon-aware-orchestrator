@@ -49,6 +49,10 @@ build-costminimization-local:
 	@echo "Recall to activate the conda costmin environment otherwise the following commands will fail"
 	cd ./pkg/costminimization/server; pyinstaller -F costminimizationhc.py
 
+build-costminimization_heu-local: 
+	@echo "Recall to activate the conda costmin environment otherwise the following commands will fail"
+	cd ./pkg/costminimization_heu/server; pyinstaller -F costminimizationhc.py
+
 generate-go:
 	@rm -rf ./pkg/generated-go; mkdir ./pkg/generated-go
 	@protoc -I./pkg/idl --go_out=./pkg/generated-go --go-grpc_out=./pkg/generated-go ./pkg/idl/idl.proto
