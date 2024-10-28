@@ -25,7 +25,15 @@ package idl;
 // The placement algorithm service definition.
 service PlacementAlgorithm {
 	rpc Init(AlgorithmName) returns (google.protobuf.Empty) {}
-	rpc CalculatePlacement(Data) returns (Workload) {}
+	rpc CalculatePlacement(Data) returns (Placements) {}
+}
+
+enum MicroserviceStatus {
+	MICROSERVICESTATUS_UNSPECIFIED = 0;
+	RUNNING = 1;
+	PENDING = 2;
+	TO_SCHEDULE = 3;
+	TO_DEPLOY = 4;
 }
 
 // The algorithm name.
@@ -46,14 +54,12 @@ message Data {
 // The Infrastructure
 message Infrastructure {
 	repeated Region regions = 1;
-	repeated Link links   = 2;
 }
 
 message Region {
   	string id  = 1;
 	string location = 2;
-	int32 resource_cost = 3;
-	repeated Node nodes = 4;
+	repeated Node nodes = 3;
 }
 
 message Node {
@@ -64,43 +70,30 @@ message Node {
 	ResourceQuantity mem_cap  = 5;  
 }
 
-message Link {
-	string id = 1;    
-	string endpoint_a = 2; 
-	string endpoint_b = 3;
-	ResourceQuantity bandwidth = 4;  
-	ResourceQuantity latency  = 5; // in ms
-	ResourceQuantity bandwidth_used = 6; 
-}
-
 message Workload {
-	repeated Microservice microservices  = 1;  
-	repeated DataFlow data_flows = 2;       
-	repeated Placement placements  = 3;    
+	repeated Microservice microservices  = 1;         
 }
 
 message Microservice {
 	string name = 1;      
 	int32 replicas = 2;            
 	ResourceQuantity cpu_required = 3;     
-	ResourceQuantity mem_required = 4;     
+	ResourceQuantity mem_required = 4;
+	MicroserviceStatus status = 5; 
+	// Nodes selected for each replica if status is RUNNING
+	repeated string node_selected = 6;
 }
 
-message DataFlow {
-	string name = 1;
-	ResourceQuantity bandwidth_required = 2;
-	ResourceQuantity latency_required   = 3;
-	repeated string vertices = 4; 
+message Placements {
+	repeated Placement placements  = 1;    
 }
 
 // One placement for each microservice
 message Placement {
 	string microservice_name = 1;
-	int32 order = 2;
-// For all the replicas	
-	repeated ReplicaScores replica_scores = 3;
-// Nodes selected for each replica
-	repeated string node_selected = 4;
+	// For all the replicas	
+	repeated ReplicaScores replica_scores = 2;
+	int64 time_to_schedule = 3;
 }
 
 message ReplicaScores {

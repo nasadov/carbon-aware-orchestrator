@@ -23,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gitlab.fbk.eu/fogatlas-k8s/algorithms/pkg/generated-go/idl"
@@ -40,35 +41,7 @@ import (
 var (
 	port     = flag.Int("port", 50051, "The server port")
 	logLevel = flag.String("loglevel", "trace", "The log level")
-	mode     = flag.String("mode", "modulo", "Either modulo or config")
-	modulo   = flag.Int("modulo", 1, "Modulo division to create groups of deployments")
 )
-
-// The following data struct is used by configuredScores(), when mode==config.
-// It has an entry for each ms and specifies the node with score = 100.
-// Example: first microservice in the list should be deployed on kwok-node-00 etc.
-var SCORES = []string{
-	"kwok-node-00",
-	"kwok-node-01",
-	"kwok-node-02",
-	"kwok-node-03",
-	"kwok-node-04",
-	"kwok-node-05",
-	"kwok-node-06",
-	"kwok-node-07",
-	"kwok-node-08",
-	"kwok-node-09",
-	"kwok-node-00",
-	"kwok-node-01",
-	"kwok-node-02",
-	"kwok-node-03",
-	"kwok-node-04",
-	"kwok-node-05",
-	"kwok-node-06",
-	"kwok-node-07",
-	"kwok-node-08",
-	"kwok-node-09",
-}
 
 type server struct {
 	idl.UnimplementedPlacementAlgorithmServer
@@ -90,57 +63,34 @@ func (s *server) Init(ctx context.Context, in *idl.AlgorithmName) (*empty.Empty,
 	return &empty.Empty{}, nil
 }
 
-// Scores are a power (cubic) of the position of the node in the node list (last nodes have higher scores)
-// Microservices are ordered (LIFO) and grouped according to the modulo passed as argument to the algorithm.
-func alphabethWithModulo(nodeList []*idl.Node, inWorkload *idl.Workload, outWorkload *idl.Workload) {
-	for j, ms := range inWorkload.GetMicroservices() {
-		placement := new(idl.Placement)
-		placement.MicroserviceName = ms.GetName()
-		// Group together some microservices
-		placement.Order = int32((len(inWorkload.GetMicroservices()) - j) % (*modulo))
-		// Assume just one replica
-		replicaScore := new(idl.ReplicaScores)
-		for k, node := range nodeList {
-			score := new(idl.Score)
-			score.Node = node.Name
-			score.Score = int32(math.Pow(float64(k+1), 3))
-			replicaScore.Scores = append(replicaScore.Scores, score)
-		}
-		placement.ReplicaScores = append(placement.ReplicaScores, replicaScore)
-		outWorkload.Placements = append(outWorkload.Placements, placement)
-	}
-}
-
-// Scores are given according to the SCORES variable
-// Microservices are not ordered
-func configuredScores(nodeList []*idl.Node, inWorkload *idl.Workload, outWorkload *idl.Workload) {
-	for j, ms := range inWorkload.GetMicroservices() {
-		placement := new(idl.Placement)
-		placement.MicroserviceName = ms.GetName()
-		placement.Order = 0
-		// Assume just one replica
-		replicaScore := new(idl.ReplicaScores)
-		for _, node := range nodeList {
-			score := new(idl.Score)
-			score.Node = node.Name
-			canddateNode := SCORES[j]
-			if canddateNode == score.Node {
-				score.Score = 100
-			} else {
-				score.Score = 0
+// In this example, scores are a power (cubic) of the position of the node in the node list
+// (last nodes have higher scores)
+func getScores(nodeList []*idl.Node, inWorkload *idl.Workload, outPlacements *idl.Placements) {
+	for _, ms := range inWorkload.GetMicroservices() {
+		// Consider only microservices to be deployed
+		if ms.Status == idl.MicroserviceStatus_TO_DEPLOY {
+			placement := new(idl.Placement)
+			placement.MicroserviceName = ms.GetName()
+			// Assume just one replica
+			replicaScore := new(idl.ReplicaScores)
+			for k, node := range nodeList {
+				score := new(idl.Score)
+				score.Node = node.Name
+				score.Score = int32(math.Pow(float64(k+1), 3))
+				replicaScore.Scores = append(replicaScore.Scores, score)
 			}
-			replicaScore.Scores = append(replicaScore.Scores, score)
+			placement.ReplicaScores = append(placement.ReplicaScores, replicaScore)
+			placement.TimeToSchedule = time.Now().Unix()
+			outPlacements.Placements = append(outPlacements.Placements, placement)
 		}
-		placement.ReplicaScores = append(placement.ReplicaScores, replicaScore)
-		outWorkload.Placements = append(outWorkload.Placements, placement)
 	}
 }
 
 // CalculatePlacement method
 //
-// It just return a score per node per microservice according to the order of the nodes:
-// score = (indexNode + 1)
-func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Workload, error) {
+// It just return a score per node per microservice according to the position of the nodes
+// in the list. See getScores() for details.
+func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Placements, error) {
 	str, err := json.Marshal(&in)
 	if err != nil {
 		log.Errorf("error marshalling data: (%s)", err.Error())
@@ -148,18 +98,18 @@ func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Wor
 		log.Tracef("CalculatePlacement - Received data: (%s)", str)
 	}
 
-	log.Infof("Going to calculate the placement of with algorithm %s", algo.name)
-
 	if !algo.initialized {
-		log.Errorf("SillyAlgorithm not intitialized.")
-		return nil, status.Errorf(codes.FailedPrecondition, "silly algorithm not intitialized.")
+		log.Errorf("Algorithm not intitialized.")
+		return nil, status.Errorf(codes.FailedPrecondition, "algorithm not intitialized.")
 	}
+
+	log.Infof("Going to calculate the placement with algorithm %s", algo.name)
 
 	inInfra := in.GetInfrastructure()
 	inWorkload := in.GetWorkload()
-	outWorkload := new(idl.Workload)
+	outPlacements := new(idl.Placements)
 
-	// Get node list (do not consider regions)
+	// Get node list
 	var nodeList []*idl.Node
 
 	for _, reg := range inInfra.GetRegions() {
@@ -169,29 +119,23 @@ func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Wor
 	// An example on how to convert a pd.ResourceQuantity to a resource.Quantity
 	node := nodeList[0]
 	q, _ := resource.ParseQuantity(node.CpuUsed.Value)
-	log.Tracef("Node cpu used is: (%s)", q.String())
+	log.Tracef("Cpu used on node %s is: %s", node.Name, q.String())
 
-	if *mode == "modulo" {
-		alphabethWithModulo(nodeList, inWorkload, outWorkload)
-	} else if *mode == "config" {
-		configuredScores(nodeList, inWorkload, outWorkload)
-	} else {
-		log.Errorf("mode not recognized (%s)", *mode)
-	}
+	getScores(nodeList, inWorkload, outPlacements)
 
-	strout, err := json.Marshal(&outWorkload)
+	strout, err := json.Marshal(&outPlacements)
 	if err != nil {
 		log.Errorf("error marshalling data: (%s)", err.Error())
 	} else {
 		log.Tracef("CalculatePlacement - Returning data: (%s)", strout)
 	}
-	return outWorkload, nil
+	return outPlacements, nil
 }
 
 func main() {
 	flag.Parse()
 	configureLog(*logLevel)
-	log.Tracef("Starting with port (%d) and modulo (%d)", *port, *modulo)
+	log.Tracef("Starting with port (%d)", *port)
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
@@ -231,5 +175,4 @@ func configureLog(logLevel string) {
 		DisableColors: false,
 		FullTimestamp: true,
 	})
-
 }

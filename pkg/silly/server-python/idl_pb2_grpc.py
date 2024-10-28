@@ -24,7 +24,7 @@ class PlacementAlgorithmStub(object):
         self.CalculatePlacement = channel.unary_unary(
                 '/idl.PlacementAlgorithm/CalculatePlacement',
                 request_serializer=idl__pb2.Data.SerializeToString,
-                response_deserializer=idl__pb2.Workload.FromString,
+                response_deserializer=idl__pb2.Placements.FromString,
                 )
 
 
@@ -55,7 +55,7 @@ def add_PlacementAlgorithmServicer_to_server(servicer, server):
             'CalculatePlacement': grpc.unary_unary_rpc_method_handler(
                     servicer.CalculatePlacement,
                     request_deserializer=idl__pb2.Data.FromString,
-                    response_serializer=idl__pb2.Workload.SerializeToString,
+                    response_serializer=idl__pb2.Placements.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -98,6 +98,6 @@ class PlacementAlgorithm(object):
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/idl.PlacementAlgorithm/CalculatePlacement',
             idl__pb2.Data.SerializeToString,
-            idl__pb2.Workload.FromString,
+            idl__pb2.Placements.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

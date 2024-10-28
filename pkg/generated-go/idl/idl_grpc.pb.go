@@ -24,7 +24,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PlacementAlgorithmClient interface {
 	Init(ctx context.Context, in *AlgorithmName, opts ...grpc.CallOption) (*empty.Empty, error)
-	CalculatePlacement(ctx context.Context, in *Data, opts ...grpc.CallOption) (*Workload, error)
+	CalculatePlacement(ctx context.Context, in *Data, opts ...grpc.CallOption) (*Placements, error)
 }
 
 type placementAlgorithmClient struct {
@@ -44,8 +44,8 @@ func (c *placementAlgorithmClient) Init(ctx context.Context, in *AlgorithmName, 
 	return out, nil
 }
 
-func (c *placementAlgorithmClient) CalculatePlacement(ctx context.Context, in *Data, opts ...grpc.CallOption) (*Workload, error) {
-	out := new(Workload)
+func (c *placementAlgorithmClient) CalculatePlacement(ctx context.Context, in *Data, opts ...grpc.CallOption) (*Placements, error) {
+	out := new(Placements)
 	err := c.cc.Invoke(ctx, "/idl.PlacementAlgorithm/CalculatePlacement", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func (c *placementAlgorithmClient) CalculatePlacement(ctx context.Context, in *D
 // for forward compatibility
 type PlacementAlgorithmServer interface {
 	Init(context.Context, *AlgorithmName) (*empty.Empty, error)
-	CalculatePlacement(context.Context, *Data) (*Workload, error)
+	CalculatePlacement(context.Context, *Data) (*Placements, error)
 	mustEmbedUnimplementedPlacementAlgorithmServer()
 }
 
@@ -69,7 +69,7 @@ type UnimplementedPlacementAlgorithmServer struct {
 func (UnimplementedPlacementAlgorithmServer) Init(context.Context, *AlgorithmName) (*empty.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Init not implemented")
 }
-func (UnimplementedPlacementAlgorithmServer) CalculatePlacement(context.Context, *Data) (*Workload, error) {
+func (UnimplementedPlacementAlgorithmServer) CalculatePlacement(context.Context, *Data) (*Placements, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CalculatePlacement not implemented")
 }
 func (UnimplementedPlacementAlgorithmServer) mustEmbedUnimplementedPlacementAlgorithmServer() {}

@@ -1,10 +1,24 @@
 from google.protobuf import empty_pb2 as _empty_pb2
 from google.protobuf.internal import containers as _containers
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
+
+class MicroserviceStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    MICROSERVICESTATUS_UNSPECIFIED: _ClassVar[MicroserviceStatus]
+    RUNNING: _ClassVar[MicroserviceStatus]
+    PENDING: _ClassVar[MicroserviceStatus]
+    TO_SCHEDULE: _ClassVar[MicroserviceStatus]
+    TO_DEPLOY: _ClassVar[MicroserviceStatus]
+MICROSERVICESTATUS_UNSPECIFIED: MicroserviceStatus
+RUNNING: MicroserviceStatus
+PENDING: MicroserviceStatus
+TO_SCHEDULE: MicroserviceStatus
+TO_DEPLOY: MicroserviceStatus
 
 class AlgorithmName(_message.Message):
     __slots__ = ("name",)
@@ -29,24 +43,20 @@ class Data(_message.Message):
     def __init__(self, workload: _Optional[_Union[Workload, _Mapping]] = ..., infrastructure: _Optional[_Union[Infrastructure, _Mapping]] = ...) -> None: ...
 
 class Infrastructure(_message.Message):
-    __slots__ = ("regions", "links")
+    __slots__ = ("regions",)
     REGIONS_FIELD_NUMBER: _ClassVar[int]
-    LINKS_FIELD_NUMBER: _ClassVar[int]
     regions: _containers.RepeatedCompositeFieldContainer[Region]
-    links: _containers.RepeatedCompositeFieldContainer[Link]
-    def __init__(self, regions: _Optional[_Iterable[_Union[Region, _Mapping]]] = ..., links: _Optional[_Iterable[_Union[Link, _Mapping]]] = ...) -> None: ...
+    def __init__(self, regions: _Optional[_Iterable[_Union[Region, _Mapping]]] = ...) -> None: ...
 
 class Region(_message.Message):
-    __slots__ = ("id", "location", "resource_cost", "nodes")
+    __slots__ = ("id", "location", "nodes")
     ID_FIELD_NUMBER: _ClassVar[int]
     LOCATION_FIELD_NUMBER: _ClassVar[int]
-    RESOURCE_COST_FIELD_NUMBER: _ClassVar[int]
     NODES_FIELD_NUMBER: _ClassVar[int]
     id: str
     location: str
-    resource_cost: int
     nodes: _containers.RepeatedCompositeFieldContainer[Node]
-    def __init__(self, id: _Optional[str] = ..., location: _Optional[str] = ..., resource_cost: _Optional[int] = ..., nodes: _Optional[_Iterable[_Union[Node, _Mapping]]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., location: _Optional[str] = ..., nodes: _Optional[_Iterable[_Union[Node, _Mapping]]] = ...) -> None: ...
 
 class Node(_message.Message):
     __slots__ = ("name", "cpu_used", "mem_used", "cpu_cap", "mem_cap")
@@ -62,67 +72,43 @@ class Node(_message.Message):
     mem_cap: ResourceQuantity
     def __init__(self, name: _Optional[str] = ..., cpu_used: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_used: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., cpu_cap: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_cap: _Optional[_Union[ResourceQuantity, _Mapping]] = ...) -> None: ...
 
-class Link(_message.Message):
-    __slots__ = ("id", "endpoint_a", "endpoint_b", "bandwidth", "latency", "bandwidth_used")
-    ID_FIELD_NUMBER: _ClassVar[int]
-    ENDPOINT_A_FIELD_NUMBER: _ClassVar[int]
-    ENDPOINT_B_FIELD_NUMBER: _ClassVar[int]
-    BANDWIDTH_FIELD_NUMBER: _ClassVar[int]
-    LATENCY_FIELD_NUMBER: _ClassVar[int]
-    BANDWIDTH_USED_FIELD_NUMBER: _ClassVar[int]
-    id: str
-    endpoint_a: str
-    endpoint_b: str
-    bandwidth: ResourceQuantity
-    latency: ResourceQuantity
-    bandwidth_used: ResourceQuantity
-    def __init__(self, id: _Optional[str] = ..., endpoint_a: _Optional[str] = ..., endpoint_b: _Optional[str] = ..., bandwidth: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., latency: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., bandwidth_used: _Optional[_Union[ResourceQuantity, _Mapping]] = ...) -> None: ...
-
 class Workload(_message.Message):
-    __slots__ = ("microservices", "data_flows", "placements")
+    __slots__ = ("microservices",)
     MICROSERVICES_FIELD_NUMBER: _ClassVar[int]
-    DATA_FLOWS_FIELD_NUMBER: _ClassVar[int]
-    PLACEMENTS_FIELD_NUMBER: _ClassVar[int]
     microservices: _containers.RepeatedCompositeFieldContainer[Microservice]
-    data_flows: _containers.RepeatedCompositeFieldContainer[DataFlow]
-    placements: _containers.RepeatedCompositeFieldContainer[Placement]
-    def __init__(self, microservices: _Optional[_Iterable[_Union[Microservice, _Mapping]]] = ..., data_flows: _Optional[_Iterable[_Union[DataFlow, _Mapping]]] = ..., placements: _Optional[_Iterable[_Union[Placement, _Mapping]]] = ...) -> None: ...
+    def __init__(self, microservices: _Optional[_Iterable[_Union[Microservice, _Mapping]]] = ...) -> None: ...
 
 class Microservice(_message.Message):
-    __slots__ = ("name", "replicas", "cpu_required", "mem_required")
+    __slots__ = ("name", "replicas", "cpu_required", "mem_required", "status", "node_selected")
     NAME_FIELD_NUMBER: _ClassVar[int]
     REPLICAS_FIELD_NUMBER: _ClassVar[int]
     CPU_REQUIRED_FIELD_NUMBER: _ClassVar[int]
     MEM_REQUIRED_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    NODE_SELECTED_FIELD_NUMBER: _ClassVar[int]
     name: str
     replicas: int
     cpu_required: ResourceQuantity
     mem_required: ResourceQuantity
-    def __init__(self, name: _Optional[str] = ..., replicas: _Optional[int] = ..., cpu_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ...) -> None: ...
+    status: MicroserviceStatus
+    node_selected: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, name: _Optional[str] = ..., replicas: _Optional[int] = ..., cpu_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., status: _Optional[_Union[MicroserviceStatus, str]] = ..., node_selected: _Optional[_Iterable[str]] = ...) -> None: ...
 
-class DataFlow(_message.Message):
-    __slots__ = ("name", "bandwidth_required", "latency_required", "vertices")
-    NAME_FIELD_NUMBER: _ClassVar[int]
-    BANDWIDTH_REQUIRED_FIELD_NUMBER: _ClassVar[int]
-    LATENCY_REQUIRED_FIELD_NUMBER: _ClassVar[int]
-    VERTICES_FIELD_NUMBER: _ClassVar[int]
-    name: str
-    bandwidth_required: ResourceQuantity
-    latency_required: ResourceQuantity
-    vertices: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, name: _Optional[str] = ..., bandwidth_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., latency_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., vertices: _Optional[_Iterable[str]] = ...) -> None: ...
+class Placements(_message.Message):
+    __slots__ = ("placements",)
+    PLACEMENTS_FIELD_NUMBER: _ClassVar[int]
+    placements: _containers.RepeatedCompositeFieldContainer[Placement]
+    def __init__(self, placements: _Optional[_Iterable[_Union[Placement, _Mapping]]] = ...) -> None: ...
 
 class Placement(_message.Message):
-    __slots__ = ("microservice_name", "order", "replica_scores", "node_selected")
+    __slots__ = ("microservice_name", "replica_scores", "time_to_schedule")
     MICROSERVICE_NAME_FIELD_NUMBER: _ClassVar[int]
-    ORDER_FIELD_NUMBER: _ClassVar[int]
     REPLICA_SCORES_FIELD_NUMBER: _ClassVar[int]
-    NODE_SELECTED_FIELD_NUMBER: _ClassVar[int]
+    TIME_TO_SCHEDULE_FIELD_NUMBER: _ClassVar[int]
     microservice_name: str
-    order: int
     replica_scores: _containers.RepeatedCompositeFieldContainer[ReplicaScores]
-    node_selected: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, microservice_name: _Optional[str] = ..., order: _Optional[int] = ..., replica_scores: _Optional[_Iterable[_Union[ReplicaScores, _Mapping]]] = ..., node_selected: _Optional[_Iterable[str]] = ...) -> None: ...
+    time_to_schedule: int
+    def __init__(self, microservice_name: _Optional[str] = ..., replica_scores: _Optional[_Iterable[_Union[ReplicaScores, _Mapping]]] = ..., time_to_schedule: _Optional[int] = ...) -> None: ...
 
 class ReplicaScores(_message.Message):
     __slots__ = ("scores",)

@@ -18,6 +18,8 @@
 from concurrent import futures
 import logging
 import signal
+import math
+import time
 
 import grpc
 import idl_pb2
@@ -44,18 +46,19 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         
         
     # It just return a score per node per microservice according to the order of the nodes:
-    # score = (indexNode + 1)
+    # scores are a power (cubic) of the position of the node in the node list
     def CalculatePlacement(self, request, context):
         global algo
         logging.debug(f"CalculatePlacement called: received {request}")
-        logging.info(f"Going to calculate the placement of with algorithm {algo.name}")
         if algo.initialized == False:
-            logging.error("SillyAlgorithm not intitialized. Unable to proceed.")
+            logging.error("Silly Algorithm not intitialized. Unable to proceed.")
             raise grpc.RpcError(grpc.StatusCode.FAILED_PRECONDITION,"silly algorithm not intitialized")
+        
+        logging.info(f"Going to calculate the placement of with algorithm {algo.name}")
         
         inInfra = request.infrastructure
         inWorkload = request.workload
-        outWorkload = idl_pb2.Workload()
+        outPlacements = idl_pb2.Placements()
         nodeList = []
         for reg in inInfra.regions:
             nodeList.extend(reg.nodes)
@@ -63,28 +66,27 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         # An example on how to convert a pd.ResourceQuantity to a resource.Quantity in python
         node = nodeList[0]
         q = k8sutils.parse_quantity(node.cpu_used.value)
-        logging.debug(f"Node cpu used is: {q}")
+        logging.debug(f"CPU used on node {node.name} is {q}")
         # and the memory ...
         q = k8sutils.parse_quantity(node.mem_used.value)
-        logging.debug(f"Node mem used is: {q}")
-        posMs = 0
+        logging.debug(f"Memory used on node {node.name} is {q}")
         for ms in inWorkload.microservices:
             placement = idl_pb2.Placement()
             placement.microservice_name = ms.name
-            placement.order = len(inWorkload.microservices) - posMs 
-            posMs += 1
             replicaScore = idl_pb2.ReplicaScores()
             counter = 1
             for node in nodeList:
                 score = idl_pb2.Score()
                 score.node = node.name
-                score.score = counter
+                score.score = int(math.pow(counter,3))
                 counter += 1
                 replicaScore.scores.append(score)
             placement.replica_scores.append(replicaScore)
-            outWorkload.placements.append(placement)  
+            placement.time_to_schedule = int(time.time())
+            outPlacements.placements.append(placement)  
 
-        return outWorkload    
+        logging.debug(f"CalculatePlacement - Returning data: {outPlacements}")
+        return outPlacements    
 
 def serve():
     port = '50051'

@@ -4,16 +4,14 @@ This repository contains (i) the definition of the interface (gRPC) exposed by t
 
 ## The IDL 
 
-The definition of the interface is in the `./pkg/idl/idl.proto` file. It aims at modelling the snapshot of a k8s cluster in terms of infrastructure and workload deployed. Such an IDL/GRPC interface allows to decouple the code written in FogAtlas (golang) from the code of the placement algorithms that could be written in (almost) any programming language.
+The definition of the interface is in the `./pkg/idl/idl.proto` file. It aims at modelling the snapshot of a k8s cluster in terms of infrastructure and workload deployed and the placement information in terms of i) scheduling time for each microservice and ii) scores for each pod and for each node. Such an IDL/GRPC interface allows to decouple the code written in FogAtlas (golang) from the code of the placement algorithms that could be written in (almost) any programming language.
 
-**Note that the IDL definition on branch `feature/reschedule` is different and not backward compatible with the one on branch `main`.**
+**Note that the IDL definition on branch `feature/energy` is different and not backward compatible neither with the one in branch `feature/reschedule` nor with the one on branch `main`.**
 
 ## The algorithms 
 
 Currently, the following algorithms have been implemented:
-* Silly algorithm
-* TradeoffBoard algorithm (currently not compatible with branch `feature/reschedule`)
-* CostMinimization algorithm (not yet released)
+* Silly algorithm (currently the only one working on `feature/energy` branch)
 
 The usage workflow is this:
 1. The client initializes the algorithm calling the method `Init()`
@@ -21,33 +19,23 @@ The usage workflow is this:
 
 ### Silly algorithm
 
-This is just for testing purposes. It comes with two implementation (golang and python) but only the golang one is maintained.
-Silly algorithm can be launched in two different modes:
-* `modulo`: scores are assigned based on nodes alphabetical order. Microservices are ordered LIFO and grouped according to the value of the modulo passed on the command line.
-* `config`: scores are assigned according to the configuration set at the beginning of the `silly.go` file. No microservice order is given.
+This is just for testing purposes. It comes with two implementation (golang and python).
 
 The client (`.pkg/silly/client-go`) sends the following cluster status:
 * Infrastructure
-   * 3 Regions
-      * 3 Nodes 
-   * 3 Links
+   * 2 Regions
+      * 2 Nodes 
 * Workload
-   * 3 Microservices
-   * 3 DataFlows
-   * 3 Placements (one for each Microservice) 
-      * 3 Nodes Selected (one for each microservice)
+   * 4 Microservices: 
+      * one RUNNING
+      * one TO_SCHEDULE
+      * one PENDING
+      * one TO_DEPLOY
 
 and expects back:
-* 3 Placements (one for each Microservice)
-   * 9 Scores (one for each node that are 3 for each region)
-
-### TradeoffBoard algorithm (not in feature/reschedule)
-
-[TradeoffBoard algorithm](https://github.com/stfbk/CryptoAC/tree/CryptoAC_Demo_FogAtlas) is able to place the microservices of a cloud-native application according to the imposed requirements in terms of security and resource availability. Also in this case we have a client written in go (only for testing purposes) and a server (written in Python) that implements the algorithm. 
-
-### CostMinimization algorithm (not yet released)
-
-CostMinimization algorithm is able to place the microservices of a cloud-native application on a multi-region k8s cluster minimizing the resource cost while satisfying the resource requested by the microservices (e.g. cpu, memory, latency, bandwidth). Currently, it works on a two region cluster (e.g. Private and Public region) where the Private region is assumed to be no cost and the Public region has a simplified cost model where only the `resource allocation` is considered (i.e. a unit of cost for each VM allocated) but not the `resource usage` (e.g. bandwidth usage).
+* Placements 
+   * one for microservice in status TO_DEPLOY
+      * scores for this microservice for each node 
 
 ## Code generation 
 
@@ -84,32 +72,27 @@ Then:
 make generate-py
 ```
 
-### Docker container
-
-Generate a Docker image with the following command (example for `silly-go`)
-```
-make build-silly
-```
-
-Push it with (you need permission to write in the docker registry):
-```
-make push-silly
-```
-
 ## Test
 
-Open a terminal and run the server. For example in case of `silly` algorithm:
+Open a terminal and run the server. For example in case of `silly` algorithm with golang implementation:
 ```
-cd ./pk/silly/server-go
+cd ./pkg/silly/server-go
 go run silly.go
 ```
-Note: without any argument, `silly` works in `modulo` mode.
+If you want to run the python implementation do:
+```
+cd ./pkg/silly/server-python
+conda activate grpc
+python silly.py
+```
 
 Open another terminal and run the client. In case of `silly`:
 ```
 cd ./pkg/silly/client
 go run client.go
 ```
+
+check the output on both terminals.
 
 ## License
 
