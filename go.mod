@@ -1,6 +1,6 @@
 module gitlab.fbk.eu/fogatlas-k8s/algorithms
 
-go 1.20
+go 1.22
 
 require (
 	github.com/golang/protobuf v1.5.2

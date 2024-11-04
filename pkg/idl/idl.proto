@@ -93,6 +93,7 @@ message Placement {
 	string microservice_name = 1;
 	// For all the replicas	
 	repeated ReplicaScores replica_scores = 2;
+	// In Unix time (seconds)
 	int64 time_to_schedule = 3;
 }
 

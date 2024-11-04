@@ -34,10 +34,13 @@ The client (`.pkg/silly/client-go`) sends the following cluster status:
 
 and expects back:
 * Placements 
-   * one for microservice in status TO_DEPLOY
+   * one placement for each microservice in status TO_DEPLOY
       * scores for this microservice for each node 
+      * time to schedule for this microservice   
 
 ## Code generation 
+
+Code generation is needed only if the IDL has been changed.
 
 ### Golang
 
@@ -82,6 +85,7 @@ go run silly.go
 If you want to run the python implementation do:
 ```
 cd ./pkg/silly/server-python
+# Activate conda environment (see above)
 conda activate grpc
 python silly.py
 ```
