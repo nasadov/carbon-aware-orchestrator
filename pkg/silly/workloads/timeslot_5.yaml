@@ -1,0 +1,351 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m079
+  namespace: default
+  labels:
+    app: m079
+    duration: duration2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m079
+  template:
+    metadata:
+      labels:
+        name: m079
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 100m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m080
+  namespace: default
+  labels:
+    app: m080
+    duration: duration2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m080
+  template:
+    metadata:
+      labels:
+        name: m080
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 1000m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m081
+  namespace: default
+  labels:
+    app: m081
+    duration: duration2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m081
+  template:
+    metadata:
+      labels:
+        name: m081
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 1000m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m082
+  namespace: default
+  labels:
+    app: m082
+    duration: duration2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m082
+  template:
+    metadata:
+      labels:
+        name: m082
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m083
+  namespace: default
+  labels:
+    app: m083
+    duration: duration1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m083
+  template:
+    metadata:
+      labels:
+        name: m083
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 100m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m084
+  namespace: default
+  labels:
+    app: m084
+    duration: duration1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m084
+  template:
+    metadata:
+      labels:
+        name: m084
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 250m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m085
+  namespace: default
+  labels:
+    app: m085
+    duration: duration1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m085
+  template:
+    metadata:
+      labels:
+        name: m085
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 1000m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m086
+  namespace: default
+  labels:
+    app: m086
+    duration: duration3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m086
+  template:
+    metadata:
+      labels:
+        name: m086
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 1000m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m087
+  namespace: default
+  labels:
+    app: m087
+    duration: duration3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m087
+  template:
+    metadata:
+      labels:
+        name: m087
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m088
+  namespace: default
+  labels:
+    app: m088
+    duration: duration1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m088
+  template:
+    metadata:
+      labels:
+        name: m088
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 1000m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m089
+  namespace: default
+  labels:
+    app: m089
+    duration: duration2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m089
+  template:
+    metadata:
+      labels:
+        name: m089
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 1000m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m090
+  namespace: default
+  labels:
+    app: m090
+    duration: duration3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m090
+  template:
+    metadata:
+      labels:
+        name: m090
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 1000m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m091
+  namespace: default
+  labels:
+    app: m091
+    duration: duration2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m091
+  template:
+    metadata:
+      labels:
+        name: m091
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 1000m
+---

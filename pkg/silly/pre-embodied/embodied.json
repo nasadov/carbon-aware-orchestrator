@@ -1,0 +1,22 @@
+[
+    {
+        "subcategory": "IoT",
+        "average_embodied_emissions": 27.471,
+        "average_lifetime": 5.2
+    },
+    {
+        "subcategory": "Laptop",
+        "average_embodied_emissions": 231.855,
+        "average_lifetime": 4.13
+    },
+    {
+        "subcategory": "Server",
+        "average_embodied_emissions": 1230.656,
+        "average_lifetime": 3.87
+    },
+    {
+        "subcategory": "Smartphone",
+        "average_embodied_emissions": 52.729,
+        "average_lifetime": 3.03
+    }
+]
