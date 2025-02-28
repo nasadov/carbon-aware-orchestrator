@@ -1,12 +1,34 @@
-# Carbon-Aware Kubernetes Scheduler
+# Carbon-Aware Orchestrator
 
-This repository contains the implementation of a carbon-aware Kubernetes scheduler that optimizes workload placement based on both operational and embodied carbon emissions. It integrates with K8s scheduling through a custom scheduler plugin, allowing for environmentally-conscious placement decisions.
+This repository contains the implementation of a carbon-aware orchestrator that optimizes workload placement based on both operational and embodied carbon emissions. It integrates with K8s scheduling through a custom scheduler plugin, allowing for environmentally-conscious placement decisions.
 
 This work is based on the original scheduler plugin developed by Fondazione Bruno Kessler (FBK).
 
+## Table of Contents
+
+- [Overview](#overview)
+- [The IDL](#the-idl)
+- [Repository Structure](#repository-structure)
+- [The Algorithms](#the-algorithms)
+  - [Carbon-Aware Algorithm](#carbon-aware-algorithm)
+- [Carbon-Aware Data Model](#carbon-aware-data-model)
+  - [Node Metadata](#node-metadata)
+  - [Workload Specifications](#workload-specifications)
+- [Carbon Emissions Model](#carbon-emissions-model)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Setup Environment](#setup-environment)
+  - [Configure Test Infrastructure and Workloads](#configure-test-infrastructure-and-workloads)
+  - [Generate Test Data](#generate-test-data)
+  - [Run the Experiment](#run-the-experiment)
+- [Architecture](#architecture)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
+
 ## Overview
 
-The carbon-aware scheduler considers multiple factors when placing workloads:
+The carbon-aware orchestrator considers multiple factors when placing workloads:
 
 1. **Operational carbon emissions**: Based on regional carbon intensity forecasts and the power consumption model of each node
 2. **Embodied carbon emissions**: Accounting for hardware manufacturing emissions amortized over device lifetime
@@ -23,9 +45,9 @@ The definition of the interface is in the `./pkg/idl/idl.proto` file. It aims at
 
 - `pkg/idl/`: gRPC interface definition for communication between the scheduler plugin and placement algorithms
 - `pkg/silly/`: Implementation of the carbon-aware scheduling algorithm
-  - `server-python/`: Python implementation of the carbon-aware scheduler
-  - `client-go/`: Go client for testing the scheduler
-  - `infra_workload_gen.py`: Tool for generating test infrastructure and workload data
+   - `server-python/`: Python implementation of the carbon-aware scheduler
+   - `client-go/`: Go client for testing the scheduler
+   - `infra_workload_gen.py`: Tool for generating test infrastructure and workload data
 
 ## The algorithms 
 
@@ -38,13 +60,13 @@ The usage workflow is this:
 
 ### Carbon-Aware algorithm
 
-This algorithm optimizes workload placement based on carbon emissions. It comes with implementations in golang and python.
+This algorithm optimizes workload placement based on carbon emissions.
 
 The client (`pkg/silly/client-go`) sends the cluster status and expects back:
 * Placements 
-   * one placement for each microservice in status TO_DEPLOY
-      * scores for this microservice for each node 
-      * time to schedule for this microservice   
+    * one placement for each microservice in status TO_DEPLOY
+         * scores for this microservice for each node 
+         * time to schedule for this microservice   
 
 ## Carbon-Aware Data Model
 
@@ -57,9 +79,9 @@ Nodes include detailed hardware information through Kubernetes labels and annota
 - **Embodied carbon**: `hardware.carbon/embodied_emissions` (kgCO2e)
 - **Lifetime**: `hardware.carbon/lifetime_years` (years)
 - **Power consumption**:
-  - `hardware.power/idle_watts`: Base power consumption when idle
-  - `hardware.power/active_watts`: Typical power when active
-  - `hardware.power/max_watts`: Maximum power at full utilization
+   - `hardware.power/idle_watts`: Base power consumption when idle
+   - `hardware.power/active_watts`: Typical power when active
+   - `hardware.power/max_watts`: Maximum power at full utilization
 
 ### Workload Specifications
 
@@ -85,7 +107,98 @@ The scheduler calculates emissions for each potential node-workload pairing usin
 - Go 1.16+ (for building)
 - Python 3.8+ (for Python implementation)
 
+### Setup Environment
 
+    ```bash
+    # Clone the repository
+    git clone https://github.com/nasadov/carbon-aware-orchestrator.git
+    cd carbon-aware-orchestrator
+    
+    # Install required Python dependencies
+    pip install -r pkg/silly/server-python/requirements.txt
+    ```
+
+### Configure Test Infrastructure and Workloads
+
+    - Open `infra-workload-config.yaml` and adjust the configuration:
+       ```yaml
+       nodes:
+         num_nodes: 8
+         regions:
+            - DE
+            - FR
+            - ES
+         hardware_subcategories:
+            IoT:
+               cpu: "2"
+               memory: "2Gi"
+               embodied_carbon: 27.471
+               lifetime: 5.2
+               power:
+                  idle: 0.5
+                  active: 2.0
+                  max: 5.0
+       
+       workload:
+         num_timeslots: 12
+         poisson_lambda: 16
+         durations:
+            - 1  # hours
+            - 3
+            - 6
+         cpu_options:
+            - 1000m
+            - 500m
+            - 250m
+         mem_options:
+            - 1Gi
+            - 512Mi
+       ```
+
+### Generate Test Data
+
+    ```bash
+    # Generate infrastructure and workload data based on your config
+    python pkg/silly/infra_workload_gen.py
+    ```
+    This will create:
+    - `nodes.yaml`: Infrastructure definitions with hardware characteristics
+    - `workloads/timeslot_*.yaml`: Directory containing workload definitions for each timeslot
+
+### Run the Experiment
+
+    ```bash
+    # Start the Python server
+    cd pkg/silly/server-python
+    python carbon-aware.py &
+    
+    # In a new terminal, run the Go client with the test data
+    cd pkg/silly/client-go
+    go run client.go
+    ```
+
+## Architecture
+
+The carbon-aware orchestrator follows this architecture for making placement decisions:
+
+```mermaid
+flowchart TB
+    subgraph Orchestration
+        K["Kubernetes Scheduler Framework"] <--gRPC API--> C["Carbon-Aware Orchestrator"]
+    end
+    
+    subgraph Data Sources
+        D["Carbon Intensity Data"]
+        N["Node Metadata - Region - Hardware - Power Profile"]
+        W["Workload Specifications - CPU/Memory - Duration"]
+    end
+    
+    C <--Reads--> D
+    N --"Resource Info"--> C
+    W --"Requirements"--> C
+    
+    C --"Returns Optimized Placements"--> K
+```
 
 ## Contributing
 
