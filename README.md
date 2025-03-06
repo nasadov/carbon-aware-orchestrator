@@ -23,8 +23,7 @@ This is just for testing purposes. It comes with two implementation (golang and 
 
 The client (`.pkg/silly/client-go`) sends the following cluster status:
 * Infrastructure
-   * 2 Regions
-      * 2 Nodes 
+   * 4 Nodes 
 * Workload
    * 4 Microservices: 
       * one RUNNING
