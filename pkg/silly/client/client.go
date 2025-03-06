@@ -109,44 +109,36 @@ func main() {
 }
 
 func loadInfra() *idl.Infrastructure {
-	// 2 Regions
-	var regions []*idl.Region
-	for i := 0; i < 2; i++ {
-		// each with 2 Nodes
-		var nodes []*idl.Node
-		for j := 0; j < 2; j++ {
-			cpu := resource.MustParse("100m")
-			mem := resource.MustParse("100M")
-			node := idl.Node{
-				Name: fmt.Sprintf("N_%d_%d", i, j),
-				CpuUsed: &idl.ResourceQuantity{
-					Value:  cpu.String(),
-					Format: string(cpu.Format),
-				},
-				MemUsed: &idl.ResourceQuantity{
-					Value:  mem.String(),
-					Format: string(mem.Format),
-				},
-				CpuCap: &idl.ResourceQuantity{
-					Value:  cpu.String(),
-					Format: string(cpu.Format),
-				},
-				MemCap: &idl.ResourceQuantity{
-					Value:  mem.String(),
-					Format: string(mem.Format),
-				},
-			}
-			nodes = append(nodes, &node)
+	// 4 Nodes
+	var nodes []*idl.Node
+	for i := 0; i < 4; i++ {
+		cpu := resource.MustParse("100m")
+		mem := resource.MustParse("100M")
+		node := idl.Node{
+			Name: fmt.Sprintf("N_%d", i),
+			CpuUsed: &idl.ResourceQuantity{
+				Value:  cpu.String(),
+				Format: string(cpu.Format),
+			},
+			MemUsed: &idl.ResourceQuantity{
+				Value:  mem.String(),
+				Format: string(mem.Format),
+			},
+			CpuCap: &idl.ResourceQuantity{
+				Value:  cpu.String(),
+				Format: string(cpu.Format),
+			},
+			MemCap: &idl.ResourceQuantity{
+				Value:  mem.String(),
+				Format: string(mem.Format),
+			},
+			Region:      fmt.Sprintf("R_%d", i),
+			Subcategory: fmt.Sprintf("SC_%d", i),
 		}
-		region := idl.Region{
-			Id:       fmt.Sprintf("R_%d", i),
-			Location: fmt.Sprintf("L_%d", i),
-			Nodes:    nodes,
-		}
-		regions = append(regions, &region)
+		nodes = append(nodes, &node)
 	}
 	var infra idl.Infrastructure
-	infra.Regions = regions
+	infra.Nodes = nodes
 	return &infra
 }
 
@@ -164,10 +156,10 @@ func getWorkload() *idl.Workload {
 		cpu := resource.MustParse("100m")
 		mem := resource.MustParse("100M")
 		microservice := idl.Microservice{
-			Name:         MICROSERVICES[i].Name,
-			Status:       MICROSERVICES[i].Status,
-			NodeSelected: MICROSERVICES[i].NodeSelected,
-			Replicas:     int32(1),
+			Name:       MICROSERVICES[i].Name,
+			Status:     MICROSERVICES[i].Status,
+			DeployedOn: MICROSERVICES[i].NodeSelected,
+			Replicas:   int32(1),
 			CpuRequired: &idl.ResourceQuantity{
 				Value:  cpu.String(),
 				Format: string(cpu.Format),
