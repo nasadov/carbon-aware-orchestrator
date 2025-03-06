@@ -62,7 +62,17 @@ The usage workflow is this:
 
 This algorithm optimizes workload placement based on carbon emissions.
 
-The client (`pkg/silly/client-go`) sends the cluster status and expects back:
+The client (`.pkg/silly/client-go`) sends the following cluster status:
+* Infrastructure
+   * 4 Nodes 
+* Workload
+   * 4 Microservices: 
+      * one RUNNING
+      * one TO_SCHEDULE
+      * one PENDING
+      * one TO_DEPLOY
+
+and expects back:
 * Placements 
     * one placement for each microservice in status TO_DEPLOY
          * scores for this microservice for each node 

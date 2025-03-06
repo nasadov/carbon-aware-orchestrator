@@ -43,34 +43,28 @@ class Data(_message.Message):
     def __init__(self, workload: _Optional[_Union[Workload, _Mapping]] = ..., infrastructure: _Optional[_Union[Infrastructure, _Mapping]] = ...) -> None: ...
 
 class Infrastructure(_message.Message):
-    __slots__ = ("regions",)
-    REGIONS_FIELD_NUMBER: _ClassVar[int]
-    regions: _containers.RepeatedCompositeFieldContainer[Region]
-    def __init__(self, regions: _Optional[_Iterable[_Union[Region, _Mapping]]] = ...) -> None: ...
-
-class Region(_message.Message):
-    __slots__ = ("id", "location", "nodes")
-    ID_FIELD_NUMBER: _ClassVar[int]
-    LOCATION_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("nodes",)
     NODES_FIELD_NUMBER: _ClassVar[int]
-    id: str
-    location: str
     nodes: _containers.RepeatedCompositeFieldContainer[Node]
-    def __init__(self, id: _Optional[str] = ..., location: _Optional[str] = ..., nodes: _Optional[_Iterable[_Union[Node, _Mapping]]] = ...) -> None: ...
+    def __init__(self, nodes: _Optional[_Iterable[_Union[Node, _Mapping]]] = ...) -> None: ...
 
 class Node(_message.Message):
-    __slots__ = ("name", "cpu_used", "mem_used", "cpu_cap", "mem_cap")
+    __slots__ = ("name", "cpu_used", "mem_used", "cpu_cap", "mem_cap", "region", "subcategory")
     NAME_FIELD_NUMBER: _ClassVar[int]
     CPU_USED_FIELD_NUMBER: _ClassVar[int]
     MEM_USED_FIELD_NUMBER: _ClassVar[int]
     CPU_CAP_FIELD_NUMBER: _ClassVar[int]
     MEM_CAP_FIELD_NUMBER: _ClassVar[int]
+    REGION_FIELD_NUMBER: _ClassVar[int]
+    SUBCATEGORY_FIELD_NUMBER: _ClassVar[int]
     name: str
     cpu_used: ResourceQuantity
     mem_used: ResourceQuantity
     cpu_cap: ResourceQuantity
     mem_cap: ResourceQuantity
-    def __init__(self, name: _Optional[str] = ..., cpu_used: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_used: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., cpu_cap: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_cap: _Optional[_Union[ResourceQuantity, _Mapping]] = ...) -> None: ...
+    region: str
+    subcategory: str
+    def __init__(self, name: _Optional[str] = ..., cpu_used: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_used: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., cpu_cap: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_cap: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., region: _Optional[str] = ..., subcategory: _Optional[str] = ...) -> None: ...
 
 class Workload(_message.Message):
     __slots__ = ("microservices",)
@@ -79,20 +73,20 @@ class Workload(_message.Message):
     def __init__(self, microservices: _Optional[_Iterable[_Union[Microservice, _Mapping]]] = ...) -> None: ...
 
 class Microservice(_message.Message):
-    __slots__ = ("name", "replicas", "cpu_required", "mem_required", "status", "node_selected")
+    __slots__ = ("name", "replicas", "cpu_required", "mem_required", "status", "deployed_on")
     NAME_FIELD_NUMBER: _ClassVar[int]
     REPLICAS_FIELD_NUMBER: _ClassVar[int]
     CPU_REQUIRED_FIELD_NUMBER: _ClassVar[int]
     MEM_REQUIRED_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
-    NODE_SELECTED_FIELD_NUMBER: _ClassVar[int]
+    DEPLOYED_ON_FIELD_NUMBER: _ClassVar[int]
     name: str
     replicas: int
     cpu_required: ResourceQuantity
     mem_required: ResourceQuantity
     status: MicroserviceStatus
-    node_selected: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, name: _Optional[str] = ..., replicas: _Optional[int] = ..., cpu_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., status: _Optional[_Union[MicroserviceStatus, str]] = ..., node_selected: _Optional[_Iterable[str]] = ...) -> None: ...
+    deployed_on: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, name: _Optional[str] = ..., replicas: _Optional[int] = ..., cpu_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., status: _Optional[_Union[MicroserviceStatus, str]] = ..., deployed_on: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class Placements(_message.Message):
     __slots__ = ("placements",)

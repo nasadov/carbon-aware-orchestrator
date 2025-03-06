@@ -53,13 +53,7 @@ message Data {
 
 // The Infrastructure
 message Infrastructure {
-	repeated Region regions = 1;
-}
-
-message Region {
-  	string id  = 1;
-	string location = 2;
-	repeated Node nodes = 3;
+	repeated Node nodes = 1;
 }
 
 message Node {
@@ -68,6 +62,8 @@ message Node {
 	ResourceQuantity mem_used = 3;  
 	ResourceQuantity cpu_cap  = 4;  
 	ResourceQuantity mem_cap  = 5;  
+	string region = 6;
+	string subcategory = 7;
 }
 
 message Workload {
@@ -80,8 +76,8 @@ message Microservice {
 	ResourceQuantity cpu_required = 3;     
 	ResourceQuantity mem_required = 4;
 	MicroserviceStatus status = 5; 
-	// Nodes selected for each replica if status is RUNNING
-	repeated string node_selected = 6;
+	// Nodes where ms is deployed (for each replica) if status is RUNNING
+	repeated string deployed_on = 6;
 }
 
 message Placements {

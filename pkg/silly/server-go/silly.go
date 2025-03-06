@@ -109,19 +109,12 @@ func (s *server) CalculatePlacement(ctx context.Context, in *idl.Data) (*idl.Pla
 	inWorkload := in.GetWorkload()
 	outPlacements := new(idl.Placements)
 
-	// Get node list
-	var nodeList []*idl.Node
-
-	for _, reg := range inInfra.GetRegions() {
-		nodeList = append(nodeList, reg.GetNodes()...)
-	}
-
 	// An example on how to convert a pd.ResourceQuantity to a resource.Quantity
-	node := nodeList[0]
+	node := inInfra.Nodes[0]
 	q, _ := resource.ParseQuantity(node.CpuUsed.Value)
 	log.Tracef("Cpu used on node %s is: %s", node.Name, q.String())
 
-	getScores(nodeList, inWorkload, outPlacements)
+	getScores(inInfra.Nodes, inWorkload, outPlacements)
 
 	strout, err := json.Marshal(&outPlacements)
 	if err != nil {

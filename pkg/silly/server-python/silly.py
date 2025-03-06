@@ -59,23 +59,21 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         inInfra = request.infrastructure
         inWorkload = request.workload
         outPlacements = idl_pb2.Placements()
-        nodeList = []
-        for reg in inInfra.regions:
-            nodeList.extend(reg.nodes)
         
         # An example on how to convert a pd.ResourceQuantity to a resource.Quantity in python
-        node = nodeList[0]
+        node = inInfra.nodes[0]
         q = k8sutils.parse_quantity(node.cpu_used.value)
         logging.debug(f"CPU used on node {node.name} is {q}")
         # and the memory ...
         q = k8sutils.parse_quantity(node.mem_used.value)
         logging.debug(f"Memory used on node {node.name} is {q}")
+        logging.debug(f"Region and subcatebory are: {node.region} and {node.subcategory}")
         for ms in inWorkload.microservices:
             placement = idl_pb2.Placement()
             placement.microservice_name = ms.name
             replicaScore = idl_pb2.ReplicaScores()
             counter = 1
-            for node in nodeList:
+            for node in inInfra.nodes:
                 score = idl_pb2.Score()
                 score.node = node.name
                 score.score = int(math.pow(counter,3))
