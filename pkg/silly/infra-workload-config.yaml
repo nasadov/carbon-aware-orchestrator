@@ -1,77 +1,9 @@
-nodes:
-  # Output file for node definitions
-  filename: nodes.yaml
-  
-  # Number of nodes to generate
-  num_nodes: 8
-  
-  # Base name for node identifiers
-  base_node_name: kwok-node-0
-  
-  # Available regions that match carbon intensity data
-  regions:
-    - DE
-    - FR
-    - ES
-    - IT-NO
-  
-  # How to assign regions to nodes: "cycle" (deterministic) or "random"
-  assignment_method: cycle
-  
-  # Random seed for reproducibility when using random assignment
-  random_seed: 42
-  
-  # Hardware subcategory definitions with their specifications
-  hardware_subcategories:
-    IoT:
-      cpu: "1"
-      memory: "1Gi"
-      embodied_carbon: 27.471
-      lifetime: 5.2
-      power:
-        idle: 0.5    # Watts when idle
-        active: 2.0  # Watts at active state
-        max: 5.0     # Maximum watts at full CPU utilization
-    
-    Smartphone:
-      cpu: "4"
-      memory: "4Gi"
-      embodied_carbon: 52.729
-      lifetime: 3.03
-      power:
-        idle: 1.0    # Watts when idle
-        active: 3.0  # Watts at active state
-        max: 15.0    # Maximum watts at full CPU utilization
-    
-    Laptop:
-      cpu: "6"
-      memory: "8Gi"
-      embodied_carbon: 231.855
-      lifetime: 4.13
-      power:
-        idle: 10.0   # Watts when idle
-        active: 40.0 # Watts at active state
-        max: 150.0   # Maximum watts at full CPU utilization
-    
-    Server:
-      cpu: "8"
-      memory: "16Gi"
-      embodied_carbon: 1230.656
-      lifetime: 3.87
-      power:
-        idle: 100.0  # Watts when idle
-        active: 200.0 # Watts at active state
-        max: 400.0   # Maximum watts at full CPU utilization
-  
-  # How to assign hardware types to nodes: "cycle" (deterministic) or "random"
-  hardware_assignment_method: cycle
-
 workload:
   # Directory to output workload files
   output_dir: workloads
   
   # Number of timeslots to generate
-  num_timeslots: 12
+  num_timeslots: 24
   
   # Lambda parameter for Poisson distribution (average services per timeslot)
   poisson_lambda: 16
@@ -90,6 +22,16 @@ workload:
   
   # How to assign durations (cycle through the values or pick randomly)
   duration_assignment_method: cycle  # "cycle" or "random"
+  
+  # NEW: Deadline configuration options
+  # Strategy for determining deadlines: "tight", "flexible", "mixed", or "exact"
+  deadline_strategy: flexible
+  
+  # NEW: Hours to add to duration for flexible deadlines
+  deadline_flexibility_hours:
+    - 2   # Low flexibility: duration + 2h
+    - 6   # Medium flexibility: duration + 6h
+    - 24  # High flexibility: duration + 24h
   
   # Available CPU request options
   cpu_options:

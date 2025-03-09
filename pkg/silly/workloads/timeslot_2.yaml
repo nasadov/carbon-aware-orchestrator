@@ -1,11 +1,15 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m030
+  name: m030-duration-1h-deadline-7h
   namespace: default
   labels:
     app: m030
-    duration: duration2
+    duration: duration-1h
+    deadline: deadline-7h
+  annotations:
+    scheduling.carbon/duration_hours: '1'
+    scheduling.carbon/deadline_hours: '7'
 spec:
   replicas: 1
   selector:
@@ -15,6 +19,9 @@ spec:
     metadata:
       labels:
         name: m030
+      annotations:
+        scheduling.carbon/duration_hours: '1'
+        scheduling.carbon/deadline_hours: '7'
     spec:
       schedulerName: fogatlas
       containers:
@@ -28,11 +35,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m031
+  name: m031-duration-3h-deadline-27h
   namespace: default
   labels:
     app: m031
-    duration: duration3
+    duration: duration-3h
+    deadline: deadline-27h
+  annotations:
+    scheduling.carbon/duration_hours: '3'
+    scheduling.carbon/deadline_hours: '27'
 spec:
   replicas: 1
   selector:
@@ -42,6 +53,9 @@ spec:
     metadata:
       labels:
         name: m031
+      annotations:
+        scheduling.carbon/duration_hours: '3'
+        scheduling.carbon/deadline_hours: '27'
     spec:
       schedulerName: fogatlas
       containers:
@@ -55,11 +69,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m032
+  name: m032-duration-6h-deadline-30h
   namespace: default
   labels:
     app: m032
-    duration: duration3
+    duration: duration-6h
+    deadline: deadline-30h
+  annotations:
+    scheduling.carbon/duration_hours: '6'
+    scheduling.carbon/deadline_hours: '30'
 spec:
   replicas: 1
   selector:
@@ -69,6 +87,9 @@ spec:
     metadata:
       labels:
         name: m032
+      annotations:
+        scheduling.carbon/duration_hours: '6'
+        scheduling.carbon/deadline_hours: '30'
     spec:
       schedulerName: fogatlas
       containers:
@@ -82,11 +103,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m033
+  name: m033-duration-1h-deadline-3h
   namespace: default
   labels:
     app: m033
-    duration: duration1
+    duration: duration-1h
+    deadline: deadline-3h
+  annotations:
+    scheduling.carbon/duration_hours: '1'
+    scheduling.carbon/deadline_hours: '3'
 spec:
   replicas: 1
   selector:
@@ -96,6 +121,9 @@ spec:
     metadata:
       labels:
         name: m033
+      annotations:
+        scheduling.carbon/duration_hours: '1'
+        scheduling.carbon/deadline_hours: '3'
     spec:
       schedulerName: fogatlas
       containers:
@@ -109,11 +137,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m034
+  name: m034-duration-3h-deadline-5h
   namespace: default
   labels:
     app: m034
-    duration: duration1
+    duration: duration-3h
+    deadline: deadline-5h
+  annotations:
+    scheduling.carbon/duration_hours: '3'
+    scheduling.carbon/deadline_hours: '5'
 spec:
   replicas: 1
   selector:
@@ -123,6 +155,9 @@ spec:
     metadata:
       labels:
         name: m034
+      annotations:
+        scheduling.carbon/duration_hours: '3'
+        scheduling.carbon/deadline_hours: '5'
     spec:
       schedulerName: fogatlas
       containers:
@@ -136,11 +171,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m035
+  name: m035-duration-6h-deadline-8h
   namespace: default
   labels:
     app: m035
-    duration: duration1
+    duration: duration-6h
+    deadline: deadline-8h
+  annotations:
+    scheduling.carbon/duration_hours: '6'
+    scheduling.carbon/deadline_hours: '8'
 spec:
   replicas: 1
   selector:
@@ -150,6 +189,9 @@ spec:
     metadata:
       labels:
         name: m035
+      annotations:
+        scheduling.carbon/duration_hours: '6'
+        scheduling.carbon/deadline_hours: '8'
     spec:
       schedulerName: fogatlas
       containers:
@@ -163,11 +205,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m036
+  name: m036-duration-1h-deadline-25h
   namespace: default
   labels:
     app: m036
-    duration: duration3
+    duration: duration-1h
+    deadline: deadline-25h
+  annotations:
+    scheduling.carbon/duration_hours: '1'
+    scheduling.carbon/deadline_hours: '25'
 spec:
   replicas: 1
   selector:
@@ -177,6 +223,9 @@ spec:
     metadata:
       labels:
         name: m036
+      annotations:
+        scheduling.carbon/duration_hours: '1'
+        scheduling.carbon/deadline_hours: '25'
     spec:
       schedulerName: fogatlas
       containers:
@@ -190,11 +239,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m037
+  name: m037-duration-3h-deadline-9h
   namespace: default
   labels:
     app: m037
-    duration: duration2
+    duration: duration-3h
+    deadline: deadline-9h
+  annotations:
+    scheduling.carbon/duration_hours: '3'
+    scheduling.carbon/deadline_hours: '9'
 spec:
   replicas: 1
   selector:
@@ -204,6 +257,9 @@ spec:
     metadata:
       labels:
         name: m037
+      annotations:
+        scheduling.carbon/duration_hours: '3'
+        scheduling.carbon/deadline_hours: '9'
     spec:
       schedulerName: fogatlas
       containers:
@@ -217,11 +273,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m038
+  name: m038-duration-6h-deadline-30h
   namespace: default
   labels:
     app: m038
-    duration: duration3
+    duration: duration-6h
+    deadline: deadline-30h
+  annotations:
+    scheduling.carbon/duration_hours: '6'
+    scheduling.carbon/deadline_hours: '30'
 spec:
   replicas: 1
   selector:
@@ -231,6 +291,9 @@ spec:
     metadata:
       labels:
         name: m038
+      annotations:
+        scheduling.carbon/duration_hours: '6'
+        scheduling.carbon/deadline_hours: '30'
     spec:
       schedulerName: fogatlas
       containers:
@@ -244,11 +307,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m039
+  name: m039-duration-1h-deadline-25h
   namespace: default
   labels:
     app: m039
-    duration: duration3
+    duration: duration-1h
+    deadline: deadline-25h
+  annotations:
+    scheduling.carbon/duration_hours: '1'
+    scheduling.carbon/deadline_hours: '25'
 spec:
   replicas: 1
   selector:
@@ -258,6 +325,9 @@ spec:
     metadata:
       labels:
         name: m039
+      annotations:
+        scheduling.carbon/duration_hours: '1'
+        scheduling.carbon/deadline_hours: '25'
     spec:
       schedulerName: fogatlas
       containers:
@@ -271,11 +341,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m040
+  name: m040-duration-3h-deadline-5h
   namespace: default
   labels:
     app: m040
-    duration: duration1
+    duration: duration-3h
+    deadline: deadline-5h
+  annotations:
+    scheduling.carbon/duration_hours: '3'
+    scheduling.carbon/deadline_hours: '5'
 spec:
   replicas: 1
   selector:
@@ -285,6 +359,9 @@ spec:
     metadata:
       labels:
         name: m040
+      annotations:
+        scheduling.carbon/duration_hours: '3'
+        scheduling.carbon/deadline_hours: '5'
     spec:
       schedulerName: fogatlas
       containers:
@@ -298,11 +375,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m041
+  name: m041-duration-6h-deadline-8h
   namespace: default
   labels:
     app: m041
-    duration: duration1
+    duration: duration-6h
+    deadline: deadline-8h
+  annotations:
+    scheduling.carbon/duration_hours: '6'
+    scheduling.carbon/deadline_hours: '8'
 spec:
   replicas: 1
   selector:
@@ -312,6 +393,9 @@ spec:
     metadata:
       labels:
         name: m041
+      annotations:
+        scheduling.carbon/duration_hours: '6'
+        scheduling.carbon/deadline_hours: '8'
     spec:
       schedulerName: fogatlas
       containers:
@@ -325,11 +409,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m042
+  name: m042-duration-1h-deadline-25h
   namespace: default
   labels:
     app: m042
-    duration: duration3
+    duration: duration-1h
+    deadline: deadline-25h
+  annotations:
+    scheduling.carbon/duration_hours: '1'
+    scheduling.carbon/deadline_hours: '25'
 spec:
   replicas: 1
   selector:
@@ -339,6 +427,9 @@ spec:
     metadata:
       labels:
         name: m042
+      annotations:
+        scheduling.carbon/duration_hours: '1'
+        scheduling.carbon/deadline_hours: '25'
     spec:
       schedulerName: fogatlas
       containers:
@@ -352,11 +443,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m043
+  name: m043-duration-3h-deadline-27h
   namespace: default
   labels:
     app: m043
-    duration: duration3
+    duration: duration-3h
+    deadline: deadline-27h
+  annotations:
+    scheduling.carbon/duration_hours: '3'
+    scheduling.carbon/deadline_hours: '27'
 spec:
   replicas: 1
   selector:
@@ -366,6 +461,9 @@ spec:
     metadata:
       labels:
         name: m043
+      annotations:
+        scheduling.carbon/duration_hours: '3'
+        scheduling.carbon/deadline_hours: '27'
     spec:
       schedulerName: fogatlas
       containers:
@@ -379,11 +477,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m044
+  name: m044-duration-6h-deadline-30h
   namespace: default
   labels:
     app: m044
-    duration: duration3
+    duration: duration-6h
+    deadline: deadline-30h
+  annotations:
+    scheduling.carbon/duration_hours: '6'
+    scheduling.carbon/deadline_hours: '30'
 spec:
   replicas: 1
   selector:
@@ -393,6 +495,9 @@ spec:
     metadata:
       labels:
         name: m044
+      annotations:
+        scheduling.carbon/duration_hours: '6'
+        scheduling.carbon/deadline_hours: '30'
     spec:
       schedulerName: fogatlas
       containers:
@@ -406,11 +511,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m045
+  name: m045-duration-1h-deadline-7h
   namespace: default
   labels:
     app: m045
-    duration: duration2
+    duration: duration-1h
+    deadline: deadline-7h
+  annotations:
+    scheduling.carbon/duration_hours: '1'
+    scheduling.carbon/deadline_hours: '7'
 spec:
   replicas: 1
   selector:
@@ -420,6 +529,9 @@ spec:
     metadata:
       labels:
         name: m045
+      annotations:
+        scheduling.carbon/duration_hours: '1'
+        scheduling.carbon/deadline_hours: '7'
     spec:
       schedulerName: fogatlas
       containers:
@@ -433,11 +545,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m046
+  name: m046-duration-3h-deadline-27h
   namespace: default
   labels:
     app: m046
-    duration: duration3
+    duration: duration-3h
+    deadline: deadline-27h
+  annotations:
+    scheduling.carbon/duration_hours: '3'
+    scheduling.carbon/deadline_hours: '27'
 spec:
   replicas: 1
   selector:
@@ -447,6 +563,9 @@ spec:
     metadata:
       labels:
         name: m046
+      annotations:
+        scheduling.carbon/duration_hours: '3'
+        scheduling.carbon/deadline_hours: '27'
     spec:
       schedulerName: fogatlas
       containers:

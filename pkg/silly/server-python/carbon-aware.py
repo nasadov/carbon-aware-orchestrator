@@ -6,6 +6,7 @@ import random
 import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+import argparse
 
 import grpc
 import idl_pb2
@@ -298,51 +299,47 @@ def get_node_region(node) -> str:
     """
     # 1. Check if we can directly get the region from the node object
     if hasattr(node, "region") and node.region:
-        return node.region
+        return node.region.upper()  # Ensure uppercase for consistency
 
-    # 2. Check for region in labels if available
+    # 2. Check for standard naming format: node-order-region-subcategory
+    if hasattr(node, "name") and node.name.startswith("node-"):
+        parts = node.name.split("-")
+        if len(parts) >= 4:  # node-0-DE-Server format
+            region = parts[2].upper()
+            logging.info(f"Extracted region {region} from node name format: {node.name}")
+            return region
+
+    # 3. Check for region in labels if available
     if hasattr(node, "labels"):
         for label in node.labels:
             if label.key.lower() in ["region", "topology.kubernetes.io/region"]:
-                return label.value
+                return label.value.upper()
     
-    # 3. Extract from node name - common patterns
+    # 4. Look for region codes anywhere in the name (fallback)
     node_name_lower = node.name.lower()
-    
-    # Check for common region codes in the node name
     for region_code in ["de", "fr", "es", "it-no"]:
         if region_code in node_name_lower:
             return region_code.upper()
     
-    # 4. Check parent region if the node is part of a region structure
-    if hasattr(node, "parent") and hasattr(node.parent, "name"):
-        return node.parent.name
-        
-    # 5. Fallback to default region or extract from node zone if available
-    if hasattr(node, "zone"):
-        return node.zone.upper()
-        
-    # Last resort: map to a default region based on node name
-    logging.warning(f"Could not determine region for node {node.name}, mapping to default")
+    # Fallback to default region
+    logging.warning(f"Could not determine region for node {node.name}, using default region")
     return "DE"  # Default fallback region
 
 
 def get_node_hardware_metadata(node) -> tuple[float, float, Dict[str, float]]:
     """
-    Extract hardware metadata related to carbon emissions and power consumption from node annotations.
-    
-    Args:
-        node: Node object with metadata
-        
-    Returns:
-        Tuple of (embodied_emissions, lifetime_years, power_consumption)
-        where power_consumption is a dict with 'idle', 'active', and 'max' values in watts
+    Extract hardware metadata related to carbon emissions and power consumption.
+    Priority order:
+    1. Annotations (specific hardware values)
+    2. Labels (hardware subcategory)
+    3. Direct node attributes (subcategory)
+    4. Default values as fallback
     """
     # Default values if metadata not found
     default_embodied_carbon = 50000.0
     default_lifetime = 4.0
     default_power = {
-        "idle": 100.0,   # Default to server values
+        "idle": 100.0,
         "active": 200.0,
         "max": 400.0
     }
@@ -351,7 +348,7 @@ def get_node_hardware_metadata(node) -> tuple[float, float, Dict[str, float]]:
     lifetime = default_lifetime
     power = default_power.copy()
     
-    # Check for hardware carbon metadata in annotations
+    # STEP 1: Check for hardware carbon metadata in annotations (HIGHEST PRIORITY)
     if hasattr(node, "annotations") and node.annotations:
         for annotation in node.annotations:
             # Embodied carbon and lifetime
@@ -391,45 +388,50 @@ def get_node_hardware_metadata(node) -> tuple[float, float, Dict[str, float]]:
                 except (ValueError, TypeError):
                     logging.warning(f"Invalid max power value: {annotation.value}, using default")
     
-    # Check for hardware subcategory label if no direct annotations
+    # STEP 2: Check for hardware subcategory label (MEDIUM PRIORITY)
+    subcategory = None
     if (embodied_carbon == default_embodied_carbon or lifetime == default_lifetime or power == default_power) and hasattr(node, "labels") and node.labels:
-        subcategory = None
         for label in node.labels:
             if label.key == "hardware.carbon/subcategory":
                 subcategory = label.value
                 logging.debug(f"Found hardware subcategory from label: {subcategory}")
                 break
-        
-        # If subcategory is found but no direct annotations, use subcategory-based defaults
-        if subcategory:
-            if subcategory == "IoT":
-                if embodied_carbon == default_embodied_carbon:
-                    embodied_carbon = 27.471
-                if lifetime == default_lifetime:
-                    lifetime = 5.2
-                if power == default_power:  # Only replace if we haven't found any power annotations
-                    power = {"idle": 0.5, "active": 2.0, "max": 5.0}
-            elif subcategory == "Smartphone":
-                if embodied_carbon == default_embodied_carbon:
-                    embodied_carbon = 52.729
-                if lifetime == default_lifetime:
-                    lifetime = 3.03
-                if power == default_power:
-                    power = {"idle": 1.0, "active": 3.0, "max": 15.0}
-            elif subcategory == "Laptop":
-                if embodied_carbon == default_embodied_carbon:
-                    embodied_carbon = 231.855
-                if lifetime == default_lifetime:
-                    lifetime = 4.13
-                if power == default_power:
-                    power = {"idle": 10.0, "active": 40.0, "max": 150.0}
-            elif subcategory == "Server":
-                if embodied_carbon == default_embodied_carbon:
-                    embodied_carbon = 1230.656
-                if lifetime == default_lifetime:
-                    lifetime = 3.87
-                if power == default_power:
-                    power = {"idle": 100.0, "active": 200.0, "max": 400.0}
+    
+    # STEP 3: Check for direct subcategory attribute (LOWEST PRIORITY)
+    if not subcategory and (embodied_carbon == default_embodied_carbon or lifetime == default_lifetime or power == default_power) and hasattr(node, "subcategory") and node.subcategory:
+        subcategory = node.subcategory
+        logging.debug(f"Using subcategory directly from node: {subcategory}")
+    
+    # Apply subcategory-based values for any values not set by annotations
+    if subcategory:
+        if subcategory == "IoT":
+            if embodied_carbon == default_embodied_carbon:
+                embodied_carbon = 27.471
+            if lifetime == default_lifetime:
+                lifetime = 5.2
+            if power == default_power:  # Only replace if we haven't found any power annotations
+                power = {"idle": 0.5, "active": 2.0, "max": 5.0}
+        elif subcategory == "Smartphone":
+            if embodied_carbon == default_embodied_carbon:
+                embodied_carbon = 52.729
+            if lifetime == default_lifetime:
+                lifetime = 3.03
+            if power == default_power:
+                power = {"idle": 1.0, "active": 3.0, "max": 15.0}
+        elif subcategory == "Laptop":
+            if embodied_carbon == default_embodied_carbon:
+                embodied_carbon = 231.855
+            if lifetime == default_lifetime:
+                lifetime = 4.13
+            if power == default_power:
+                power = {"idle": 10.0, "active": 40.0, "max": 150.0}
+        elif subcategory == "Server":
+            if embodied_carbon == default_embodied_carbon:
+                embodied_carbon = 1230.656
+            if lifetime == default_lifetime:
+                lifetime = 3.87
+            if power == default_power:
+                power = {"idle": 100.0, "active": 200.0, "max": 400.0}
     
     # Log the final values
     logging.info(f"Node {node.name} hardware metadata: embodied_carbon={embodied_carbon}kg CO2e, "
@@ -442,13 +444,9 @@ def parse_infrastructure(infra: idl_pb2.Infrastructure) -> list[CarbonAwareFlavo
     # Load carbon intensity data once
     carbon_data = load_carbon_intensity_data()
     logging.info(f"Loaded carbon intensity data for regions: {list(carbon_data.keys())}")
-    
-    nodeList = []
-    for region in infra.regions:
-        nodeList.extend(region.nodes)
 
     flavours = []
-    for node in nodeList:
+    for node in infra.nodes:
         # 1) Parse CPU and memory to a Decimal
         cpu_cap = k8sutils.parse_quantity(node.cpu_cap.value)
         mem_cap = k8sutils.parse_quantity(node.mem_cap.value)
@@ -500,67 +498,101 @@ def parse_infrastructure(infra: idl_pb2.Infrastructure) -> list[CarbonAwareFlavo
 def parse_microservice(ms: idl_pb2.Microservice) -> CarbonAwarePod:
     """
     Convert gRPC Microservice to a CarbonAwarePod object.
-    
-    Extract duration from annotations or labels if present.
+    Prioritizes getting duration and deadline from direct fields and annotations,
+    falling back to name parsing as a last resort.
     """
-    # CPU request is specified as a string (e.g. "100m") → parse to a Decimal
-    cpu_req = k8sutils.parse_quantity(ms.resources.requests["cpu"])
-    float_cpu_req = float(cpu_req)  # to float
-
-    # RAM request is specified as a string (e.g. "1Gi")
-    ram_req = k8sutils.parse_quantity(ms.resources.requests["memory"])
-    float_ram_req = float(ram_req) / (1024 * 1024)  # bytes → MB
-
-    # Initialize duration to None to detect if we've found a value
-    duration_hours = None
-    
-    # Try to extract duration from annotations
-    if hasattr(ms, "annotations") and ms.annotations:
-        for annotation in ms.annotations:
-            if annotation.key == "workload.carbon/duration_hours":
+    try:
+        # Parse CPU and RAM requirements
+        cpu_req = k8sutils.parse_quantity(ms.cpu_required.value)
+        float_cpu_req = float(cpu_req)
+        
+        ram_req = k8sutils.parse_quantity(ms.mem_required.value)
+        float_ram_req = float(ram_req) / (1024 * 1024)  # bytes → MB
+        
+        # APPROACH 1: Get duration and deadline from direct fields
+        duration_hours = None
+        deadline_hours = None
+        
+        if hasattr(ms, "duration_hours") and ms.duration_hours > 0:
+            duration_hours = ms.duration_hours
+            logging.info(f"Using duration from direct field: {duration_hours}h")
+            
+        if hasattr(ms, "deadline_hours") and ms.deadline_hours > 0:
+            deadline_hours = ms.deadline_hours
+            logging.info(f"Using deadline from direct field: {deadline_hours}h")
+            
+        # APPROACH 2: Check annotations if direct fields aren't set
+        if (duration_hours is None or deadline_hours is None) and hasattr(ms, "annotations"):
+            for annotation in ms.annotations:
+                if annotation.key == "scheduling.carbon/duration_hours" and duration_hours is None:
+                    try:
+                        duration_hours = float(annotation.value)
+                        logging.info(f"Using duration from annotation: {duration_hours}h")
+                    except (ValueError, TypeError):
+                        logging.warning(f"Invalid duration annotation: {annotation.value}")
+                        
+                if annotation.key == "scheduling.carbon/deadline_hours" and deadline_hours is None:
+                    try:
+                        deadline_hours = float(annotation.value)
+                        logging.info(f"Using deadline from annotation: {deadline_hours}h")
+                    except (ValueError, TypeError):
+                        logging.warning(f"Invalid deadline annotation: {annotation.value}")
+        
+        # APPROACH 3: Fall back to parsing from name if needed
+        if duration_hours is None:
+            duration_hours = 1.0  # default
+            if "-duration-" in ms.name:
                 try:
-                    duration_hours = float(annotation.value)
-                    logging.debug(f"Found duration from annotation: {duration_hours} hours")
-                except (ValueError, TypeError):
-                    logging.warning(f"Invalid duration value: {annotation.value}")
-    
-    # If no annotation, try to extract from duration label
-    if duration_hours is None and hasattr(ms, "labels") and ms.labels:
-        for label in ms.labels:
-            if label.key == "duration":
-                if label.value.startswith("duration-") and label.value.endswith("h"):
-                    try:
-                        # Parse from format "duration-Xh"
-                        hours_str = label.value.replace("duration-", "").replace("h", "")
-                        duration_hours = float(hours_str)
-                        logging.debug(f"Extracted duration from label {label.value}: {duration_hours} hours")
-                    except (ValueError, IndexError):
-                        logging.warning(f"Could not parse duration from label: {label.value}")
-                elif label.value.isdigit():
-                    # Handle old format where duration label might just be a number
-                    try:
-                        duration_hours = float(label.value)
-                        logging.debug(f"Extracted duration from numeric label: {duration_hours} hours")
-                    except (ValueError):
-                        logging.warning(f"Could not parse duration from numeric label: {label.value}")
-                break
-    
-    # If still no duration found, use a default
-    if duration_hours is None:
-        duration_hours = 1.0
-        logging.warning(f"No duration specified for {ms.name}, using default of {duration_hours} hours")
-    
-    # Create the pod with the extracted duration (deadline is set by CarbonAwarePod to now + duration)
-    pod = CarbonAwarePod(
-        id=ms.name,
-        deadline_hours=duration_hours,  # Use duration for deadline since we don't need separate deadline
-        duration=duration_hours,
-        powerConsumption=0.0,  # will be computed if 0
-        cpuRequest=float_cpu_req,
-        ramRequest=float_ram_req,
-        storageRequest=0
-    )
-    return pod
+                    parts = ms.name.split("-duration-")[1].split("-")[0].rstrip("h")
+                    duration_hours = float(parts)
+                    logging.info(f"Extracted duration from name: {duration_hours}h")
+                except (ValueError, IndexError) as e:
+                    logging.warning(f"Failed to parse duration from name '{ms.name}': {e}")
+        
+        if deadline_hours is None:
+            deadline_hours = max(24.0, duration_hours * 2)  # default
+            if "-deadline-" in ms.name:
+                try:
+                    parts = ms.name.split("-deadline-")[1].split("-")[0].rstrip("h")
+                    deadline_hours = float(parts)
+                    logging.info(f"Extracted deadline from name: {deadline_hours}h")
+                except (ValueError, IndexError) as e:
+                    logging.warning(f"Failed to parse deadline from name '{ms.name}': {e}")
+        
+        # Ensure deadline is at least as long as duration
+        if deadline_hours < duration_hours:
+            logging.warning(f"Deadline ({deadline_hours}h) shorter than duration ({duration_hours}h), adjusting to match")
+            deadline_hours = duration_hours
+        
+        # Create CarbonAwarePod with separate duration and deadline
+        pod = CarbonAwarePod(
+            id=ms.name,
+            deadline_hours=deadline_hours,
+            duration=duration_hours,
+            powerConsumption=0.0,
+            cpuRequest=float_cpu_req,
+            ramRequest=float_ram_req,
+            storageRequest=0
+        )
+        
+        # Enhanced logging to show the distinction
+        scheduling_window = deadline_hours - duration_hours
+        logging.info(f"[parse_microservice] {ms.name}: duration={duration_hours}h, " +
+                    f"deadline={deadline_hours}h, scheduling window={scheduling_window}h")
+        
+        return pod
+        
+    except Exception as e:
+        logging.exception(f"Error parsing microservice {ms.name}: {e}")
+        return CarbonAwarePod(
+            id=ms.name,
+            deadline_hours=24.0,  # Default deadline
+            duration=1.0,         # Default duration
+            powerConsumption=0.0,
+            cpuRequest=0.1,
+            ramRequest=100,
+            storageRequest=0
+        )
 
 
 def build_timeslots(deadline_hours: float) -> list[CarbonAwareTimeslot]:
@@ -655,70 +687,139 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         return empty_pb2.Empty()
 
     def CalculatePlacement(self, request: idl_pb2.Data, context) -> idl_pb2.Placements:
-        global algo
-        if not algo.initialized:
-            msg = "Algorithm not initialized before calling CalculatePlacement."
-            logging.error(f"[CalculatePlacement] {msg}")
-            context.set_details(msg)
-            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
-            return idl_pb2.Placements()
+        try:
+            global algo
+        
+            # ======== INITIALIZATION ========
+            logging.info("=" * 80)
+            logging.info(f"🚀 STARTING PLACEMENT CALCULATION - ALGORITHM: {algo.name}")
+            
+            if not algo.initialized:
+                msg = "Algorithm not initialized before calling CalculatePlacement."
+                logging.error(f"❌ {msg}")
+                context.set_details(msg)
+                context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+                return idl_pb2.Placements()
 
-        logging.info(f"[CalculatePlacement] Using algorithm '{algo.name}'.")
+            # ======== INFRASTRUCTURE PARSING ========
+            logging.info("-" * 60)
+            logging.info(f"📊 INFRASTRUCTURE PARSING")
+            start_time = time.time()  # Record algorithm start time
+            flavours = parse_infrastructure(request.infrastructure)
+            logging.info(f"  ▶ Processed {len(flavours)} nodes in {(time.time() - start_time):.2f}s")
+            
+            # Check if carbon intensity data is available
+            regions = set()
+            for flv in flavours:
+                if hasattr(flv, 'region'):
+                    regions.add(flv.region)
+            logging.info(f"  ▶ Node regions: {', '.join(regions)}")
 
-        # 1) Parse the infrastructure into CarbonAwareFlavours
-        flavours = parse_infrastructure(request.infrastructure)
+            # ======== RESOURCE INITIALIZATION ========
+            logging.info("-" * 60)
+            logging.info(f"🧮 INITIALIZING RESOURCE TRACKING")
+            
+            leftover_cpu = {}
+            leftover_ram = {}
+            max_time_slots = 24
 
-        # 1.b) Initialize leftover resources for each (node, timeslot).
-        # Let's say we plan a maximum of 24 timeslots.
-        leftover_cpu = {}
-        leftover_ram = {}
-        max_time_slots = 24
+            for flv in flavours:
+                leftover_cpu[flv.id] = {}
+                leftover_ram[flv.id] = {}
+                for ts_id in range(max_time_slots):
+                    leftover_cpu[flv.id][ts_id] = flv.totalCpu
+                    leftover_ram[flv.id][ts_id] = flv.totalRam
+            
+            logging.info(f"  ▶ Initialized resources for {len(flavours)} nodes × {max_time_slots} timeslots")
 
-        for flv in flavours:
-            leftover_cpu[flv.id] = {}
-            leftover_ram[flv.id] = {}
-            for ts_id in range(max_time_slots):
-                # Initially, leftover is the entire node capacity
-                leftover_cpu[flv.id][ts_id] = flv.totalCpu
-                leftover_ram[flv.id][ts_id] = flv.totalRam
+            # ======== WORKLOAD PROCESSING ========
+            logging.info("-" * 60)
+            logging.info(f"🔍 PROCESSING {len(request.workload.microservices)} MICROSERVICES")
+            out_placements = idl_pb2.Placements()
+            
+            # Summary counters
+            placements_success = 0
+            placements_failed = 0
+            total_emissions = 0.0
 
-        # 2) Prepare output container
-        out_placements = idl_pb2.Placements()
+            for i, ms in enumerate(request.workload.microservices):
+                ms_start_time = time.time()
+                logging.info(f"  ➡️ ({i+1}/{len(request.workload.microservices)}) Processing: {ms.name}")
+                
+                pod = parse_microservice(ms)
+                hours_until_deadline = (pod.deadline - datetime.now()).total_seconds() / 3600
+                scheduling_window = max(0, hours_until_deadline - pod.duration)
+                
+                if hours_until_deadline <= 0:
+                    logging.warning(f"    ⚠️  Expired deadline for {ms.name}")
+                    placement = self._build_fallback_placement(ms.name, "EXPIRED_DEADLINE")
+                    out_placements.placements.append(placement)
+                    placements_failed += 1
+                    continue
 
-        # 3) Iterate over microservices in the workload
-        for ms in request.workload.microservices:
-            pod = parse_microservice(ms)
-            hours_until_deadline = (pod.deadline - datetime.now()).total_seconds() / 3600
-            if hours_until_deadline <= 0:
-                # Expired
-                placement = self._build_fallback_placement(ms.name, "EXPIRED_DEADLINE")
+                # Build timeslots for this pod
+                timeslots = build_timeslots(hours_until_deadline)
+                
+                # Enhanced logging to emphasize scheduling flexibility
+                logging.info(f"    ⏰ Pod {pod.id}: duration={pod.duration}h, deadline in {hours_until_deadline:.1f}h")
+                logging.info(f"    🔄 Scheduling window: {scheduling_window:.1f}h ({len(timeslots)} potential timeslots)")
+                
+                if scheduling_window <= 0:
+                    logging.warning(f"    ⚠️  No scheduling flexibility for {ms.name} - immediate start required")
+                elif scheduling_window < 2:
+                    logging.info(f"    ℹ️  Limited scheduling window for {ms.name}")
+                else:
+                    logging.info(f"    ✨ Good scheduling flexibility for {ms.name} - can optimize for carbon")
+
+                # Find optimal placement
+                best_node, best_slot, minimal_emissions = find_best_node_and_timeslot(
+                    pod, flavours, timeslots,
+                    leftover_cpu, leftover_ram
+                )
+
+                # Build placement result
+                if best_node and best_slot:
+                    # Update resource tracking
+                    leftover_cpu[best_node.id][best_slot.id] -= pod.cpuRequest
+                    leftover_ram[best_node.id][best_slot.id] -= pod.ramRequest
+                    
+                    # Calculate when this workload will start and end
+                    workload_start_time = best_slot.getStart()
+                    end_time = workload_start_time + timedelta(hours=pod.duration)
+                    
+                    placement = self._build_success_placement(ms.name, best_node, best_slot, minimal_emissions)
+                    total_emissions += minimal_emissions
+                    placements_success += 1
+                    
+                    logging.info(f"    ✅ Placed on {best_node.id} at {workload_start_time.strftime('%Y-%m-%d %H:%M')}")
+                    logging.info(f"       Duration: {pod.duration}h, Finishes: {end_time.strftime('%Y-%m-%d %H:%M')}")
+                    logging.info(f"       Emissions: {minimal_emissions:.2f}kgCO2e, Resources: CPU={pod.cpuRequest:.2f}/{best_node.totalCpu:.2f}, " +
+                                f"RAM={pod.ramRequest:.0f}/{best_node.totalRam:.0f}MB")
+                else:
+                    placement = self._build_fallback_placement(ms.name, "NONE_FOUND")
+                    placements_failed += 1
+                    logging.warning(f"    ❌ No feasible placement found for {ms.name}")
+
                 out_placements.placements.append(placement)
-                continue
+                logging.info(f"    🕒 Processing time: {(time.time() - ms_start_time):.3f}s")
 
-            timeslots = build_timeslots(hours_until_deadline)
+            # ======== SUMMARY ========
+            logging.info("=" * 60)
+            logging.info(f"📋 PLACEMENT SUMMARY")
+            logging.info(f"  ▶ Total microservices: {len(request.workload.microservices)}")
+            logging.info(f"  ▶ Successfully placed: {placements_success}")
+            logging.info(f"  ▶ Failed to place: {placements_failed}")
+            logging.info(f"  ▶ Total carbon footprint: {total_emissions:.2f}kgCO2e")
+            logging.info(f"  ▶ Total execution time: {(time.time() - start_time):.3f}s")
+            logging.info("=" * 80)
+            
+            return out_placements
 
-            # 4) Find the best node & timeslot based on minimal emissions
-            best_node, best_slot, minimal_emissions = find_best_node_and_timeslot(
-                pod, flavours, timeslots,
-                leftover_cpu,  # pass these new dictionaries
-                leftover_ram
-            )
-
-            # 5) Build the final placement object
-            if best_node and best_slot:
-                # Once chosen, those resources must be "consumed" so that
-                # subsequent pods see reduced leftover.
-                leftover_cpu[best_node.id][best_slot.id] -= pod.cpuRequest
-                leftover_ram[best_node.id][best_slot.id] -= pod.ramRequest
-
-                placement = self._build_success_placement(ms.name, best_node, best_slot, minimal_emissions)
-            else:
-                placement = self._build_fallback_placement(ms.name, "NONE_FOUND")
-
-            out_placements.placements.append(placement)
-
-        logging.debug(f"[CalculatePlacement] Final placements: {out_placements}")
-        return out_placements
+        except Exception as e:
+            logging.exception(f"❌ Uncaught exception: {e}")
+            context.set_details(f"Server error: {str(e)}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            return idl_pb2.Placements()
 
 
     ############################
@@ -807,13 +908,28 @@ def handler(signum, frame) -> None:
 
 def main() -> None:
     """
-    Main entrypoint. Sets logging level to DEBUG, sets signal handler, and runs the server.
+    Main entrypoint. Sets up logging based on command-line args, 
+    sets signal handler, and runs the server.
     """
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Carbon-aware scheduling server.')
+    parser.add_argument(
+        '--loglevel', 
+        default='INFO',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        help='Set the logging level (default: INFO)'
+    )
+    args = parser.parse_args()
+    
+    # Configure logging with specified level
+    log_level = getattr(logging, args.loglevel)
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=log_level,
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    
+    logging.info(f"Starting carbon-aware server with log level: {args.loglevel}")
     signal.signal(signal.SIGINT, handler)
     serve()
 

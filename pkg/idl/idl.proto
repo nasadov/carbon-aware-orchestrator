@@ -71,13 +71,25 @@ message Workload {
 }
 
 message Microservice {
-	string name = 1;      
-	int32 replicas = 2;            
-	ResourceQuantity cpu_required = 3;     
-	ResourceQuantity mem_required = 4;
-	MicroserviceStatus status = 5; 
-	// Nodes where ms is deployed (for each replica) if status is RUNNING
-	repeated string deployed_on = 6;
+  string name = 1;
+  MicroserviceStatus status = 2;
+  repeated string deployed_on = 3;
+  int32 replicas = 4;
+  ResourceQuantity cpu_required = 5;
+  ResourceQuantity mem_required = 6;
+  
+  // New fields for carbon-aware scheduling
+  double duration_hours = 7;  // How long the workload runs
+  double deadline_hours = 8;  // Hours until deployment deadline
+  
+  // Add annotations field for metadata
+  repeated KeyValue annotations = 9;
+}
+
+// Define the KeyValue message if it doesn't exist
+message KeyValue {
+  string key = 1;
+  string value = 2;
 }
 
 message Placements {

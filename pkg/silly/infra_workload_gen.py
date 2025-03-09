@@ -81,7 +81,8 @@ DEPLOYMENT_TEMPLATE = {
         "namespace": "default",
         "labels": {
             "app": "",           # e.g. "m000"
-            "duration": ""       # e.g. "duration1"
+            "duration": "",      # e.g. "duration1"
+            "deadline": ""       # NEW: e.g. "deadline24"
         }
     },
     "spec": {
@@ -123,7 +124,7 @@ DEPLOYMENT_TEMPLATE = {
 DEFAULT_CONFIG = {
     "nodes": {
         "filename": "nodes.yaml",
-        "num_nodes": 4,
+        "num_nodes": 8,
         "base_node_name": "kwok-node-0",
         "regions": ["DE", "FR", "ES", "IT-NO"],
         "assignment_method": "cycle",  # "cycle" or "random"
@@ -153,8 +154,8 @@ DEFAULT_CONFIG = {
                 }
             },
             "Laptop": {
-                "cpu": "6",
-                "memory": "8Gi",
+                "cpu": "8",
+                "memory": "16Gi",
                 "embodied_carbon": 231.855,
                 "lifetime": 4.13,
                 "power": {
@@ -164,8 +165,8 @@ DEFAULT_CONFIG = {
                 }
             },
             "Server": {
-                "cpu": "8",
-                "memory": "16Gi",
+                "cpu": "32",
+                "memory": "64Gi",
                 "embodied_carbon": 1230.656,
                 "lifetime": 3.87,
                 "power": {
@@ -185,10 +186,12 @@ DEFAULT_CONFIG = {
         "base_name": "m",
         "durations": [1, 3, 6],  # in hours
         "duration_assignment_method": "random",  # "random" or "cycle"
+        # NEW: Deadline configuration
+        "deadline_strategy": "flexible",  # "tight", "flexible", "mixed", or "exact"
+        "deadline_flexibility_hours": [2, 6, 24],  # Hours to add to duration for deadlines
         "cpu_options": ["500m", "200m", "100m"],
         "mem_options": ["500Mi", "200Mi"]
     }
-    
 }
 
 # ---------------------------------------------------------------------
@@ -268,10 +271,10 @@ def generate_nodes_file(config: Dict[str, Any]):
             node_doc["metadata"]["annotations"]["hardware.power/max_watts"] = str(power_data["max"])
         
         # Include region and hardware type in node name for easier identification
-        node_name_with_metadata = f"{node_name}-{region.lower()}-{subcategory.lower()}"
+        node_name_with_metadata = f"node-{i}-{region}-{subcategory}"
         node_doc["metadata"]["name"] = node_name_with_metadata
         node_doc["metadata"]["labels"]["kubernetes.io/hostname"] = node_name_with_metadata
-        
+
         # fill CPU/Memory based on the hardware subcategory
         node_doc["status"]["allocatable"]["cpu"] = cpu_per_node
         node_doc["status"]["allocatable"]["memory"] = memory_per_node
@@ -307,7 +310,7 @@ def generate_nodes_file(config: Dict[str, Any]):
 def generate_timeslot_files(config: Dict[str, Any]):
     """
     Generate one file per time slot. Each file has a Poisson-distributed 
-    number of Deployments with durations in hours.
+    number of Deployments with durations and deadlines in hours.
     """
     output_dir = config.get("output_dir", "workloads")
     num_timeslots = config.get("num_timeslots", 5)
@@ -319,6 +322,26 @@ def generate_timeslot_files(config: Dict[str, Any]):
     durations = config.get("durations", [1, 4, 12])  # Default durations in hours
     duration_assignment_method = config.get("duration_assignment_method", "random")
     
+    # NEW: Get deadline configuration
+    deadline_strategy = config.get("deadline_strategy", "flexible")
+    deadline_flexibility_hours = config.get("deadline_flexibility_hours", [2, 6, 24])
+    
+    # Resource selection based on hardware capability
+    cpu_by_hardware = {
+        "IoT": ["100m", "200m"],
+        "Smartphone": ["200m", "500m"],
+        "Laptop": ["500m", "1000m"],
+        "Server": ["1000m", "2000m", "4000m"]
+    }
+    
+    mem_by_hardware = {
+        "IoT": ["128Mi", "256Mi"],
+        "Smartphone": ["256Mi", "512Mi"],
+        "Laptop": ["512Mi", "1Gi", "2Gi"],
+        "Server": ["2Gi", "4Gi", "8Gi"]
+    }
+    
+    # Default resource options if not using hardware-specific
     cpu_options = config.get("cpu_options", ["500m", "200m", "100m"])
     mem_options = config.get("mem_options", ["500Mi", "200Mi"])
     
@@ -329,6 +352,9 @@ def generate_timeslot_files(config: Dict[str, Any]):
     
     print(f"Using Poisson distribution (λ={poisson_lambda}) for microservices per timeslot")
     print(f"Using {duration_assignment_method} duration assignment with options: {durations} hours")
+    print(f"Using {deadline_strategy} deadline strategy")
+    if deadline_strategy == "flexible" or deadline_strategy == "mixed":
+        print(f"Deadline flexibility options: {deadline_flexibility_hours} hours")
     print(f"Random seed: {random_seed}")
 
     # Create the output directory if not exists
@@ -357,6 +383,7 @@ def generate_timeslot_files(config: Dict[str, Any]):
             import copy
             dep_doc = copy.deepcopy(DEPLOYMENT_TEMPLATE)
 
+            # Generate the core microservice name
             ms_name = f"{base_name}{ms_counter:03d}"  # e.g. "m000"
             ms_counter += 1
 
@@ -371,24 +398,51 @@ def generate_timeslot_files(config: Dict[str, Any]):
             else:  # random
                 duration_hours = random.choice(durations)
             
-            # Fill in the template
-            dep_doc["metadata"]["name"] = ms_name
-            dep_doc["metadata"]["labels"]["app"] = ms_name
+            # Calculate deadline based on strategy
+            if deadline_strategy == "tight":
+                # Tight deadlines - exact same as duration (no flexibility)
+                deadline_hours = duration_hours
+            elif deadline_strategy == "exact":
+                # Exact deadlines - use the duration times a specific multiplier
+                deadline_hours = duration_hours * 2  # 2x the duration
+            elif deadline_strategy == "mixed":
+                # Mixed strategy - sometimes tight, sometimes flexible
+                if random.random() < 0.3:  # 30% chance of tight deadline
+                    deadline_hours = duration_hours
+                else:
+                    flexibility = random.choice(deadline_flexibility_hours)
+                    deadline_hours = duration_hours + flexibility
+            else:  # flexible (default)
+                flexibility = random.choice(deadline_flexibility_hours)
+                deadline_hours = duration_hours + flexibility
             
-            # Use duration hours directly as a label and annotation
-            dur_label = f"duration-{duration_hours}h"
-            dep_doc["metadata"]["labels"]["duration"] = dur_label
+            # Create the full name with both duration and deadline
+            full_name = f"{ms_name}-duration-{duration_hours}h-deadline-{deadline_hours}h"
             
-            # Add the actual duration hours as an annotation
+            # Fill in the deployment template
+            dep_doc["metadata"]["name"] = full_name
+            dep_doc["metadata"]["labels"]["app"] = ms_name  # Keep app label simple
+            
+            # Add duration and deadline labels
+            dep_doc["metadata"]["labels"]["duration"] = f"duration-{duration_hours}h"
+            dep_doc["metadata"]["labels"]["deadline"] = f"deadline-{deadline_hours}h"
+            
+            # Add annotations for carbon-aware scheduling
             if "annotations" not in dep_doc["metadata"]:
                 dep_doc["metadata"]["annotations"] = {}
-            dep_doc["metadata"]["annotations"]["workload.carbon/duration_hours"] = str(duration_hours)
-
-            # Add the same duration annotation to the pod template
+                
+            # Use the correct annotation keys that the server expects
+            dep_doc["metadata"]["annotations"]["scheduling.carbon/duration_hours"] = str(duration_hours)
+            dep_doc["metadata"]["annotations"]["scheduling.carbon/deadline_hours"] = str(deadline_hours)
+            
+            # Add to pod template metadata
             if "annotations" not in dep_doc["spec"]["template"]["metadata"]:
                 dep_doc["spec"]["template"]["metadata"]["annotations"] = {}
-            dep_doc["spec"]["template"]["metadata"]["annotations"]["workload.carbon/duration_hours"] = str(duration_hours)
-
+                
+            dep_doc["spec"]["template"]["metadata"]["annotations"]["scheduling.carbon/duration_hours"] = str(duration_hours)
+            dep_doc["spec"]["template"]["metadata"]["annotations"]["scheduling.carbon/deadline_hours"] = str(deadline_hours)
+            
+            # Update selector and pod labels
             dep_doc["spec"]["selector"]["matchLabels"]["name"] = ms_name
             dep_doc["spec"]["template"]["metadata"]["labels"]["name"] = ms_name
 
@@ -416,6 +470,17 @@ def generate_timeslot_files(config: Dict[str, Any]):
         print(f"Duration distribution (cyclic): {duration_counts}")
     else:
         print(f"Duration distribution: random selection from {durations}")
+        
+    # Report deadline strategy
+    print(f"Deadline strategy: {deadline_strategy}")
+    if deadline_strategy == "tight":
+        print("All services have zero scheduling flexibility (deadline = duration)")
+    elif deadline_strategy == "exact":
+        print("All services have deadline = 2x duration")
+    elif deadline_strategy == "mixed":
+        print("30% of services have zero flexibility, 70% have variable flexibility")
+    else:
+        print(f"All services have flexible deadlines (duration + {deadline_flexibility_hours} hours)")
 
 # ---------------------------------------------------------------------
 # Configuration Loading

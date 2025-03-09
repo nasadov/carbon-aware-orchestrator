@@ -13,23 +13,23 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: kwok-node-00-de-iot
+    kubernetes.io/hostname: node-0-DE-IoT
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: DE
     hardware.carbon/subcategory: IoT
-  name: kwok-node-00-de-iot
+  name: node-0-DE-IoT
 spec: {}
 status:
   allocatable:
-    cpu: '1'
-    memory: 1Gi
+    cpu: '2'
+    memory: 2Gi
     pods: 110
   capacity:
-    cpu: '1'
-    memory: 1Gi
+    cpu: '2'
+    memory: 2Gi
     pods: 110
   nodeInfo:
     architecture: amd64
@@ -59,14 +59,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: kwok-node-01-fr-smartphone
+    kubernetes.io/hostname: node-1-FR-Smartphone
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: FR
     hardware.carbon/subcategory: Smartphone
-  name: kwok-node-01-fr-smartphone
+  name: node-1-FR-Smartphone
 spec: {}
 status:
   allocatable:
@@ -105,23 +105,23 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: kwok-node-02-es-laptop
+    kubernetes.io/hostname: node-2-ES-Laptop
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: ES
     hardware.carbon/subcategory: Laptop
-  name: kwok-node-02-es-laptop
+  name: node-2-ES-Laptop
 spec: {}
 status:
   allocatable:
-    cpu: '6'
-    memory: 8Gi
+    cpu: '8'
+    memory: 16Gi
     pods: 110
   capacity:
-    cpu: '6'
-    memory: 8Gi
+    cpu: '8'
+    memory: 16Gi
     pods: 110
   nodeInfo:
     architecture: amd64
@@ -151,23 +151,23 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: kwok-node-03-it-no-server
+    kubernetes.io/hostname: node-3-IT-NO-Server
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: IT-NO
     hardware.carbon/subcategory: Server
-  name: kwok-node-03-it-no-server
+  name: node-3-IT-NO-Server
 spec: {}
 status:
   allocatable:
-    cpu: '8'
-    memory: 16Gi
+    cpu: '32'
+    memory: 64Gi
     pods: 110
   capacity:
-    cpu: '8'
-    memory: 16Gi
+    cpu: '32'
+    memory: 64Gi
     pods: 110
   nodeInfo:
     architecture: amd64
@@ -197,23 +197,23 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: kwok-node-04-de-iot
+    kubernetes.io/hostname: node-4-DE-IoT
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: DE
     hardware.carbon/subcategory: IoT
-  name: kwok-node-04-de-iot
+  name: node-4-DE-IoT
 spec: {}
 status:
   allocatable:
-    cpu: '1'
-    memory: 1Gi
+    cpu: '2'
+    memory: 2Gi
     pods: 110
   capacity:
-    cpu: '1'
-    memory: 1Gi
+    cpu: '2'
+    memory: 2Gi
     pods: 110
   nodeInfo:
     architecture: amd64
@@ -243,14 +243,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: kwok-node-05-fr-smartphone
+    kubernetes.io/hostname: node-5-FR-Smartphone
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: FR
     hardware.carbon/subcategory: Smartphone
-  name: kwok-node-05-fr-smartphone
+  name: node-5-FR-Smartphone
 spec: {}
 status:
   allocatable:
@@ -289,23 +289,23 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: kwok-node-06-es-laptop
+    kubernetes.io/hostname: node-6-ES-Laptop
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: ES
     hardware.carbon/subcategory: Laptop
-  name: kwok-node-06-es-laptop
+  name: node-6-ES-Laptop
 spec: {}
 status:
   allocatable:
-    cpu: '6'
-    memory: 8Gi
+    cpu: '8'
+    memory: 16Gi
     pods: 110
   capacity:
-    cpu: '6'
-    memory: 8Gi
+    cpu: '8'
+    memory: 16Gi
     pods: 110
   nodeInfo:
     architecture: amd64
@@ -335,23 +335,23 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: kwok-node-07-it-no-server
+    kubernetes.io/hostname: node-7-IT-NO-Server
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: IT-NO
     hardware.carbon/subcategory: Server
-  name: kwok-node-07-it-no-server
+  name: node-7-IT-NO-Server
 spec: {}
 status:
   allocatable:
-    cpu: '8'
-    memory: 16Gi
+    cpu: '32'
+    memory: 64Gi
     pods: 110
   capacity:
-    cpu: '8'
-    memory: 16Gi
+    cpu: '32'
+    memory: 64Gi
     pods: 110
   nodeInfo:
     architecture: amd64
