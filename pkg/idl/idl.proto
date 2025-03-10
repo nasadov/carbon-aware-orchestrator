@@ -78,9 +78,9 @@ message Microservice {
   ResourceQuantity cpu_required = 5;
   ResourceQuantity mem_required = 6;
   
-  // New fields for carbon-aware scheduling
-  double duration_hours = 7;  // How long the workload runs
-  double deadline_hours = 8;  // Hours until deployment deadline
+  // Changed from double to string
+  string duration = 7;  // How long the workload runs (e.g. "1h", "90m")
+  string deadline = 8;  // When it must complete by (e.g. "24h", "1d")
 }
 
 message Placements {

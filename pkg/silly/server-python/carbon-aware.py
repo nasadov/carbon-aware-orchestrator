@@ -37,28 +37,30 @@ class CarbonAwareFlavour:
 
 
 class CarbonAwarePod:
-    """
-    Represents the microservice to schedule, including:
-    - a computed 'deadline' (datetime) from 'deadline_hours'
-    - resource requests (CPU, RAM, storage)
-    - powerConsumption, which can be set or computed during scheduling
-    """
-    def __init__(self, id: str, deadline_hours: float, duration: int,
+    def __init__(self, id: str, deadline_hours: float, duration: float,
                  powerConsumption: float, cpuRequest: float,
-                 ramRequest: float, storageRequest: int) -> None:
+                 ramRequest: float, storageRequest: int,
+                 reference_time: datetime = None) -> None:
         self.id = id
-        self.deadline = self._processDeadline(deadline_hours)
-        self.duration = duration
+        self.deadline = self._processDeadline(deadline_hours, reference_time)
+        self.duration = duration  # Still store internally as float hours
         self.powerConsumption = powerConsumption
         self.cpuRequest = cpuRequest
         self.ramRequest = ramRequest
         self.storageRequest = storageRequest
 
-    def _processDeadline(self, deadline_hours: float) -> datetime:
+    def _processDeadline(self, deadline_hours: float, reference_time: datetime = None) -> datetime:
         """
         Convert a float-based 'deadline_hours' into a datetime.
+        
+        Args:
+            deadline_hours: Hours until deadline
+            reference_time: Optional reference time (uses current time if None)
+            
+        Returns:
+            Absolute deadline as datetime
         """
-        now = datetime.now()
+        now = datetime.now() if reference_time is None else reference_time
         delta = timedelta(hours=deadline_hours)
         return now + delta
 
@@ -495,12 +497,44 @@ def parse_infrastructure(infra: idl_pb2.Infrastructure) -> list[CarbonAwareFlavo
     return flavours
 
 
+def parse_duration_to_hours(duration_str: str) -> float:
+    """Convert duration string like '1h', '90m', '1.5h' to hours as float."""
+    if not duration_str:
+        return 0.0
+    
+    # Handle direct float (backward compatibility)
+    try:
+        return float(duration_str)
+    except ValueError:
+        pass
+        
+    # Handle hours notation
+    if duration_str.endswith('h'):
+        try:
+            return float(duration_str[:-1])
+        except ValueError:
+            pass
+            
+    # Handle minutes notation
+    if duration_str.endswith('m'):
+        try:
+            return float(duration_str[:-1]) / 60.0
+        except ValueError:
+            pass
+            
+    # Handle days notation
+    if duration_str.endswith('d'):
+        try:
+            return float(duration_str[:-1]) * 24.0
+        except ValueError:
+            pass
+    
+    # Default fallback
+    logging.warning(f"Could not parse duration: {duration_str}, using default")
+    return 1.0  # Default to 1 hour
+
+
 def parse_microservice(ms: idl_pb2.Microservice) -> CarbonAwarePod:
-    """
-    Convert gRPC Microservice to a CarbonAwarePod object.
-    Prioritizes getting duration and deadline from direct fields,
-    falling back to name parsing as a last resort.
-    """
     try:
         # Parse CPU and RAM requirements
         cpu_req = k8sutils.parse_quantity(ms.cpu_required.value)
@@ -513,13 +547,14 @@ def parse_microservice(ms: idl_pb2.Microservice) -> CarbonAwarePod:
         duration_hours = None
         deadline_hours = None
         
-        if hasattr(ms, "duration_hours") and ms.duration_hours > 0:
-            duration_hours = ms.duration_hours
-            logging.info(f"Using duration from direct field: {duration_hours}h")
+        # Note field name changes from duration_hours to duration
+        if hasattr(ms, "duration") and ms.duration:
+            duration_hours = parse_duration_to_hours(ms.duration)
+            logging.info(f"Using duration from direct field: {duration_hours}h (from '{ms.duration}')")
             
-        if hasattr(ms, "deadline_hours") and ms.deadline_hours > 0:
-            deadline_hours = ms.deadline_hours
-            logging.info(f"Using deadline from direct field: {deadline_hours}h")
+        if hasattr(ms, "deadline") and ms.deadline:
+            deadline_hours = parse_duration_to_hours(ms.deadline)
+            logging.info(f"Using deadline from direct field: {deadline_hours}h (from '{ms.deadline}')")
         
         # APPROACH 2: Fall back to parsing from name if needed
         if duration_hours is None:

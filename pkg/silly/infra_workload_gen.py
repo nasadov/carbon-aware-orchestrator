@@ -81,8 +81,8 @@ DEPLOYMENT_TEMPLATE = {
         "namespace": "default",
         "labels": {
             "app": "",           # e.g. "m000"
-            "duration": "",      # e.g. "duration1"
-            "deadline": ""       # NEW: e.g. "deadline24"
+            "duration": "",      # e.g. "duration-1h"
+            "deadline": ""       # e.g. "deadline-24h"
         }
     },
     "spec": {
@@ -99,7 +99,7 @@ DEPLOYMENT_TEMPLATE = {
                 }
             },
             "spec": {
-                "schedulerName": "fogatlas",  # does this matter?
+                "schedulerName": "fogatlas",
                 "containers": [
                     {
                         "name": "fake-container",
@@ -193,6 +193,42 @@ DEFAULT_CONFIG = {
         "mem_options": ["500Mi", "200Mi"]
     }
 }
+
+# ---------------------------------------------------------------------
+# Helper Functions
+# ---------------------------------------------------------------------
+
+def format_duration(hours: float) -> str:
+    """
+    Format a duration in hours to a string representation.
+    Handles whole numbers and fractions appropriately.
+    
+    Args:
+        hours: Duration in hours
+        
+    Returns:
+        String representation with appropriate units
+    """
+    # For exact hours, use simple format
+    if hours == int(hours):
+        return f"{int(hours)}h"
+    
+    # For fractions, use decimal format
+    if hours * 60 == int(hours * 60):
+        # If it's a whole number of minutes, use minutes format
+        minutes = int(hours * 60)
+        if minutes < 60:
+            return f"{minutes}m"
+        else:
+            h = minutes // 60
+            m = minutes % 60
+            if m == 0:
+                return f"{h}h"
+            else:
+                return f"{h}h{m}m"
+    
+    # For other fractions, use decimal hours
+    return f"{hours:.1f}h"
 
 # ---------------------------------------------------------------------
 # 1. Generate Nodes File
@@ -416,16 +452,20 @@ def generate_timeslot_files(config: Dict[str, Any]):
                 flexibility = random.choice(deadline_flexibility_hours)
                 deadline_hours = duration_hours + flexibility
             
+            # Format duration and deadline as strings with units
+            duration_str = format_duration(duration_hours)
+            deadline_str = format_duration(deadline_hours)
+            
             # Create the full name with both duration and deadline
-            full_name = f"{ms_name}-duration-{duration_hours}h-deadline-{deadline_hours}h"
+            full_name = f"{ms_name}-duration-{duration_str}-deadline-{deadline_str}"
             
             # Fill in the deployment template
             dep_doc["metadata"]["name"] = full_name
             dep_doc["metadata"]["labels"]["app"] = ms_name  # Keep app label simple
             
             # Add duration and deadline labels
-            dep_doc["metadata"]["labels"]["duration"] = f"duration-{duration_hours}h"
-            dep_doc["metadata"]["labels"]["deadline"] = f"deadline-{deadline_hours}h"
+            dep_doc["metadata"]["labels"]["duration"] = f"duration-{duration_str}" 
+            dep_doc["metadata"]["labels"]["deadline"] = f"deadline-{deadline_str}"
             
             # Update selector and pod labels
             dep_doc["spec"]["selector"]["matchLabels"]["name"] = ms_name
@@ -451,10 +491,11 @@ def generate_timeslot_files(config: Dict[str, Any]):
         duration_counts = {}
         for i, hours in enumerate(durations):
             count = (total_services + i) // len(durations) if i < (total_services % len(durations)) else total_services // len(durations)
-            duration_counts[f"{hours}h"] = count
+            hours_str = format_duration(hours)
+            duration_counts[hours_str] = count
         print(f"Duration distribution (cyclic): {duration_counts}")
     else:
-        print(f"Duration distribution: random selection from {durations}")
+        print(f"Duration distribution: random selection from {[format_duration(d) for d in durations]}")
         
     # Report deadline strategy
     print(f"Deadline strategy: {deadline_strategy}")
@@ -465,7 +506,8 @@ def generate_timeslot_files(config: Dict[str, Any]):
     elif deadline_strategy == "mixed":
         print("30% of services have zero flexibility, 70% have variable flexibility")
     else:
-        print(f"All services have flexible deadlines (duration + {deadline_flexibility_hours} hours)")
+        flex_strings = [format_duration(h) for h in deadline_flexibility_hours]
+        print(f"All services have flexible deadlines (duration + {flex_strings})")
 
 # ---------------------------------------------------------------------
 # Configuration Loading

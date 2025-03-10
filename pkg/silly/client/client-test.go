@@ -29,7 +29,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"strconv"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -221,19 +221,28 @@ func getWorkload() *idl.Workload {
 	var msList []*idl.Microservice
 
 	for _, ms := range MICROSERVICES {
+		// Simply use string values directly with units
+		duration := ms.Duration
+		deadline := ms.Deadline
+
+		// Ensure values have units if not already present
+		if !strings.HasSuffix(duration, "h") && !strings.HasSuffix(duration, "m") {
+			duration = duration + "h" // Assume hours if no unit
+		}
+
+		if !strings.HasSuffix(deadline, "h") && !strings.HasSuffix(deadline, "m") {
+			deadline = deadline + "h" // Assume hours if no unit
+		}
+
+		// Encode both duration and deadline in the name
+		name := fmt.Sprintf("%s-duration-%s-deadline-%s",
+			ms.Name, duration, deadline)
+
+		// Parse resource requests from the microservice spec
 		cpu := resource.MustParse(ms.CpuRequest)
 		mem := resource.MustParse(ms.MemoryRequest)
 
-		// Parse duration and deadline
-		durFloat, _ := strconv.ParseFloat(ms.Duration, 64)
-		deadlineFloat, _ := strconv.ParseFloat(ms.Deadline, 64)
-
-		// Encode both duration and deadline in the name
-		name := fmt.Sprintf("%s-duration-%sh-deadline-%sh",
-			ms.Name, ms.Duration, ms.Deadline)
-
-		// Build the microservice with all scheduling information
-		// using direct fields instead of annotations
+		// Build the microservice with string values
 		microservice := idl.Microservice{
 			Name:       name,
 			Status:     ms.Status,
@@ -247,9 +256,9 @@ func getWorkload() *idl.Workload {
 				Value:  mem.String(),
 				Format: string(mem.Format),
 			},
-			// Direct fields for scheduling parameters
-			DurationHours: durFloat,
-			DeadlineHours: deadlineFloat,
+			// Field names also changed from X_hours to just X
+			Duration: duration,
+			Deadline: deadline,
 		}
 
 		msList = append(msList, &microservice)
