@@ -232,18 +232,8 @@ func getWorkload() *idl.Workload {
 		name := fmt.Sprintf("%s-duration-%sh-deadline-%sh",
 			ms.Name, ms.Duration, ms.Deadline)
 
-		// Create annotations for duration and deadline
-		durAnnotation := &idl.KeyValue{
-			Key:   "scheduling.carbon/duration_hours",
-			Value: ms.Duration,
-		}
-
-		deadlineAnnotation := &idl.KeyValue{
-			Key:   "scheduling.carbon/deadline_hours",
-			Value: ms.Deadline,
-		}
-
 		// Build the microservice with all scheduling information
+		// using direct fields instead of annotations
 		microservice := idl.Microservice{
 			Name:       name,
 			Status:     ms.Status,
@@ -257,12 +247,9 @@ func getWorkload() *idl.Workload {
 				Value:  mem.String(),
 				Format: string(mem.Format),
 			},
-			// Added with new proto version:
+			// Direct fields for scheduling parameters
 			DurationHours: durFloat,
 			DeadlineHours: deadlineFloat,
-
-			// Add annotations
-			Annotations: []*idl.KeyValue{durAnnotation, deadlineAnnotation},
 		}
 
 		msList = append(msList, &microservice)

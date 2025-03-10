@@ -498,7 +498,7 @@ def parse_infrastructure(infra: idl_pb2.Infrastructure) -> list[CarbonAwareFlavo
 def parse_microservice(ms: idl_pb2.Microservice) -> CarbonAwarePod:
     """
     Convert gRPC Microservice to a CarbonAwarePod object.
-    Prioritizes getting duration and deadline from direct fields and annotations,
+    Prioritizes getting duration and deadline from direct fields,
     falling back to name parsing as a last resort.
     """
     try:
@@ -520,25 +520,8 @@ def parse_microservice(ms: idl_pb2.Microservice) -> CarbonAwarePod:
         if hasattr(ms, "deadline_hours") and ms.deadline_hours > 0:
             deadline_hours = ms.deadline_hours
             logging.info(f"Using deadline from direct field: {deadline_hours}h")
-            
-        # APPROACH 2: Check annotations if direct fields aren't set
-        if (duration_hours is None or deadline_hours is None) and hasattr(ms, "annotations"):
-            for annotation in ms.annotations:
-                if annotation.key == "scheduling.carbon/duration_hours" and duration_hours is None:
-                    try:
-                        duration_hours = float(annotation.value)
-                        logging.info(f"Using duration from annotation: {duration_hours}h")
-                    except (ValueError, TypeError):
-                        logging.warning(f"Invalid duration annotation: {annotation.value}")
-                        
-                if annotation.key == "scheduling.carbon/deadline_hours" and deadline_hours is None:
-                    try:
-                        deadline_hours = float(annotation.value)
-                        logging.info(f"Using deadline from annotation: {deadline_hours}h")
-                    except (ValueError, TypeError):
-                        logging.warning(f"Invalid deadline annotation: {annotation.value}")
         
-        # APPROACH 3: Fall back to parsing from name if needed
+        # APPROACH 2: Fall back to parsing from name if needed
         if duration_hours is None:
             duration_hours = 1.0  # default
             if "-duration-" in ms.name:

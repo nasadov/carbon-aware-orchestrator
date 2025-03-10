@@ -73,7 +73,7 @@ class Workload(_message.Message):
     def __init__(self, microservices: _Optional[_Iterable[_Union[Microservice, _Mapping]]] = ...) -> None: ...
 
 class Microservice(_message.Message):
-    __slots__ = ("name", "status", "deployed_on", "replicas", "cpu_required", "mem_required", "duration_hours", "deadline_hours", "annotations")
+    __slots__ = ("name", "status", "deployed_on", "replicas", "cpu_required", "mem_required", "duration_hours", "deadline_hours")
     NAME_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     DEPLOYED_ON_FIELD_NUMBER: _ClassVar[int]
@@ -82,7 +82,6 @@ class Microservice(_message.Message):
     MEM_REQUIRED_FIELD_NUMBER: _ClassVar[int]
     DURATION_HOURS_FIELD_NUMBER: _ClassVar[int]
     DEADLINE_HOURS_FIELD_NUMBER: _ClassVar[int]
-    ANNOTATIONS_FIELD_NUMBER: _ClassVar[int]
     name: str
     status: MicroserviceStatus
     deployed_on: _containers.RepeatedScalarFieldContainer[str]
@@ -91,16 +90,7 @@ class Microservice(_message.Message):
     mem_required: ResourceQuantity
     duration_hours: float
     deadline_hours: float
-    annotations: _containers.RepeatedCompositeFieldContainer[KeyValue]
-    def __init__(self, name: _Optional[str] = ..., status: _Optional[_Union[MicroserviceStatus, str]] = ..., deployed_on: _Optional[_Iterable[str]] = ..., replicas: _Optional[int] = ..., cpu_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., duration_hours: _Optional[float] = ..., deadline_hours: _Optional[float] = ..., annotations: _Optional[_Iterable[_Union[KeyValue, _Mapping]]] = ...) -> None: ...
-
-class KeyValue(_message.Message):
-    __slots__ = ("key", "value")
-    KEY_FIELD_NUMBER: _ClassVar[int]
-    VALUE_FIELD_NUMBER: _ClassVar[int]
-    key: str
-    value: str
-    def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    def __init__(self, name: _Optional[str] = ..., status: _Optional[_Union[MicroserviceStatus, str]] = ..., deployed_on: _Optional[_Iterable[str]] = ..., replicas: _Optional[int] = ..., cpu_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., duration_hours: _Optional[float] = ..., deadline_hours: _Optional[float] = ...) -> None: ...
 
 class Placements(_message.Message):
     __slots__ = ("placements",)

@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tidl.proto\x12\x03idl\x1a\x1bgoogle/protobuf/empty.proto\"\x1d\n\rAlgorithmName\x12\x0c\n\x04name\x18\x01 \x01(\t\"1\n\x10ResourceQuantity\x12\r\n\x05value\x18\x01 \x01(\t\x12\x0e\n\x06\x66ormat\x18\x02 \x01(\t\"T\n\x04\x44\x61ta\x12\x1f\n\x08workload\x18\x01 \x01(\x0b\x32\r.idl.Workload\x12+\n\x0einfrastructure\x18\x02 \x01(\x0b\x32\x13.idl.Infrastructure\"*\n\x0eInfrastructure\x12\x18\n\x05nodes\x18\x01 \x03(\x0b\x32\t.idl.Node\"\xdb\x01\n\x04Node\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\'\n\x08\x63pu_used\x18\x02 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12\'\n\x08mem_used\x18\x03 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12&\n\x07\x63pu_cap\x18\x04 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12&\n\x07mem_cap\x18\x05 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12\x0e\n\x06region\x18\x06 \x01(\t\x12\x13\n\x0bsubcategory\x18\x07 \x01(\t\"4\n\x08Workload\x12(\n\rmicroservices\x18\x01 \x03(\x0b\x32\x11.idl.Microservice\"\x9a\x02\n\x0cMicroservice\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\'\n\x06status\x18\x02 \x01(\x0e\x32\x17.idl.MicroserviceStatus\x12\x13\n\x0b\x64\x65ployed_on\x18\x03 \x03(\t\x12\x10\n\x08replicas\x18\x04 \x01(\x05\x12+\n\x0c\x63pu_required\x18\x05 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12+\n\x0cmem_required\x18\x06 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12\x16\n\x0e\x64uration_hours\x18\x07 \x01(\x01\x12\x16\n\x0e\x64\x65\x61\x64line_hours\x18\x08 \x01(\x01\x12\"\n\x0b\x61nnotations\x18\t \x03(\x0b\x32\r.idl.KeyValue\"&\n\x08KeyValue\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\"0\n\nPlacements\x12\"\n\nplacements\x18\x01 \x03(\x0b\x32\x0e.idl.Placement\"l\n\tPlacement\x12\x19\n\x11microservice_name\x18\x01 \x01(\t\x12*\n\x0ereplica_scores\x18\x02 \x03(\x0b\x32\x12.idl.ReplicaScores\x12\x18\n\x10time_to_schedule\x18\x03 \x01(\x03\"+\n\rReplicaScores\x12\x1a\n\x06scores\x18\x01 \x03(\x0b\x32\n.idl.Score\"$\n\x05Score\x12\x0c\n\x04node\x18\x01 \x01(\t\x12\r\n\x05score\x18\x02 \x01(\x05*r\n\x12MicroserviceStatus\x12\"\n\x1eMICROSERVICESTATUS_UNSPECIFIED\x10\x00\x12\x0b\n\x07RUNNING\x10\x01\x12\x0b\n\x07PENDING\x10\x02\x12\x0f\n\x0bTO_SCHEDULE\x10\x03\x12\r\n\tTO_DEPLOY\x10\x04\x32~\n\x12PlacementAlgorithm\x12\x34\n\x04Init\x12\x12.idl.AlgorithmName\x1a\x16.google.protobuf.Empty\"\x00\x12\x32\n\x12\x43\x61lculatePlacement\x12\t.idl.Data\x1a\x0f.idl.Placements\"\x00\x42\x07Z\x05./idlb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tidl.proto\x12\x03idl\x1a\x1bgoogle/protobuf/empty.proto\"\x1d\n\rAlgorithmName\x12\x0c\n\x04name\x18\x01 \x01(\t\"1\n\x10ResourceQuantity\x12\r\n\x05value\x18\x01 \x01(\t\x12\x0e\n\x06\x66ormat\x18\x02 \x01(\t\"T\n\x04\x44\x61ta\x12\x1f\n\x08workload\x18\x01 \x01(\x0b\x32\r.idl.Workload\x12+\n\x0einfrastructure\x18\x02 \x01(\x0b\x32\x13.idl.Infrastructure\"*\n\x0eInfrastructure\x12\x18\n\x05nodes\x18\x01 \x03(\x0b\x32\t.idl.Node\"\xdb\x01\n\x04Node\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\'\n\x08\x63pu_used\x18\x02 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12\'\n\x08mem_used\x18\x03 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12&\n\x07\x63pu_cap\x18\x04 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12&\n\x07mem_cap\x18\x05 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12\x0e\n\x06region\x18\x06 \x01(\t\x12\x13\n\x0bsubcategory\x18\x07 \x01(\t\"4\n\x08Workload\x12(\n\rmicroservices\x18\x01 \x03(\x0b\x32\x11.idl.Microservice\"\xf6\x01\n\x0cMicroservice\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\'\n\x06status\x18\x02 \x01(\x0e\x32\x17.idl.MicroserviceStatus\x12\x13\n\x0b\x64\x65ployed_on\x18\x03 \x03(\t\x12\x10\n\x08replicas\x18\x04 \x01(\x05\x12+\n\x0c\x63pu_required\x18\x05 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12+\n\x0cmem_required\x18\x06 \x01(\x0b\x32\x15.idl.ResourceQuantity\x12\x16\n\x0e\x64uration_hours\x18\x07 \x01(\x01\x12\x16\n\x0e\x64\x65\x61\x64line_hours\x18\x08 \x01(\x01\"0\n\nPlacements\x12\"\n\nplacements\x18\x01 \x03(\x0b\x32\x0e.idl.Placement\"l\n\tPlacement\x12\x19\n\x11microservice_name\x18\x01 \x01(\t\x12*\n\x0ereplica_scores\x18\x02 \x03(\x0b\x32\x12.idl.ReplicaScores\x12\x18\n\x10time_to_schedule\x18\x03 \x01(\x03\"+\n\rReplicaScores\x12\x1a\n\x06scores\x18\x01 \x03(\x0b\x32\n.idl.Score\"$\n\x05Score\x12\x0c\n\x04node\x18\x01 \x01(\t\x12\r\n\x05score\x18\x02 \x01(\x05*r\n\x12MicroserviceStatus\x12\"\n\x1eMICROSERVICESTATUS_UNSPECIFIED\x10\x00\x12\x0b\n\x07RUNNING\x10\x01\x12\x0b\n\x07PENDING\x10\x02\x12\x0f\n\x0bTO_SCHEDULE\x10\x03\x12\r\n\tTO_DEPLOY\x10\x04\x32~\n\x12PlacementAlgorithm\x12\x34\n\x04Init\x12\x12.idl.AlgorithmName\x1a\x16.google.protobuf.Empty\"\x00\x12\x32\n\x12\x43\x61lculatePlacement\x12\t.idl.Data\x1a\x0f.idl.Placements\"\x00\x42\x07Z\x05./idlb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,8 +33,8 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'idl_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z\005./idl'
-  _globals['_MICROSERVICESTATUS']._serialized_start=1103
-  _globals['_MICROSERVICESTATUS']._serialized_end=1217
+  _globals['_MICROSERVICESTATUS']._serialized_start=1027
+  _globals['_MICROSERVICESTATUS']._serialized_end=1141
   _globals['_ALGORITHMNAME']._serialized_start=47
   _globals['_ALGORITHMNAME']._serialized_end=76
   _globals['_RESOURCEQUANTITY']._serialized_start=78
@@ -48,17 +48,15 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_WORKLOAD']._serialized_start=481
   _globals['_WORKLOAD']._serialized_end=533
   _globals['_MICROSERVICE']._serialized_start=536
-  _globals['_MICROSERVICE']._serialized_end=818
-  _globals['_KEYVALUE']._serialized_start=820
-  _globals['_KEYVALUE']._serialized_end=858
-  _globals['_PLACEMENTS']._serialized_start=860
-  _globals['_PLACEMENTS']._serialized_end=908
-  _globals['_PLACEMENT']._serialized_start=910
-  _globals['_PLACEMENT']._serialized_end=1018
-  _globals['_REPLICASCORES']._serialized_start=1020
-  _globals['_REPLICASCORES']._serialized_end=1063
-  _globals['_SCORE']._serialized_start=1065
-  _globals['_SCORE']._serialized_end=1101
-  _globals['_PLACEMENTALGORITHM']._serialized_start=1219
-  _globals['_PLACEMENTALGORITHM']._serialized_end=1345
+  _globals['_MICROSERVICE']._serialized_end=782
+  _globals['_PLACEMENTS']._serialized_start=784
+  _globals['_PLACEMENTS']._serialized_end=832
+  _globals['_PLACEMENT']._serialized_start=834
+  _globals['_PLACEMENT']._serialized_end=942
+  _globals['_REPLICASCORES']._serialized_start=944
+  _globals['_REPLICASCORES']._serialized_end=987
+  _globals['_SCORE']._serialized_start=989
+  _globals['_SCORE']._serialized_end=1025
+  _globals['_PLACEMENTALGORITHM']._serialized_start=1143
+  _globals['_PLACEMENTALGORITHM']._serialized_end=1269
 # @@protoc_insertion_point(module_scope)

@@ -81,15 +81,6 @@ message Microservice {
   // New fields for carbon-aware scheduling
   double duration_hours = 7;  // How long the workload runs
   double deadline_hours = 8;  // Hours until deployment deadline
-  
-  // Add annotations field for metadata
-  repeated KeyValue annotations = 9;
-}
-
-// Define the KeyValue message if it doesn't exist
-message KeyValue {
-  string key = 1;
-  string value = 2;
 }
 
 message Placements {

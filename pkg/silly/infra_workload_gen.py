@@ -427,21 +427,6 @@ def generate_timeslot_files(config: Dict[str, Any]):
             dep_doc["metadata"]["labels"]["duration"] = f"duration-{duration_hours}h"
             dep_doc["metadata"]["labels"]["deadline"] = f"deadline-{deadline_hours}h"
             
-            # Add annotations for carbon-aware scheduling
-            if "annotations" not in dep_doc["metadata"]:
-                dep_doc["metadata"]["annotations"] = {}
-                
-            # Use the correct annotation keys that the server expects
-            dep_doc["metadata"]["annotations"]["scheduling.carbon/duration_hours"] = str(duration_hours)
-            dep_doc["metadata"]["annotations"]["scheduling.carbon/deadline_hours"] = str(deadline_hours)
-            
-            # Add to pod template metadata
-            if "annotations" not in dep_doc["spec"]["template"]["metadata"]:
-                dep_doc["spec"]["template"]["metadata"]["annotations"] = {}
-                
-            dep_doc["spec"]["template"]["metadata"]["annotations"]["scheduling.carbon/duration_hours"] = str(duration_hours)
-            dep_doc["spec"]["template"]["metadata"]["annotations"]["scheduling.carbon/deadline_hours"] = str(deadline_hours)
-            
             # Update selector and pod labels
             dep_doc["spec"]["selector"]["matchLabels"]["name"] = ms_name
             dep_doc["spec"]["template"]["metadata"]["labels"]["name"] = ms_name

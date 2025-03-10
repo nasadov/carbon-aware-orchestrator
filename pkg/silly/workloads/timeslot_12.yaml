@@ -7,9 +7,6 @@ metadata:
     app: m181
     duration: duration-3h
     deadline: deadline-27h
-  annotations:
-    scheduling.carbon/duration_hours: '3'
-    scheduling.carbon/deadline_hours: '27'
 spec:
   replicas: 1
   selector:
@@ -19,9 +16,6 @@ spec:
     metadata:
       labels:
         name: m181
-      annotations:
-        scheduling.carbon/duration_hours: '3'
-        scheduling.carbon/deadline_hours: '27'
     spec:
       schedulerName: fogatlas
       containers:
@@ -41,9 +35,6 @@ metadata:
     app: m182
     duration: duration-6h
     deadline: deadline-8h
-  annotations:
-    scheduling.carbon/duration_hours: '6'
-    scheduling.carbon/deadline_hours: '8'
 spec:
   replicas: 1
   selector:
@@ -53,9 +44,6 @@ spec:
     metadata:
       labels:
         name: m182
-      annotations:
-        scheduling.carbon/duration_hours: '6'
-        scheduling.carbon/deadline_hours: '8'
     spec:
       schedulerName: fogatlas
       containers:
@@ -75,9 +63,6 @@ metadata:
     app: m183
     duration: duration-1h
     deadline: deadline-7h
-  annotations:
-    scheduling.carbon/duration_hours: '1'
-    scheduling.carbon/deadline_hours: '7'
 spec:
   replicas: 1
   selector:
@@ -87,9 +72,6 @@ spec:
     metadata:
       labels:
         name: m183
-      annotations:
-        scheduling.carbon/duration_hours: '1'
-        scheduling.carbon/deadline_hours: '7'
     spec:
       schedulerName: fogatlas
       containers:
@@ -109,9 +91,6 @@ metadata:
     app: m184
     duration: duration-3h
     deadline: deadline-9h
-  annotations:
-    scheduling.carbon/duration_hours: '3'
-    scheduling.carbon/deadline_hours: '9'
 spec:
   replicas: 1
   selector:
@@ -121,9 +100,6 @@ spec:
     metadata:
       labels:
         name: m184
-      annotations:
-        scheduling.carbon/duration_hours: '3'
-        scheduling.carbon/deadline_hours: '9'
     spec:
       schedulerName: fogatlas
       containers:
@@ -143,9 +119,6 @@ metadata:
     app: m185
     duration: duration-6h
     deadline: deadline-12h
-  annotations:
-    scheduling.carbon/duration_hours: '6'
-    scheduling.carbon/deadline_hours: '12'
 spec:
   replicas: 1
   selector:
@@ -155,9 +128,6 @@ spec:
     metadata:
       labels:
         name: m185
-      annotations:
-        scheduling.carbon/duration_hours: '6'
-        scheduling.carbon/deadline_hours: '12'
     spec:
       schedulerName: fogatlas
       containers:
@@ -177,9 +147,6 @@ metadata:
     app: m186
     duration: duration-1h
     deadline: deadline-7h
-  annotations:
-    scheduling.carbon/duration_hours: '1'
-    scheduling.carbon/deadline_hours: '7'
 spec:
   replicas: 1
   selector:
@@ -189,9 +156,6 @@ spec:
     metadata:
       labels:
         name: m186
-      annotations:
-        scheduling.carbon/duration_hours: '1'
-        scheduling.carbon/deadline_hours: '7'
     spec:
       schedulerName: fogatlas
       containers:
@@ -211,9 +175,6 @@ metadata:
     app: m187
     duration: duration-3h
     deadline: deadline-27h
-  annotations:
-    scheduling.carbon/duration_hours: '3'
-    scheduling.carbon/deadline_hours: '27'
 spec:
   replicas: 1
   selector:
@@ -223,9 +184,6 @@ spec:
     metadata:
       labels:
         name: m187
-      annotations:
-        scheduling.carbon/duration_hours: '3'
-        scheduling.carbon/deadline_hours: '27'
     spec:
       schedulerName: fogatlas
       containers:
@@ -245,9 +203,6 @@ metadata:
     app: m188
     duration: duration-6h
     deadline: deadline-12h
-  annotations:
-    scheduling.carbon/duration_hours: '6'
-    scheduling.carbon/deadline_hours: '12'
 spec:
   replicas: 1
   selector:
@@ -257,9 +212,6 @@ spec:
     metadata:
       labels:
         name: m188
-      annotations:
-        scheduling.carbon/duration_hours: '6'
-        scheduling.carbon/deadline_hours: '12'
     spec:
       schedulerName: fogatlas
       containers:
@@ -279,9 +231,6 @@ metadata:
     app: m189
     duration: duration-1h
     deadline: deadline-7h
-  annotations:
-    scheduling.carbon/duration_hours: '1'
-    scheduling.carbon/deadline_hours: '7'
 spec:
   replicas: 1
   selector:
@@ -291,9 +240,6 @@ spec:
     metadata:
       labels:
         name: m189
-      annotations:
-        scheduling.carbon/duration_hours: '1'
-        scheduling.carbon/deadline_hours: '7'
     spec:
       schedulerName: fogatlas
       containers:
@@ -313,9 +259,6 @@ metadata:
     app: m190
     duration: duration-3h
     deadline: deadline-5h
-  annotations:
-    scheduling.carbon/duration_hours: '3'
-    scheduling.carbon/deadline_hours: '5'
 spec:
   replicas: 1
   selector:
@@ -325,9 +268,6 @@ spec:
     metadata:
       labels:
         name: m190
-      annotations:
-        scheduling.carbon/duration_hours: '3'
-        scheduling.carbon/deadline_hours: '5'
     spec:
       schedulerName: fogatlas
       containers:
@@ -347,9 +287,6 @@ metadata:
     app: m191
     duration: duration-6h
     deadline: deadline-12h
-  annotations:
-    scheduling.carbon/duration_hours: '6'
-    scheduling.carbon/deadline_hours: '12'
 spec:
   replicas: 1
   selector:
@@ -359,9 +296,6 @@ spec:
     metadata:
       labels:
         name: m191
-      annotations:
-        scheduling.carbon/duration_hours: '6'
-        scheduling.carbon/deadline_hours: '12'
     spec:
       schedulerName: fogatlas
       containers:
@@ -381,9 +315,6 @@ metadata:
     app: m192
     duration: duration-1h
     deadline: deadline-7h
-  annotations:
-    scheduling.carbon/duration_hours: '1'
-    scheduling.carbon/deadline_hours: '7'
 spec:
   replicas: 1
   selector:
@@ -393,9 +324,6 @@ spec:
     metadata:
       labels:
         name: m192
-      annotations:
-        scheduling.carbon/duration_hours: '1'
-        scheduling.carbon/deadline_hours: '7'
     spec:
       schedulerName: fogatlas
       containers:
@@ -415,9 +343,6 @@ metadata:
     app: m193
     duration: duration-3h
     deadline: deadline-9h
-  annotations:
-    scheduling.carbon/duration_hours: '3'
-    scheduling.carbon/deadline_hours: '9'
 spec:
   replicas: 1
   selector:
@@ -427,9 +352,6 @@ spec:
     metadata:
       labels:
         name: m193
-      annotations:
-        scheduling.carbon/duration_hours: '3'
-        scheduling.carbon/deadline_hours: '9'
     spec:
       schedulerName: fogatlas
       containers:
@@ -449,9 +371,6 @@ metadata:
     app: m194
     duration: duration-6h
     deadline: deadline-12h
-  annotations:
-    scheduling.carbon/duration_hours: '6'
-    scheduling.carbon/deadline_hours: '12'
 spec:
   replicas: 1
   selector:
@@ -461,9 +380,6 @@ spec:
     metadata:
       labels:
         name: m194
-      annotations:
-        scheduling.carbon/duration_hours: '6'
-        scheduling.carbon/deadline_hours: '12'
     spec:
       schedulerName: fogatlas
       containers:
@@ -483,9 +399,6 @@ metadata:
     app: m195
     duration: duration-1h
     deadline: deadline-25h
-  annotations:
-    scheduling.carbon/duration_hours: '1'
-    scheduling.carbon/deadline_hours: '25'
 spec:
   replicas: 1
   selector:
@@ -495,9 +408,6 @@ spec:
     metadata:
       labels:
         name: m195
-      annotations:
-        scheduling.carbon/duration_hours: '1'
-        scheduling.carbon/deadline_hours: '25'
     spec:
       schedulerName: fogatlas
       containers:
@@ -517,9 +427,6 @@ metadata:
     app: m196
     duration: duration-3h
     deadline: deadline-5h
-  annotations:
-    scheduling.carbon/duration_hours: '3'
-    scheduling.carbon/deadline_hours: '5'
 spec:
   replicas: 1
   selector:
@@ -529,9 +436,6 @@ spec:
     metadata:
       labels:
         name: m196
-      annotations:
-        scheduling.carbon/duration_hours: '3'
-        scheduling.carbon/deadline_hours: '5'
     spec:
       schedulerName: fogatlas
       containers:
@@ -551,9 +455,6 @@ metadata:
     app: m197
     duration: duration-6h
     deadline: deadline-30h
-  annotations:
-    scheduling.carbon/duration_hours: '6'
-    scheduling.carbon/deadline_hours: '30'
 spec:
   replicas: 1
   selector:
@@ -563,9 +464,6 @@ spec:
     metadata:
       labels:
         name: m197
-      annotations:
-        scheduling.carbon/duration_hours: '6'
-        scheduling.carbon/deadline_hours: '30'
     spec:
       schedulerName: fogatlas
       containers:
