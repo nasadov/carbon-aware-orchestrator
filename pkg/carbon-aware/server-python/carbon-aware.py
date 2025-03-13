@@ -2,6 +2,8 @@ from concurrent import futures
 import json
 import logging
 import signal
+import threading
+import sys
 import random
 import time
 from datetime import datetime, timedelta
@@ -686,7 +688,7 @@ class Algorithm:
         self.name = name
         self.initialized = initialized
 
-algo = Algorithm("unknown", False)
+algo = Algorithm("Carbon-Aware", False)
 
 
 class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
@@ -805,7 +807,7 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     workload_start_time = best_slot.getStart()
                     end_time = workload_start_time + timedelta(hours=pod.duration)
                     
-                    placement = self._build_success_placement(ms.name, best_node, best_slot, minimal_emissions)
+                    placement = self._build_success_placement(ms.name, best_node, best_slot, minimal_emissions, flavours)
                     total_emissions += minimal_emissions
                     placements_success += 1
                     
@@ -848,20 +850,32 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         self, microservice_name: str,
         best_node: CarbonAwareFlavour,
         best_slot: CarbonAwareTimeslot,
-        emissions: float
+        emissions: float,
+        all_flavours: list[CarbonAwareFlavour]  # Add all flavours parameter
     ) -> idl_pb2.Placement:
         """
         Build a placement proto for a successful scheduling decision.
+        Include all nodes with scores (best node gets meaningful score, others get 0).
         """
         placement = idl_pb2.Placement()
         placement.microservice_name = microservice_name
         replica_score = idl_pb2.ReplicaScores()
 
-        # Example: store an integer "score" as (100000 - emissions) for demonstration
-        score_msg = idl_pb2.Score()
-        score_msg.node = best_node.id
-        score_msg.score = int(100000 - emissions)
-        replica_score.scores.append(score_msg)
+        # Scale down from 100000 to 100 for the best node's score
+        best_score = int(100 - min(emissions, 100))  # Cap at 100 to ensure non-negative score
+
+        # Add a score entry for every node
+        for flavour in all_flavours:
+            score_msg = idl_pb2.Score()
+            score_msg.node = flavour.id
+            
+            # Only the best node gets a non-zero score
+            if flavour.id == best_node.id:
+                score_msg.score = best_score
+            else:
+                score_msg.score = 0  # All other nodes get zero score
+                
+            replica_score.scores.append(score_msg)
 
         # Convert best_slot's start to epoch time
         epoch_time = int(best_slot.getStart().timestamp())
@@ -870,10 +884,11 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         placement.replica_scores.append(replica_score)
 
         logging.info(
-            f"[_build_success_placement] microservice={microservice_name}, node={best_node.id}, "
-            f"timeslot={best_slot.id}, epoch_time={epoch_time}, totalEmissions={emissions:.2f}"
+            f"[_build_success_placement] microservice={microservice_name}, best_node={best_node.id}, "
+            f"timeslot={best_slot.id}, best_score={best_score}, nodes_scored={len(all_flavours)}"
         )
         return placement
+    
 
     def _build_fallback_placement(self, microservice_name: str, reason: str) -> idl_pb2.Placement:
         """
@@ -905,23 +920,46 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 def serve() -> None:
     """
     Creates and runs the gRPC server on port 50051, registering the PlacementAlgorithm servicer.
+    Implements graceful shutdown handling.
     """
     port = '50051'
+    shutdown_in_progress = False  # Add this flag
+    
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(PlacementAlgorithm(), server)
     server.add_insecure_port('[::]:' + port)
 
+    # Define graceful shutdown handler
+    def graceful_shutdown(sig, frame):
+        nonlocal shutdown_in_progress
+        if shutdown_in_progress:
+            return  # Skip if shutdown already in progress
+        
+        shutdown_in_progress = True
+        logging.info("⏳ Received shutdown signal, stopping server gracefully...")
+        
+        # Give ongoing requests time to complete
+        threading.Thread(target=server.stop, args=(5,)).start()  # 5 second timeout
+        
+        logging.info("👋 Server shutdown initiated")
+
+    # Register signal handlers
+    signal.signal(signal.SIGINT, graceful_shutdown)
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    
     server.start()
-    logging.info(f"[serve] Server started, listening on {port}.")
-    server.wait_for_termination()
-
-
-def handler(signum, frame) -> None:
-    """
-    Signal handler to gracefully shut down on CTRL+C.
-    """
-    logging.info("[handler] Caught CTRL+C, shutting down.")
-    exit(0)
+    logging.info(f"🚀 Server started, listening on port {port}")
+    
+    try:
+        # This is a blocking call until server is terminated
+        server.wait_for_termination()
+    except KeyboardInterrupt:
+        # Only log if not already shutting down
+        if not shutdown_in_progress:
+            logging.info("Keyboard interrupt received")
+            graceful_shutdown(signal.SIGINT, None)
+    finally:
+        logging.info("Server shutdown complete")
 
 
 def main() -> None:
@@ -948,7 +986,6 @@ def main() -> None:
     )
     
     logging.info(f"Starting carbon-aware server with log level: {args.loglevel}")
-    signal.signal(signal.SIGINT, handler)
     serve()
 
 

@@ -4,7 +4,7 @@ metadata:
   name: m282-duration-1h-deadline-7h
   namespace: default
   labels:
-    app: m282
+    app: m282-duration-1h-deadline-7h
     duration: duration-1h
     deadline: deadline-7h
 spec:
@@ -32,7 +32,7 @@ metadata:
   name: m283-duration-3h-deadline-9h
   namespace: default
   labels:
-    app: m283
+    app: m283-duration-3h-deadline-9h
     duration: duration-3h
     deadline: deadline-9h
 spec:
@@ -60,7 +60,7 @@ metadata:
   name: m284-duration-6h-deadline-12h
   namespace: default
   labels:
-    app: m284
+    app: m284-duration-6h-deadline-12h
     duration: duration-6h
     deadline: deadline-12h
 spec:
@@ -88,7 +88,7 @@ metadata:
   name: m285-duration-1h-deadline-7h
   namespace: default
   labels:
-    app: m285
+    app: m285-duration-1h-deadline-7h
     duration: duration-1h
     deadline: deadline-7h
 spec:
@@ -116,7 +116,7 @@ metadata:
   name: m286-duration-3h-deadline-27h
   namespace: default
   labels:
-    app: m286
+    app: m286-duration-3h-deadline-27h
     duration: duration-3h
     deadline: deadline-27h
 spec:
@@ -144,7 +144,7 @@ metadata:
   name: m287-duration-6h-deadline-30h
   namespace: default
   labels:
-    app: m287
+    app: m287-duration-6h-deadline-30h
     duration: duration-6h
     deadline: deadline-30h
 spec:
@@ -172,7 +172,7 @@ metadata:
   name: m288-duration-1h-deadline-3h
   namespace: default
   labels:
-    app: m288
+    app: m288-duration-1h-deadline-3h
     duration: duration-1h
     deadline: deadline-3h
 spec:
@@ -200,7 +200,7 @@ metadata:
   name: m289-duration-3h-deadline-9h
   namespace: default
   labels:
-    app: m289
+    app: m289-duration-3h-deadline-9h
     duration: duration-3h
     deadline: deadline-9h
 spec:
@@ -228,7 +228,7 @@ metadata:
   name: m290-duration-6h-deadline-8h
   namespace: default
   labels:
-    app: m290
+    app: m290-duration-6h-deadline-8h
     duration: duration-6h
     deadline: deadline-8h
 spec:

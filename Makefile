@@ -39,4 +39,21 @@ generate-go:
 
 generate-py:
 	@echo "Recall to activate the conda grpc environment otherwise the following commands will fail"
-	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/silly/server-python --pyi_out=./pkg/silly/server-python --grpc_python_out=./pkg/silly/server-python ./pkg/idl/idl.proto		
+	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/carbon-aware/server-python --pyi_out=./pkg/carbon-aware/server-python --grpc_python_out=./pkg/carbon-aware/server-python ./pkg/idl/idl.proto
+
+build-carbon-aware:
+	@echo "⚠️ Make sure your conda environment is activated"
+	@echo "Installing PyInstaller if needed..."
+	@pip install pyinstaller > /dev/null || (echo "Failed to install PyInstaller"; exit 1)
+	@echo "Building carbon-aware executable..."
+	@cd ./pkg/carbon-aware/server-python && pyinstaller --onefile --name carbon-aware \
+		--distpath $(CURDIR)/bin \
+		--hidden-import grpc \
+		--hidden-import google.protobuf \
+		--hidden-import google.protobuf.internal \
+		--hidden-import grpcio \
+		--add-data "$(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json:." \
+		carbon-aware.py
+	@echo "✅ Executable created at $(CURDIR)/bin/carbon-aware"
+	@echo "📄 Copying carbon intensity data file to bin directory for convenience..."
+	@cp $(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json $(CURDIR)/bin/

@@ -307,7 +307,7 @@ def generate_nodes_file(config: Dict[str, Any]):
             node_doc["metadata"]["annotations"]["hardware.power/max_watts"] = str(power_data["max"])
         
         # Include region and hardware type in node name for easier identification
-        node_name_with_metadata = f"node-{i}-{region}-{subcategory}"
+        node_name_with_metadata = f"node-{i}-{region}-{subcategory}".lower()
         node_doc["metadata"]["name"] = node_name_with_metadata
         node_doc["metadata"]["labels"]["kubernetes.io/hostname"] = node_name_with_metadata
 
@@ -458,15 +458,15 @@ def generate_timeslot_files(config: Dict[str, Any]):
             
             # Create the full name with both duration and deadline
             full_name = f"{ms_name}-duration-{duration_str}-deadline-{deadline_str}"
-            
+
             # Fill in the deployment template
             dep_doc["metadata"]["name"] = full_name
-            dep_doc["metadata"]["labels"]["app"] = ms_name  # Keep app label simple
-            
-            # Add duration and deadline labels
-            dep_doc["metadata"]["labels"]["duration"] = f"duration-{duration_str}" 
+            dep_doc["metadata"]["labels"]["app"] = full_name  # CHANGED: Now matches the name
+
+            # Add duration and deadline labels 
+            dep_doc["metadata"]["labels"]["duration"] = f"duration-{duration_str}"
             dep_doc["metadata"]["labels"]["deadline"] = f"deadline-{deadline_str}"
-            
+
             # Update selector and pod labels
             dep_doc["spec"]["selector"]["matchLabels"]["name"] = ms_name
             dep_doc["spec"]["template"]["metadata"]["labels"]["name"] = ms_name

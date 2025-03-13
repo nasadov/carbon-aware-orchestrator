@@ -4,7 +4,7 @@ metadata:
   name: m107-duration-6h-deadline-12h
   namespace: default
   labels:
-    app: m107
+    app: m107-duration-6h-deadline-12h
     duration: duration-6h
     deadline: deadline-12h
 spec:
@@ -32,7 +32,7 @@ metadata:
   name: m108-duration-1h-deadline-25h
   namespace: default
   labels:
-    app: m108
+    app: m108-duration-1h-deadline-25h
     duration: duration-1h
     deadline: deadline-25h
 spec:
@@ -60,7 +60,7 @@ metadata:
   name: m109-duration-3h-deadline-5h
   namespace: default
   labels:
-    app: m109
+    app: m109-duration-3h-deadline-5h
     duration: duration-3h
     deadline: deadline-5h
 spec:
@@ -88,7 +88,7 @@ metadata:
   name: m110-duration-6h-deadline-8h
   namespace: default
   labels:
-    app: m110
+    app: m110-duration-6h-deadline-8h
     duration: duration-6h
     deadline: deadline-8h
 spec:
@@ -116,7 +116,7 @@ metadata:
   name: m111-duration-1h-deadline-25h
   namespace: default
   labels:
-    app: m111
+    app: m111-duration-1h-deadline-25h
     duration: duration-1h
     deadline: deadline-25h
 spec:
@@ -144,7 +144,7 @@ metadata:
   name: m112-duration-3h-deadline-27h
   namespace: default
   labels:
-    app: m112
+    app: m112-duration-3h-deadline-27h
     duration: duration-3h
     deadline: deadline-27h
 spec:
@@ -172,7 +172,7 @@ metadata:
   name: m113-duration-6h-deadline-8h
   namespace: default
   labels:
-    app: m113
+    app: m113-duration-6h-deadline-8h
     duration: duration-6h
     deadline: deadline-8h
 spec:
@@ -200,7 +200,7 @@ metadata:
   name: m114-duration-1h-deadline-7h
   namespace: default
   labels:
-    app: m114
+    app: m114-duration-1h-deadline-7h
     duration: duration-1h
     deadline: deadline-7h
 spec:
@@ -228,7 +228,7 @@ metadata:
   name: m115-duration-3h-deadline-5h
   namespace: default
   labels:
-    app: m115
+    app: m115-duration-3h-deadline-5h
     duration: duration-3h
     deadline: deadline-5h
 spec:
@@ -256,7 +256,7 @@ metadata:
   name: m116-duration-6h-deadline-12h
   namespace: default
   labels:
-    app: m116
+    app: m116-duration-6h-deadline-12h
     duration: duration-6h
     deadline: deadline-12h
 spec:
@@ -284,7 +284,7 @@ metadata:
   name: m117-duration-1h-deadline-3h
   namespace: default
   labels:
-    app: m117
+    app: m117-duration-1h-deadline-3h
     duration: duration-1h
     deadline: deadline-3h
 spec:
@@ -312,7 +312,7 @@ metadata:
   name: m118-duration-3h-deadline-9h
   namespace: default
   labels:
-    app: m118
+    app: m118-duration-3h-deadline-9h
     duration: duration-3h
     deadline: deadline-9h
 spec:
@@ -340,7 +340,7 @@ metadata:
   name: m119-duration-6h-deadline-8h
   namespace: default
   labels:
-    app: m119
+    app: m119-duration-6h-deadline-8h
     duration: duration-6h
     deadline: deadline-8h
 spec:
@@ -368,7 +368,7 @@ metadata:
   name: m120-duration-1h-deadline-7h
   namespace: default
   labels:
-    app: m120
+    app: m120-duration-1h-deadline-7h
     duration: duration-1h
     deadline: deadline-7h
 spec:
@@ -396,7 +396,7 @@ metadata:
   name: m121-duration-3h-deadline-27h
   namespace: default
   labels:
-    app: m121
+    app: m121-duration-3h-deadline-27h
     duration: duration-3h
     deadline: deadline-27h
 spec:
@@ -424,7 +424,7 @@ metadata:
   name: m122-duration-6h-deadline-30h
   namespace: default
   labels:
-    app: m122
+    app: m122-duration-6h-deadline-30h
     duration: duration-6h
     deadline: deadline-30h
 spec:
@@ -452,7 +452,7 @@ metadata:
   name: m123-duration-1h-deadline-3h
   namespace: default
   labels:
-    app: m123
+    app: m123-duration-1h-deadline-3h
     duration: duration-1h
     deadline: deadline-3h
 spec:

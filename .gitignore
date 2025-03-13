@@ -1,7 +1,46 @@
+# OS generated files
 .DS_Store
-*.pyc
+
+# Editor directories
 .idea/
 .vscode/
+
+# Legacy directories
 costminimization/
 costminimization_noqos/
 costminimization_heu/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyc
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.env/
+.venv/
+.pytest_cache/
+
+# PyInstaller build files
+build/
+dist/
+bin/
+*.spec
+
+# Generated binaries
+silly
+carbon-aware
+
+# Coverage and testing
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.coverage.*
+
+# Logs
+*.log

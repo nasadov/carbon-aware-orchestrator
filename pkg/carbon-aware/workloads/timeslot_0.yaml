@@ -4,7 +4,7 @@ metadata:
   name: m000-duration-1h-deadline-25h
   namespace: default
   labels:
-    app: m000
+    app: m000-duration-1h-deadline-25h
     duration: duration-1h
     deadline: deadline-25h
 spec:
@@ -32,7 +32,7 @@ metadata:
   name: m001-duration-3h-deadline-5h
   namespace: default
   labels:
-    app: m001
+    app: m001-duration-3h-deadline-5h
     duration: duration-3h
     deadline: deadline-5h
 spec:
@@ -60,7 +60,7 @@ metadata:
   name: m002-duration-6h-deadline-30h
   namespace: default
   labels:
-    app: m002
+    app: m002-duration-6h-deadline-30h
     duration: duration-6h
     deadline: deadline-30h
 spec:
@@ -88,7 +88,7 @@ metadata:
   name: m003-duration-1h-deadline-3h
   namespace: default
   labels:
-    app: m003
+    app: m003-duration-1h-deadline-3h
     duration: duration-1h
     deadline: deadline-3h
 spec:
@@ -116,7 +116,7 @@ metadata:
   name: m004-duration-3h-deadline-5h
   namespace: default
   labels:
-    app: m004
+    app: m004-duration-3h-deadline-5h
     duration: duration-3h
     deadline: deadline-5h
 spec:
@@ -144,7 +144,7 @@ metadata:
   name: m005-duration-6h-deadline-30h
   namespace: default
   labels:
-    app: m005
+    app: m005-duration-6h-deadline-30h
     duration: duration-6h
     deadline: deadline-30h
 spec:
@@ -172,7 +172,7 @@ metadata:
   name: m006-duration-1h-deadline-3h
   namespace: default
   labels:
-    app: m006
+    app: m006-duration-1h-deadline-3h
     duration: duration-1h
     deadline: deadline-3h
 spec:
@@ -200,7 +200,7 @@ metadata:
   name: m007-duration-3h-deadline-5h
   namespace: default
   labels:
-    app: m007
+    app: m007-duration-3h-deadline-5h
     duration: duration-3h
     deadline: deadline-5h
 spec:
@@ -228,7 +228,7 @@ metadata:
   name: m008-duration-6h-deadline-12h
   namespace: default
   labels:
-    app: m008
+    app: m008-duration-6h-deadline-12h
     duration: duration-6h
     deadline: deadline-12h
 spec:
@@ -256,7 +256,7 @@ metadata:
   name: m009-duration-1h-deadline-3h
   namespace: default
   labels:
-    app: m009
+    app: m009-duration-1h-deadline-3h
     duration: duration-1h
     deadline: deadline-3h
 spec:
@@ -284,7 +284,7 @@ metadata:
   name: m010-duration-3h-deadline-5h
   namespace: default
   labels:
-    app: m010
+    app: m010-duration-3h-deadline-5h
     duration: duration-3h
     deadline: deadline-5h
 spec:
@@ -312,7 +312,7 @@ metadata:
   name: m011-duration-6h-deadline-12h
   namespace: default
   labels:
-    app: m011
+    app: m011-duration-6h-deadline-12h
     duration: duration-6h
     deadline: deadline-12h
 spec:
@@ -340,7 +340,7 @@ metadata:
   name: m012-duration-1h-deadline-3h
   namespace: default
   labels:
-    app: m012
+    app: m012-duration-1h-deadline-3h
     duration: duration-1h
     deadline: deadline-3h
 spec:
@@ -368,7 +368,7 @@ metadata:
   name: m013-duration-3h-deadline-9h
   namespace: default
   labels:
-    app: m013
+    app: m013-duration-3h-deadline-9h
     duration: duration-3h
     deadline: deadline-9h
 spec:
@@ -396,7 +396,7 @@ metadata:
   name: m014-duration-6h-deadline-30h
   namespace: default
   labels:
-    app: m014
+    app: m014-duration-6h-deadline-30h
     duration: duration-6h
     deadline: deadline-30h
 spec:
@@ -424,7 +424,7 @@ metadata:
   name: m015-duration-1h-deadline-25h
   namespace: default
   labels:
-    app: m015
+    app: m015-duration-1h-deadline-25h
     duration: duration-1h
     deadline: deadline-25h
 spec:
@@ -452,7 +452,7 @@ metadata:
   name: m016-duration-3h-deadline-27h
   namespace: default
   labels:
-    app: m016
+    app: m016-duration-3h-deadline-27h
     duration: duration-3h
     deadline: deadline-27h
 spec:
@@ -480,7 +480,7 @@ metadata:
   name: m017-duration-6h-deadline-8h
   namespace: default
   labels:
-    app: m017
+    app: m017-duration-6h-deadline-8h
     duration: duration-6h
     deadline: deadline-8h
 spec:
@@ -508,7 +508,7 @@ metadata:
   name: m018-duration-1h-deadline-7h
   namespace: default
   labels:
-    app: m018
+    app: m018-duration-1h-deadline-7h
     duration: duration-1h
     deadline: deadline-7h
 spec:

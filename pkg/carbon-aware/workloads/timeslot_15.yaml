@@ -4,7 +4,7 @@ metadata:
   name: m229-duration-3h-deadline-27h
   namespace: default
   labels:
-    app: m229
+    app: m229-duration-3h-deadline-27h
     duration: duration-3h
     deadline: deadline-27h
 spec:
@@ -32,7 +32,7 @@ metadata:
   name: m230-duration-6h-deadline-30h
   namespace: default
   labels:
-    app: m230
+    app: m230-duration-6h-deadline-30h
     duration: duration-6h
     deadline: deadline-30h
 spec:
@@ -60,7 +60,7 @@ metadata:
   name: m231-duration-1h-deadline-25h
   namespace: default
   labels:
-    app: m231
+    app: m231-duration-1h-deadline-25h
     duration: duration-1h
     deadline: deadline-25h
 spec:
@@ -88,7 +88,7 @@ metadata:
   name: m232-duration-3h-deadline-9h
   namespace: default
   labels:
-    app: m232
+    app: m232-duration-3h-deadline-9h
     duration: duration-3h
     deadline: deadline-9h
 spec:
@@ -116,7 +116,7 @@ metadata:
   name: m233-duration-6h-deadline-8h
   namespace: default
   labels:
-    app: m233
+    app: m233-duration-6h-deadline-8h
     duration: duration-6h
     deadline: deadline-8h
 spec:
@@ -144,7 +144,7 @@ metadata:
   name: m234-duration-1h-deadline-3h
   namespace: default
   labels:
-    app: m234
+    app: m234-duration-1h-deadline-3h
     duration: duration-1h
     deadline: deadline-3h
 spec:
@@ -172,7 +172,7 @@ metadata:
   name: m235-duration-3h-deadline-5h
   namespace: default
   labels:
-    app: m235
+    app: m235-duration-3h-deadline-5h
     duration: duration-3h
     deadline: deadline-5h
 spec:
@@ -200,7 +200,7 @@ metadata:
   name: m236-duration-6h-deadline-30h
   namespace: default
   labels:
-    app: m236
+    app: m236-duration-6h-deadline-30h
     duration: duration-6h
     deadline: deadline-30h
 spec:
@@ -228,7 +228,7 @@ metadata:
   name: m237-duration-1h-deadline-3h
   namespace: default
   labels:
-    app: m237
+    app: m237-duration-1h-deadline-3h
     duration: duration-1h
     deadline: deadline-3h
 spec:
@@ -256,7 +256,7 @@ metadata:
   name: m238-duration-3h-deadline-9h
   namespace: default
   labels:
-    app: m238
+    app: m238-duration-3h-deadline-9h
     duration: duration-3h
     deadline: deadline-9h
 spec:

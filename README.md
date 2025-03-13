@@ -11,19 +11,15 @@ This work is based on the original scheduler plugin developed by Fondazione Brun
 - [Repository Structure](#repository-structure)
 - [Carbon-Aware Algorithm](#carbon-aware-algorithm)
 - [Carbon-Aware Data Model](#carbon-aware-data-model)
-   - [Node Metadata](#node-metadata)
-   - [Workload Specifications](#workload-specifications)
+- [Node Metadata](#node-metadata)
+- [Workload Specifications](#workload-specifications)
 - [Carbon Emissions Model](#carbon-emissions-model)
 - [Getting Started](#getting-started)
-   - [Prerequisites](#prerequisites)
-   - [Setup Environment](#setup-environment)
-   - [Configure Test Infrastructure and Workloads](#configure-test-infrastructure-and-workloads)
-   - [Generate Test Data](#generate-test-data)
-   - [Run the Experiment](#run-the-experiment)
-- [Architecture](#architecture)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
+    - [Prerequisites](#prerequisites)
+    - [Setup Environment](#setup-environment)
+    - [Configure Test Infrastructure and Workloads](#configure-test-infrastructure-and-workloads)
+    - [Generate Test Data](#generate-test-data)
+    - [Run the Experiment](#run-the-experiment)
 
 ## Overview
 
@@ -116,13 +112,13 @@ pip install -r pkg/algorithm/server-python/requirements.txt
 Open `infra-workload-config.yaml` and adjust the configuration:
 ```yaml
 nodes:
-   num_nodes: 8
-   regions:
-       - DE
-       - FR
-       - ES
-   hardware_subcategories:
-       IoT:
+    num_nodes: 8
+    regions:
+        - DE
+        - FR
+        - ES
+    hardware_subcategories:
+        IoT:
             cpu: "2"
             memory: "2Gi"
             embodied_carbon: 27.471
@@ -133,19 +129,19 @@ nodes:
                 max: 5.0
 
 workload:
-   num_timeslots: 12
-   poisson_lambda: 16
-   durations:
-       - 1  # hours
-       - 3
-       - 6
-   cpu_options:
-       - 1000m
-       - 500m
-       - 250m
-   mem_options:
-       - 1Gi
-       - 512Mi
+    num_timeslots: 12
+    poisson_lambda: 16
+    durations:
+        - 1  # hours
+        - 3
+        - 6
+    cpu_options:
+        - 1000m
+        - 500m
+        - 250m
+    mem_options:
+        - 1Gi
+        - 512Mi
 ```
 
 ### Generate Test Data

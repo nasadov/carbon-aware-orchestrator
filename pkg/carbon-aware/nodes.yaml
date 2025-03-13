@@ -13,14 +13,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-0-DE-IoT
+    kubernetes.io/hostname: node-0-de-iot
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: DE
     hardware.carbon/subcategory: IoT
-  name: node-0-DE-IoT
+  name: node-0-de-iot
 spec: {}
 status:
   allocatable:
@@ -59,14 +59,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-1-FR-Smartphone
+    kubernetes.io/hostname: node-1-fr-smartphone
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: FR
     hardware.carbon/subcategory: Smartphone
-  name: node-1-FR-Smartphone
+  name: node-1-fr-smartphone
 spec: {}
 status:
   allocatable:
@@ -105,14 +105,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-2-ES-Laptop
+    kubernetes.io/hostname: node-2-es-laptop
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: ES
     hardware.carbon/subcategory: Laptop
-  name: node-2-ES-Laptop
+  name: node-2-es-laptop
 spec: {}
 status:
   allocatable:
@@ -151,14 +151,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-3-IT-NO-Server
+    kubernetes.io/hostname: node-3-it-no-server
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: IT-NO
     hardware.carbon/subcategory: Server
-  name: node-3-IT-NO-Server
+  name: node-3-it-no-server
 spec: {}
 status:
   allocatable:
@@ -197,14 +197,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-4-DE-IoT
+    kubernetes.io/hostname: node-4-de-iot
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: DE
     hardware.carbon/subcategory: IoT
-  name: node-4-DE-IoT
+  name: node-4-de-iot
 spec: {}
 status:
   allocatable:
@@ -243,14 +243,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-5-FR-Smartphone
+    kubernetes.io/hostname: node-5-fr-smartphone
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: FR
     hardware.carbon/subcategory: Smartphone
-  name: node-5-FR-Smartphone
+  name: node-5-fr-smartphone
 spec: {}
 status:
   allocatable:
@@ -289,14 +289,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-6-ES-Laptop
+    kubernetes.io/hostname: node-6-es-laptop
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: ES
     hardware.carbon/subcategory: Laptop
-  name: node-6-ES-Laptop
+  name: node-6-es-laptop
 spec: {}
 status:
   allocatable:
@@ -335,14 +335,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-7-IT-NO-Server
+    kubernetes.io/hostname: node-7-it-no-server
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: IT-NO
     hardware.carbon/subcategory: Server
-  name: node-7-IT-NO-Server
+  name: node-7-it-no-server
 spec: {}
 status:
   allocatable:

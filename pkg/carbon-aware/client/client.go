@@ -79,7 +79,7 @@ func main() {
 	}
 
 	log.Info("Calling Init method")
-	_, err = c.Init(ctx, &idl.AlgorithmName{Name: "Silly"})
+	_, err = c.Init(ctx, &idl.AlgorithmName{Name: "Carbon-Aware"})
 	if err != nil {
 		st, ok := status.FromError(err)
 		if ok { // grpc error
