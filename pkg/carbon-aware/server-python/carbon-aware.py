@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import argparse
 import decimal
+import copy
 
 import grpc
 import idl_pb2
@@ -25,6 +26,58 @@ MICROSERVICE_STATUS_MAP = {
     3: "TO_SCHEDULE",
     4: "TO_DEPLOY"
 }
+
+class PersistentStateStorage:
+    """
+    Maintains resource allocation state between API calls.
+    """
+    def __init__(self):
+        self.leftover_cpu = {}  # node_id -> {timeslot_id -> available_cpu}
+        self.leftover_ram = {}  # node_id -> {timeslot_id -> available_ram}
+        self.placements = {}    # microservice_id -> {node_id, start_time, duration}
+        self.max_time_slots = 48
+        self.initialized = False
+        self.state_lock = threading.RLock()  # For thread safety
+        
+    def initialize(self, flavours):
+        """Initialize the state with full capacity for all nodes."""
+        with self.state_lock:
+            self.leftover_cpu = {}
+            self.leftover_ram = {}
+            
+            for flv in flavours:
+                self.leftover_cpu[flv.id] = {}
+                self.leftover_ram[flv.id] = {}
+                for ts_id in range(self.max_time_slots):
+                    self.leftover_cpu[flv.id][ts_id] = flv.totalCpu
+                    self.leftover_ram[flv.id][ts_id] = flv.totalRam
+            
+            self.initialized = True
+            logging.info("🔄 Persistent state initialized")
+    
+    def get_resources(self):
+        """Get a copy of the current resource state."""
+        with self.state_lock:
+            return copy.deepcopy(self.leftover_cpu), copy.deepcopy(self.leftover_ram)
+    
+    def update_resources(self, node_id, start_slot, duration, cpu_request, ram_request):
+        """Reserve resources for a pod placement."""
+        with self.state_lock:
+            for slot_offset in range(duration):
+                current_slot = start_slot + slot_offset
+                if current_slot < self.max_time_slots:
+                    self.leftover_cpu[node_id][current_slot] -= cpu_request
+                    self.leftover_ram[node_id][current_slot] -= ram_request
+            logging.info(f"📝 Updated persistent state for node={node_id}, slots={start_slot}-{start_slot+duration-1}")
+    
+    def record_placement(self, ms_name, node_id, start_time, duration):
+        """Record a placement decision."""
+        with self.state_lock:
+            self.placements[ms_name] = {
+                'node_id': node_id,
+                'start_time': start_time,
+                'duration': duration
+            }
 
 
 # classes to be imported from mbmo in the future:
@@ -809,6 +862,8 @@ class Algorithm:
 
 algo = Algorithm("Carbon-Aware", False)
 
+persistent_state = PersistentStateStorage()
+
 
 class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
     """
@@ -913,19 +968,18 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             # ======== RESOURCE INITIALIZATION ========
             logging.info("-" * 60)
             logging.info(f"🧮 INITIALIZING RESOURCE TRACKING")
-            
-            leftover_cpu = {}
-            leftover_ram = {}
-            max_time_slots = 48
 
-            for flv in flavours:
-                leftover_cpu[flv.id] = {}
-                leftover_ram[flv.id] = {}
-                for ts_id in range(max_time_slots):
-                    leftover_cpu[flv.id][ts_id] = flv.totalCpu
-                    leftover_ram[flv.id][ts_id] = flv.totalRam
-            
-            logging.info(f"  ▶ Initialized resources for {len(flavours)} nodes × {max_time_slots} timeslots")
+            global persistent_state
+            if not persistent_state.initialized:
+                logging.info("🔄 Initializing persistent resource tracking")
+                persistent_state.initialize(flavours)
+            else:
+                logging.info("📊 Using persistent resource tracking from previous calls")
+
+            # Get the current resource state
+            leftover_cpu, leftover_ram = persistent_state.get_resources()
+            max_time_slots = persistent_state.max_time_slots
+            logging.info(f"  ▶ Using resources for {len(flavours)} nodes × {max_time_slots} timeslots")
 
             # ======== WORKLOAD PROCESSING ========
             logging.info("-" * 60)
@@ -989,11 +1043,21 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     start_slot_id = best_slot.id
                     duration_slots = int(pod.duration)  # Convert hours to slots
                     
+                    # Update both the local tracking and persistent state
                     for slot_offset in range(duration_slots):
                         current_slot = start_slot_id + slot_offset
                         if current_slot < max_time_slots:  # Make sure we don't go out of bounds
                             leftover_cpu[best_node.id][current_slot] -= pod.cpuRequest
                             leftover_ram[best_node.id][current_slot] -= pod.ramRequest
+                    
+                    # Update persistent state
+                    persistent_state.update_resources(
+                        best_node.id, start_slot_id, duration_slots, 
+                        pod.cpuRequest, pod.ramRequest
+                    )
+                    persistent_state.record_placement(
+                        ms.name, best_node.id, best_slot.getStart(), pod.duration
+                    )
                     
                     # Log the reservation
                     logging.info(f"    🔒 Reserved resources for {pod.id} on {best_node.id} for slots {start_slot_id} to {start_slot_id + duration_slots - 1}")
