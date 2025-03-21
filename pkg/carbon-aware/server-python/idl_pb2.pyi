@@ -73,24 +73,24 @@ class Workload(_message.Message):
     def __init__(self, microservices: _Optional[_Iterable[_Union[Microservice, _Mapping]]] = ...) -> None: ...
 
 class Microservice(_message.Message):
-    __slots__ = ("name", "status", "deployed_on", "replicas", "cpu_required", "mem_required", "duration", "deadline")
+    __slots__ = ("name", "replicas", "cpu_required", "mem_required", "status", "deployed_on", "duration_hours", "deadline_hours")
     NAME_FIELD_NUMBER: _ClassVar[int]
-    STATUS_FIELD_NUMBER: _ClassVar[int]
-    DEPLOYED_ON_FIELD_NUMBER: _ClassVar[int]
     REPLICAS_FIELD_NUMBER: _ClassVar[int]
     CPU_REQUIRED_FIELD_NUMBER: _ClassVar[int]
     MEM_REQUIRED_FIELD_NUMBER: _ClassVar[int]
-    DURATION_FIELD_NUMBER: _ClassVar[int]
-    DEADLINE_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    DEPLOYED_ON_FIELD_NUMBER: _ClassVar[int]
+    DURATION_HOURS_FIELD_NUMBER: _ClassVar[int]
+    DEADLINE_HOURS_FIELD_NUMBER: _ClassVar[int]
     name: str
-    status: MicroserviceStatus
-    deployed_on: _containers.RepeatedScalarFieldContainer[str]
     replicas: int
     cpu_required: ResourceQuantity
     mem_required: ResourceQuantity
-    duration: str
-    deadline: str
-    def __init__(self, name: _Optional[str] = ..., status: _Optional[_Union[MicroserviceStatus, str]] = ..., deployed_on: _Optional[_Iterable[str]] = ..., replicas: _Optional[int] = ..., cpu_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., duration: _Optional[str] = ..., deadline: _Optional[str] = ...) -> None: ...
+    status: MicroserviceStatus
+    deployed_on: _containers.RepeatedScalarFieldContainer[str]
+    duration_hours: str
+    deadline_hours: str
+    def __init__(self, name: _Optional[str] = ..., replicas: _Optional[int] = ..., cpu_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., mem_required: _Optional[_Union[ResourceQuantity, _Mapping]] = ..., status: _Optional[_Union[MicroserviceStatus, str]] = ..., deployed_on: _Optional[_Iterable[str]] = ..., duration_hours: _Optional[str] = ..., deadline_hours: _Optional[str] = ...) -> None: ...
 
 class Placements(_message.Message):
     __slots__ = ("placements",)

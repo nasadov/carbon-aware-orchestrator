@@ -71,16 +71,17 @@ message Workload {
 }
 
 message Microservice {
-  string name = 1;
-  MicroserviceStatus status = 2;
-  repeated string deployed_on = 3;
-  int32 replicas = 4;
-  ResourceQuantity cpu_required = 5;
-  ResourceQuantity mem_required = 6;
-  
-  // Changed from double to string
-  string duration = 7;  // How long the workload runs (e.g. "1h", "90m")
-  string deadline = 8;  // When it must complete by (e.g. "24h", "1d")
+	string name = 1;      
+	int32 replicas = 2;
+	ResourceQuantity cpu_required = 3;
+	ResourceQuantity mem_required = 4;
+	MicroserviceStatus status = 5;
+	// Nodes where ms is deployed (for each replica) if status is RUNNING
+	repeated string deployed_on = 6;
+	// How long the workload runs
+	string duration_hours = 7;
+	// Hours until deployment deadline
+	string deadline_hours = 8;
 }
 
 message Placements {

@@ -9,12 +9,22 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import argparse
+import decimal
 
 import grpc
 import idl_pb2
 import idl_pb2_grpc
 from google.protobuf import empty_pb2
 from kubernetes import utils as k8sutils
+
+# Define constants for microservice status
+MICROSERVICE_STATUS_MAP = {
+    0: "MICROSERVICESTATUS_UNSPECIFIED",
+    1: "RUNNING",
+    2: "PENDING", 
+    3: "TO_SCHEDULE",
+    4: "TO_DEPLOY"
+}
 
 
 # classes to be imported from mbmo in the future:
@@ -504,6 +514,12 @@ def parse_duration_to_hours(duration_str: str) -> float:
     if not duration_str:
         return 0.0
     
+    # Remove common prefixes like "duration-" or "deadline-"
+    if duration_str.startswith("duration-"):
+        duration_str = duration_str[9:]  # Remove "duration-" prefix
+    elif duration_str.startswith("deadline-"):
+        duration_str = duration_str[9:]  # Remove "deadline-" prefix
+    
     # Handle direct float (backward compatibility)
     try:
         return float(duration_str)
@@ -538,25 +554,52 @@ def parse_duration_to_hours(duration_str: str) -> float:
 
 def parse_microservice(ms: idl_pb2.Microservice) -> CarbonAwarePod:
     try:
-        # Parse CPU and RAM requirements
-        cpu_req = k8sutils.parse_quantity(ms.cpu_required.value)
-        float_cpu_req = float(cpu_req)
+        # Default values based on the pod manifest
+        default_cpu = 0.25  # 250m in Kubernetes notation
+        default_ram = 512   # 512MB in megabytes
         
-        ram_req = k8sutils.parse_quantity(ms.mem_required.value)
-        float_ram_req = float(ram_req) / (1024 * 1024)  # bytes → MB
-        
+        # Parse CPU with validation
+        try:
+            if (hasattr(ms, "cpu_required") and ms.cpu_required and 
+                hasattr(ms.cpu_required, "value") and ms.cpu_required.value):
+                cpu_req = k8sutils.parse_quantity(ms.cpu_required.value)
+                float_cpu_req = float(cpu_req)
+                logging.info(f"Parsed CPU for {ms.name}: {float_cpu_req} cores")
+            else:
+                logging.warning(f"Empty CPU requirement for {ms.name}, using default: {default_cpu}")
+                float_cpu_req = default_cpu
+        except (ValueError, decimal.InvalidOperation) as e:
+            cpu_value = ms.cpu_required.value if hasattr(ms, "cpu_required") and ms.cpu_required else "None"
+            logging.warning(f"Invalid CPU format for {ms.name}: '{cpu_value}', using default: {default_cpu}")
+            float_cpu_req = default_cpu
+            
+        # Parse RAM with validation
+        try:
+            if (hasattr(ms, "mem_required") and ms.mem_required and 
+                hasattr(ms.mem_required, "value") and ms.mem_required.value):
+                ram_req = k8sutils.parse_quantity(ms.mem_required.value)
+                float_ram_req = float(ram_req) / (1024 * 1024)  # bytes → MB
+                logging.info(f"Parsed RAM for {ms.name}: {float_ram_req} MB")
+            else:
+                logging.warning(f"Empty RAM requirement for {ms.name}, using default: {default_ram}MB")
+                float_ram_req = default_ram
+        except (ValueError, decimal.InvalidOperation) as e:
+            ram_value = ms.mem_required.value if hasattr(ms, "mem_required") and ms.mem_required else "None"
+            logging.warning(f"Invalid RAM format for {ms.name}: '{ram_value}', using default: {default_ram}MB")
+            float_ram_req = default_ram
+
         # APPROACH 1: Get duration and deadline from direct fields
         duration_hours = None
         deadline_hours = None
-        
-        # Note field name changes from duration_hours to duration
-        if hasattr(ms, "duration") and ms.duration:
-            duration_hours = parse_duration_to_hours(ms.duration)
-            logging.info(f"Using duration from direct field: {duration_hours}h (from '{ms.duration}')")
+
+        # Get values from the IDL fields
+        if hasattr(ms, "duration_hours") and ms.duration_hours:
+            duration_hours = parse_duration_to_hours(ms.duration_hours)
+            logging.info(f"Using duration from direct field: {duration_hours}h (from '{ms.duration_hours}')")
             
-        if hasattr(ms, "deadline") and ms.deadline:
-            deadline_hours = parse_duration_to_hours(ms.deadline)
-            logging.info(f"Using deadline from direct field: {deadline_hours}h (from '{ms.deadline}')")
+        if hasattr(ms, "deadline_hours") and ms.deadline_hours:
+            deadline_hours = parse_duration_to_hours(ms.deadline_hours)
+            logging.info(f"Using deadline from direct field: {deadline_hours}h (from '{ms.deadline_hours}')")
         
         # APPROACH 2: Fall back to parsing from name if needed
         if duration_hours is None:
@@ -613,7 +656,7 @@ def parse_microservice(ms: idl_pb2.Microservice) -> CarbonAwarePod:
             ramRequest=100,
             storageRequest=0
         )
-
+    
 
 def build_timeslots(deadline_hours: float) -> list[CarbonAwareTimeslot]:
     """
@@ -642,7 +685,8 @@ def find_best_node_and_timeslot(
     flavours: list[CarbonAwareFlavour],
     timeslots: list[CarbonAwareTimeslot],
     leftover_cpu: dict[str, dict[int, float]],
-    leftover_ram: dict[str, dict[int, float]]
+    leftover_ram: dict[str, dict[int, float]],
+    max_time_slots: int = 48
 ) -> tuple[CarbonAwareFlavour | None, CarbonAwareTimeslot | None, float]:
     best_node = None
     best_slot = None
@@ -654,15 +698,28 @@ def find_best_node_and_timeslot(
             continue
 
         for flv in flavours:
-            # Instead of flv.totalCpu, we read leftover_cpu[flv.id][ts.id]
-            # We do the same for leftover RAM.
-            feasible = check_node_resource(
-                flv, ts, pod,
-                leftover_cpu[flv.id][ts.id],
-                leftover_ram[flv.id][ts.id]
-            )
+            # Check resources for ENTIRE DURATION of the workload
+            duration_feasible = True
+            for slot_offset in range(int(pod.duration)):
+                current_slot = ts.id + slot_offset
+                if current_slot >= max_time_slots:
+                    # Would run beyond our tracking window
+                    duration_feasible = False
+                    logging.debug(f"[find_best_node_and_timeslot] Slot {ts.id}+{slot_offset}={current_slot} exceeds tracking window for pod={pod.id}")
+                    break
+                
+                # Check if there's enough CPU and RAM at this timeslot
+                if (leftover_cpu[flv.id][current_slot] < pod.cpuRequest or 
+                    leftover_ram[flv.id][current_slot] < pod.ramRequest):
+                    duration_feasible = False
+                    logging.debug(
+                        f"[find_best_node_and_timeslot] Slot {current_slot} on {flv.id} doesn't have enough resources for pod={pod.id}: " +
+                        f"CPU {leftover_cpu[flv.id][current_slot]:.2f}/{pod.cpuRequest:.2f}, " +
+                        f"RAM {leftover_ram[flv.id][current_slot]:.0f}/{pod.ramRequest:.0f}"
+                    )
+                    break
 
-            if feasible:
+            if duration_feasible:
                 total_emi = compute_emissions(flv, ts.id, pod)
                 if total_emi < minimal_emissions:
                     minimal_emissions = total_emi
@@ -674,6 +731,68 @@ def find_best_node_and_timeslot(
                     )
 
     return best_node, best_slot, minimal_emissions
+
+
+def print_resource_utilization_report(flavours, leftover_cpu, leftover_ram, max_time_slots, hours_to_show=24):
+    """
+    Prints a detailed utilization report for all nodes and timeslots.
+    
+    Args:
+        flavours: List of CarbonAwareFlavour objects
+        leftover_cpu: Dictionary of remaining CPU resources by node and timeslot
+        leftover_ram: Dictionary of remaining RAM resources by node and timeslot
+        max_time_slots: Total number of timeslots to consider
+        hours_to_show: How many hours to display in the report (default 24)
+    """
+    now = datetime.now().replace(minute=0, second=0, microsecond=0)
+    logging.info("=" * 100)
+    logging.info("📊 DETAILED RESOURCE UTILIZATION REPORT BY TIMESLOT")
+    logging.info("=" * 100)
+    
+    # Limit the display to a reasonable number of hours
+    display_slots = min(hours_to_show, max_time_slots)
+    
+    # Header row showing timeslots
+    header = "Node         | Total     |"
+    for slot in range(display_slots):
+        slot_time = (now + timedelta(hours=slot)).strftime("%H:%M")
+        header += f" {slot_time} |"
+    logging.info(header)
+    logging.info("-" * len(header))
+    
+    # Show data for each node
+    for flv in flavours:
+        node_id = flv.id
+        # CPU row
+        cpu_row = f"{node_id[:10]:<10} | CPU {flv.totalCpu:4.1f} |"
+        for slot in range(display_slots):
+            used_cpu = flv.totalCpu - leftover_cpu[node_id][slot]
+            pct = (used_cpu / flv.totalCpu) * 100 if flv.totalCpu > 0 else 0
+            # Mark high utilization with color indicators
+            if pct > 95:
+                cpu_row += f" \033[91m{used_cpu:4.1f}\033[0m |"  # Red for >95%
+            elif pct > 80:
+                cpu_row += f" \033[93m{used_cpu:4.1f}\033[0m |"  # Yellow for >80%
+            else:
+                cpu_row += f" {used_cpu:4.1f} |"
+        logging.info(cpu_row)
+        
+        # RAM row
+        ram_row = f"{' '*10} | RAM {flv.totalRam:4.0f} |"
+        for slot in range(display_slots):
+            used_ram = flv.totalRam - leftover_ram[node_id][slot]
+            pct = (used_ram / flv.totalRam) * 100 if flv.totalRam > 0 else 0
+            # Mark high utilization with color indicators
+            if pct > 95:
+                ram_row += f" \033[91m{used_ram:4.0f}\033[0m |"  # Red for >95%
+            elif pct > 80:
+                ram_row += f" \033[93m{used_ram:4.0f}\033[0m |"  # Yellow for >80%
+            else:
+                ram_row += f" {used_ram:4.0f} |"
+        logging.info(ram_row)
+        logging.info("-" * len(header))
+    
+    logging.info("=" * 100)
 
 
 #####################################
@@ -709,11 +828,67 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
     def CalculatePlacement(self, request: idl_pb2.Data, context) -> idl_pb2.Placements:
         try:
             global algo
-        
-            # ======== INITIALIZATION ========
+            
+            # ======== RAW REQUEST LOGGING ========
             logging.info("=" * 80)
             logging.info(f"🚀 STARTING PLACEMENT CALCULATION - ALGORITHM: {algo.name}")
+            logging.info("=" * 80)
+            logging.info(f"📥 RAW REQUEST STRUCTURE:")
+            logging.info(f"Request type: {type(request)}")
             
+            # Detailed infrastructure logging
+            if hasattr(request, "infrastructure") and request.infrastructure:
+                logging.info(f"INFRASTRUCTURE: {len(request.infrastructure.nodes)} nodes")
+                for i, node in enumerate(request.infrastructure.nodes):
+                    logging.info(f"  NODE {i}: name={node.name}")
+            else:
+                logging.info("No infrastructure in request")
+                
+            # Detailed workload logging
+            if hasattr(request, "workload") and request.workload:
+                logging.info(f"WORKLOAD: {len(request.workload.microservices)} microservices")
+                for i, ms in enumerate(request.workload.microservices):
+                    logging.info(f"  MICROSERVICE {i}: name={ms.name}")
+
+                    # Status information
+                    if hasattr(ms, "status"):
+                        status_name = MICROSERVICE_STATUS_MAP.get(ms.status, f"Status({ms.status})")
+                        
+                        # Color coding for different statuses
+                        status_color = "\033[0m"  # default
+                        if status_name == "RUNNING":
+                            status_color = "\033[92m"  # green
+                        elif status_name == "TO_DEPLOY":
+                            status_color = "\033[91m"  # red
+                        elif status_name == "PENDING":
+                            status_color = "\033[93m"  # yellow
+                            
+                        logging.info(f"    - status: {status_color}{status_name}\033[0m")
+                    else:
+                        logging.info(f"    - status field not found")
+                    
+                    # Check for duration/deadline fields and their values
+                    if hasattr(ms, "duration_hours"):
+                        logging.info(f"    - duration: '{ms.duration_hours}' (type: {type(ms.duration_hours).__name__})")
+                    else:
+                        logging.info(f"    - duration field not found")
+                        
+                    if hasattr(ms, "deadline_hours"):
+                        logging.info(f"    - deadline: '{ms.deadline_hours}' (type: {type(ms.deadline_hours).__name__})")
+                    else:
+                        logging.info(f"    - deadline field not found")
+                    
+                    # Log other important attributes
+                    if hasattr(ms, "cpu_required") and ms.cpu_required:
+                        logging.info(f"    - cpu_required: {ms.cpu_required.value}")
+                    if hasattr(ms, "mem_required") and ms.mem_required:
+                        logging.info(f"    - mem_required: {ms.mem_required.value}")
+            else:
+                logging.info("No workload in request")
+            
+            logging.info("=" * 80)
+            
+            # ======== INITIALIZATION ========
             if not algo.initialized:
                 msg = "Algorithm not initialized before calling CalculatePlacement."
                 logging.error(f"❌ {msg}")
@@ -741,7 +916,7 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             
             leftover_cpu = {}
             leftover_ram = {}
-            max_time_slots = 24
+            max_time_slots = 48
 
             for flv in flavours:
                 leftover_cpu[flv.id] = {}
@@ -760,12 +935,23 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             # Summary counters
             placements_success = 0
             placements_failed = 0
+            placements_skipped = 0
             total_emissions = 0.0
 
             for i, ms in enumerate(request.workload.microservices):
                 ms_start_time = time.time()
                 logging.info(f"  ➡️ ({i+1}/{len(request.workload.microservices)}) Processing: {ms.name}")
-                
+                    
+                if hasattr(ms, "status"):
+                    # Process only TO_DEPLOY status
+                    if ms.status != 4:  # Only process TO_DEPLOY (4)
+                        status_name = MICROSERVICE_STATUS_MAP.get(ms.status, f"Status({ms.status})")
+                        logging.info(f"    ⏩ Skipping {ms.name} with status {status_name} - only handling TO_DEPLOY")
+                        placement = self._build_fallback_placement(ms.name, f"SKIPPED_{status_name}")
+                        out_placements.placements.append(placement)
+                        placements_skipped += 1
+                        continue
+
                 pod = parse_microservice(ms)
                 hours_until_deadline = (pod.deadline - datetime.now()).total_seconds() / 3600
                 scheduling_window = max(0, hours_until_deadline - pod.duration)
@@ -799,9 +985,18 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 
                 # Build placement result
                 if best_node and best_slot:
-                    # Update resource tracking
-                    leftover_cpu[best_node.id][best_slot.id] -= pod.cpuRequest
-                    leftover_ram[best_node.id][best_slot.id] -= pod.ramRequest
+                    # Update resource tracking for the ENTIRE DURATION
+                    start_slot_id = best_slot.id
+                    duration_slots = int(pod.duration)  # Convert hours to slots
+                    
+                    for slot_offset in range(duration_slots):
+                        current_slot = start_slot_id + slot_offset
+                        if current_slot < max_time_slots:  # Make sure we don't go out of bounds
+                            leftover_cpu[best_node.id][current_slot] -= pod.cpuRequest
+                            leftover_ram[best_node.id][current_slot] -= pod.ramRequest
+                    
+                    # Log the reservation
+                    logging.info(f"    🔒 Reserved resources for {pod.id} on {best_node.id} for slots {start_slot_id} to {start_slot_id + duration_slots - 1}")
                     
                     # Calculate when this workload will start and end
                     workload_start_time = best_slot.getStart()
@@ -824,14 +1019,39 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                 logging.info(f"    🕒 Processing time: {(time.time() - ms_start_time):.3f}s")
 
             # ======== SUMMARY ========
+            """logging.info("-" * 60)
+            logging.info(f"📊 CURRENT NODE UTILIZATION")
+            current_time = datetime.now().hour
+            current_ts = current_time % 24  # Map to timeslot ID
+
+            # Show utilization for each node at current timeslot
+            for flv in flavours:
+                node_id = flv.id
+                # Calculate utilization percentages
+                cpu_used = flv.totalCpu - leftover_cpu[node_id][current_ts]
+                ram_used = flv.totalRam - leftover_ram[node_id][current_ts]
+                cpu_percent = (cpu_used / flv.totalCpu) * 100 if flv.totalCpu > 0 else 0
+                ram_percent = (ram_used / flv.totalRam) * 100 if flv.totalRam > 0 else 0
+                
+                # Format a nice utilization bar
+                cpu_bar = "█" * int(cpu_percent / 10) + "░" * (10 - int(cpu_percent / 10))
+                ram_bar = "█" * int(ram_percent / 10) + "░" * (10 - int(ram_percent / 10))
+                
+                logging.info(f"  Node {node_id}:")
+                logging.info(f"    CPU: {cpu_bar} {cpu_used:.2f}/{flv.totalCpu:.2f} ({cpu_percent:.1f}%)")
+                logging.info(f"    RAM: {ram_bar} {ram_used:.0f}/{flv.totalRam:.0f}MB ({ram_percent:.1f}%)")
+            """
             logging.info("=" * 60)
             logging.info(f"📋 PLACEMENT SUMMARY")
             logging.info(f"  ▶ Total microservices: {len(request.workload.microservices)}")
             logging.info(f"  ▶ Successfully placed: {placements_success}")
             logging.info(f"  ▶ Failed to place: {placements_failed}")
+            logging.info(f"  ▶ Skipped (non-TO_DEPLOY): {placements_skipped}") 
             logging.info(f"  ▶ Total carbon footprint: {total_emissions:.2f}kgCO2e")
             logging.info(f"  ▶ Total execution time: {(time.time() - start_time):.3f}s")
             logging.info("=" * 80)
+
+            print_resource_utilization_report(flavours, leftover_cpu, leftover_ram, max_time_slots, hours_to_show=24)
             
             return out_placements
 
