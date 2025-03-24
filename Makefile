@@ -47,13 +47,20 @@ build-carbon-aware:
 	@pip install pyinstaller > /dev/null || (echo "Failed to install PyInstaller"; exit 1)
 	@echo "Building carbon-aware executable..."
 	@cd ./pkg/carbon-aware/server-python && pyinstaller --onefile --name carbon-aware \
-		--distpath $(CURDIR)/bin \
-		--hidden-import grpc \
-		--hidden-import google.protobuf \
-		--hidden-import google.protobuf.internal \
-		--hidden-import grpcio \
-		--add-data "$(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json:." \
-		carbon-aware.py
+        --distpath $(CURDIR)/bin \
+        --hidden-import grpc \
+        --hidden-import google.protobuf \
+        --hidden-import google.protobuf.internal \
+        --hidden-import grpcio \
+        --hidden-import carbon_aware.models \
+        --hidden-import carbon_aware.utils \
+        --hidden-import carbon_aware.server \
+        --hidden-import carbon_aware.state \
+        --hidden-import carbon_aware.algorithms \
+        --hidden-import carbon_aware.algorithms.base \
+        --hidden-import carbon_aware.algorithms.heuristic \
+        --add-data "$(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json:." \
+        main.py
 	@echo "✅ Executable created at $(CURDIR)/bin/carbon-aware"
 	@echo "📄 Copying carbon intensity data file to bin directory for convenience..."
 	@cp $(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json $(CURDIR)/bin/
