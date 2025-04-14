@@ -112,11 +112,20 @@ pip install -r pkg/algorithm/server-python/requirements.txt
 Open `infra-workload-config.yaml` and adjust the configuration:
 ```yaml
 nodes:
+    # Number of nodes to generate
     num_nodes: 8
+    
+    # Regions that match carbon intensity forecast regions
     regions:
         - DE
         - FR
         - ES
+        - IT-NO
+        
+    # Method to assign regions to nodes ("cycle" or "random")
+    assignment_method: cycle
+    
+    # Hardware subcategories configuration with power and embodied carbon profiles
     hardware_subcategories:
         IoT:
             cpu: "2"
@@ -127,21 +136,65 @@ nodes:
                 idle: 0.5
                 active: 2.0
                 max: 5.0
+        # Additional hardware profiles...
+    
+    # Method to assign hardware types to nodes
+    # - "cycle": Simple cycling through hardware types
+    # - "random": Random assignment with fixed seed
+    # - "shifted_cycle": Advanced cycling that ensures diverse region-hardware mappings
+    hardware_assignment_method: shifted_cycle
+    
+    # Offset for shifted_cycle (how many positions to shift each cycle)
+    hardware_cycle_offset: 1
 
 workload:
-    num_timeslots: 12
-    poisson_lambda: 16
+    # Directory to output workload files
+    output_dir: workloads
+    
+    # Number of timeslots to generate (e.g., 24 for each hour in a day)
+    num_timeslots: 24
+    
+    # Lambda parameter for Poisson distribution (average services per timeslot)
+    poisson_lambda: 4
+    
+    # Minimum number of services per timeslot
+    min_services: 1
+    
+    # Available duration values (in hours)
     durations:
-        - 1  # hours
-        - 3
-        - 6
+        - 1  # short duration
+        - 3  # medium duration 
+        - 6  # long duration
+    
+    # Method for assigning durations ("cycle" or "random")
+    duration_assignment_method: cycle
+    
+    # Strategy for determining deadlines
+    # - "tight": Deadline equals duration (no flexibility)
+    # - "flexible": Duration plus variable flexibility
+    # - "mixed": Mix of tight and flexible deadlines
+    # - "exact": Deadline is exactly 2x duration
+    deadline_strategy: flexible
+    
+    # Hours to add to duration for flexible deadlines
+    deadline_flexibility_hours:
+        - 1   # Low flexibility
+        - 3   # Medium flexibility
+        - 6   # High flexibility
+    
+    # Available CPU request options
     cpu_options:
         - 1000m
         - 500m
         - 250m
+        - 100m
+    
+    # Available memory request options
     mem_options:
         - 1Gi
         - 512Mi
+        - 256Mi
+        - 128Mi
 ```
 
 ### Generate Test Data
@@ -151,8 +204,10 @@ workload:
 python pkg/algorithm/infra_workload_gen.py
 ```
 This will create:
-- `nodes.yaml`: Infrastructure definitions with hardware characteristics
+- `nodes.yaml`: Infrastructure definitions with hardware characteristics and regional assignments
 - `workloads/timeslot_*.yaml`: Directory containing workload definitions for each timeslot
+
+The `shifted_cycle` hardware assignment method ensures that hardware types and regions have diverse pairings across nodes, allowing for more realistic testing scenarios where different hardware profiles are distributed across various regions.
 
 ### Run the Experiment
 

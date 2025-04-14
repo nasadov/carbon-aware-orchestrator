@@ -145,7 +145,7 @@ metadata:
     hardware.carbon/embodied_emissions: '1230.656'
     hardware.carbon/lifetime_years: '3.87'
     hardware.power/idle_watts: '100.0'
-    hardware.power/active_watts: '200.0'
+    hardware.power/active_watts: 200.0# Watts
     hardware.power/max_watts: '400.0'
   labels:
     beta.kubernetes.io/arch: amd64
@@ -188,52 +188,6 @@ metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '27.471'
-    hardware.carbon/lifetime_years: '5.2'
-    hardware.power/idle_watts: '0.5'
-    hardware.power/active_watts: '2.0'
-    hardware.power/max_watts: '5.0'
-  labels:
-    beta.kubernetes.io/arch: amd64
-    beta.kubernetes.io/os: linux
-    kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-4-de-iot
-    kubernetes.io/os: linux
-    kubernetes.io/role: agent
-    node-role.kubernetes.io/agent: ''
-    type: kwok
-    topology.kubernetes.io/region: DE
-    hardware.carbon/subcategory: IoT
-  name: node-4-de-iot
-spec: {}
-status:
-  allocatable:
-    cpu: '2'
-    memory: 2Gi
-    pods: 110
-  capacity:
-    cpu: '2'
-    memory: 2Gi
-    pods: 110
-  nodeInfo:
-    architecture: amd64
-    bootID: ''
-    containerRuntimeVersion: ''
-    kernelVersion: ''
-    kubeProxyVersion: fake
-    kubeletVersion: fake
-    machineID: ''
-    operatingSystem: linux
-    osImage: ''
-    systemUUID: ''
-  phase: Running
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    node.alpha.kubernetes.io/ttl: '0'
-    kwok.x-k8s.io/node: fake
     hardware.carbon/embodied_emissions: '52.729'
     hardware.carbon/lifetime_years: '3.03'
     hardware.power/idle_watts: '1.0'
@@ -243,14 +197,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-5-fr-smartphone
+    kubernetes.io/hostname: node-4-de-smartphone
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
-    topology.kubernetes.io/region: FR
+    topology.kubernetes.io/region: DE
     hardware.carbon/subcategory: Smartphone
-  name: node-5-fr-smartphone
+  name: node-4-de-smartphone
 spec: {}
 status:
   allocatable:
@@ -289,14 +243,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-6-es-laptop
+    kubernetes.io/hostname: node-5-fr-laptop
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
-    topology.kubernetes.io/region: ES
+    topology.kubernetes.io/region: FR
     hardware.carbon/subcategory: Laptop
-  name: node-6-es-laptop
+  name: node-5-fr-laptop
 spec: {}
 status:
   allocatable:
@@ -329,20 +283,20 @@ metadata:
     hardware.carbon/embodied_emissions: '1230.656'
     hardware.carbon/lifetime_years: '3.87'
     hardware.power/idle_watts: '100.0'
-    hardware.power/active_watts: '200.0'
+    hardware.power/active_watts: 200.0# Watts
     hardware.power/max_watts: '400.0'
   labels:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-7-it-no-server
+    kubernetes.io/hostname: node-6-es-server
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
-    topology.kubernetes.io/region: IT-NO
+    topology.kubernetes.io/region: ES
     hardware.carbon/subcategory: Server
-  name: node-7-it-no-server
+  name: node-6-es-server
 spec: {}
 status:
   allocatable:
@@ -352,6 +306,52 @@ status:
   capacity:
     cpu: '32'
     memory: 64Gi
+    pods: 110
+  nodeInfo:
+    architecture: amd64
+    bootID: ''
+    containerRuntimeVersion: ''
+    kernelVersion: ''
+    kubeProxyVersion: fake
+    kubeletVersion: fake
+    machineID: ''
+    operatingSystem: linux
+    osImage: ''
+    systemUUID: ''
+  phase: Running
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    node.alpha.kubernetes.io/ttl: '0'
+    kwok.x-k8s.io/node: fake
+    hardware.carbon/embodied_emissions: '27.471'
+    hardware.carbon/lifetime_years: '5.2'
+    hardware.power/idle_watts: '0.5'
+    hardware.power/active_watts: '2.0'
+    hardware.power/max_watts: '5.0'
+  labels:
+    beta.kubernetes.io/arch: amd64
+    beta.kubernetes.io/os: linux
+    kubernetes.io/arch: amd64
+    kubernetes.io/hostname: node-7-it-no-iot
+    kubernetes.io/os: linux
+    kubernetes.io/role: agent
+    node-role.kubernetes.io/agent: ''
+    type: kwok
+    topology.kubernetes.io/region: IT-NO
+    hardware.carbon/subcategory: IoT
+  name: node-7-it-no-iot
+spec: {}
+status:
+  allocatable:
+    cpu: '2'
+    memory: 2Gi
+    pods: 110
+  capacity:
+    cpu: '2'
+    memory: 2Gi
     pods: 110
   nodeInfo:
     architecture: amd64

@@ -1,0 +1,103 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{enumitem}
+\usepackage{verbatim}
+\usepackage{amsmath}
+\usepackage{hyperref}
+
+\title{Experimental Design for Carbon-Aware Orchestrator Publication}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+
+\section{Comparative Evaluation Framework}
+\textbf{Algorithms to Compare:}
+\begin{enumerate}
+    \item Carbon-Aware Orchestrator
+    \item Kubernetes Default Scheduler
+    \item Random Placement
+    \item First-Fit/Bin-Packing Approach
+        \begin{itemize}
+            \item Process workloads in a predefined order (typically arrival time). For each workload, scan through nodes sequentially. Place the workload on the first node with sufficient resources. If no node has capacity, reject the workload or wait.
+            \item Differences from CAO:
+            \begin{itemize}
+                \item Only considers where to place workloads, not when
+                \item Optimizes for bin utilization, not carbon emissions
+                \item Makes greedy, immediate decisions without considering future timeslots
+                \item Has no concept of deadlines or scheduling windows
+            \end{itemize}
+        \end{itemize}
+    \item Theoretical optimal solution (if computationally feasible)
+    \item Other state-of-art energy-aware schedulers
+\end{enumerate}
+
+\section{Workload Diversity}
+
+\subsection*{Synthetic Workloads}
+Parameterized by characteristics:
+\begin{itemize}[leftmargin=*, label={--}]
+    \item CPU/Memory intensity ratios
+    \item Execution duration (short vs. long-running)
+    \item Deadlines (strict vs. flexible)
+    \item Burstiness patterns
+\end{itemize}
+
+\subsection*{Real-World Traces (tbd)}
+\begin{itemize}[leftmargin=*, label={--}]
+    \item Alibaba or Google cluster traces
+    \item CI/CD pipeline workloads
+    \item Batch processing workloads
+    \item ML training jobs
+\end{itemize}
+
+\section{Key Metrics}
+
+\subsection*{Primary Carbon Metrics}
+\begin{itemize}[leftmargin=*, label={--}]
+    \item Total carbon emissions (kg CO\textsubscript{2}e)
+    \item Carbon reduction percentage vs. baselines
+    \item Carbon efficiency (computation/kg CO\textsubscript{2}e)
+\end{itemize}
+
+\subsection*{System Performance}
+\begin{itemize}[leftmargin=*, label={--}]
+    \item Resource utilization across nodes/regions
+    \item Job completion times
+    \item SLA violations/deadline misses
+    \item Scheduling overhead (time complexity)
+\end{itemize}
+
+\subsection*{Tradeoff Analysis}
+\begin{itemize}[leftmargin=*, label={--}]
+    \item Carbon savings vs. performance impact
+    \item Pareto efficiency plots
+\end{itemize}
+
+\section{Experimental Variables}
+Systematically vary:
+\begin{itemize}[leftmargin=*, label={--}]
+    \item \textbf{Infrastructure Scale:} 4, 8, 16, 32, 64 nodes
+    \item \textbf{Regional Distribution:} Single-region vs. multi-region
+    \item \textbf{Carbon Intensity Patterns:} Static, time-varying, region-varying
+    \item \textbf{Scheduling Window Flexibility:} 0h, 24h, 48h, 72h
+\end{itemize}
+
+\section{Statistical Validity}
+\begin{itemize}[leftmargin=*, label={--}]
+    \item Run each experiment configuration 30+ times
+    \item Report mean, median, standard deviation, and 95\% confidence intervals
+    \item Conduct statistical significance tests (e.g., t-tests, ANOVA)
+    \item Perform sensitivity analysis for key algorithm parameters
+\end{itemize}
+
+\section{Practical Impact}
+\begin{itemize}[leftmargin=*, label={--}]
+    \item Demonstrate real-world applicability through case studies
+    \item Show financial cost implications (carbon pricing)
+    \item Calculate environmental impact at scale (projections)
+\end{itemize}
+
+\end{document}

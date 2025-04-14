@@ -40,3 +40,23 @@ htmlcov/
 
 # Logs
 *.log
+
+# LaTeX build files
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+
+# Generated experiment results
+**/experiment_results/
+**/experiments/*/
+
+# Generated workloads
+workloads/
+workloads-vanilla/
+
+# But track the configuration files
+!infra-workload-config.yaml

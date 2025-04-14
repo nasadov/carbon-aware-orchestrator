@@ -31,8 +31,8 @@ def main() -> None:
     parser.add_argument(
         '--algorithm',
         default='heuristic',
-        choices=['heuristic', 'optimal'],
-        help='Scheduling algorithm to use (default: heuristic)'
+        choices=['heuristic', 'optimal', 'global-optimal'],
+        help='Scheduling algorithm to use: heuristic (fast, local optimization), optimal (MILP, per-pod optimization), or global-optimal (MILP, considers all pods simultaneously) (default: heuristic)'
     )
     parser.add_argument(
         '--experiment',

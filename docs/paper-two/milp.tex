@@ -1,0 +1,131 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{xcolor}
+\usepackage{booktabs}
+
+\begin{document}
+
+\section{Carbon-Aware Scheduling: MILP Formulation}
+
+\subsection{Problem Definition}
+
+We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Programming (MILP) problem. The objective is to find an optimal assignment of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing the total carbon emissions.
+
+\subsection{Sets and Indices}
+
+\begin{align}
+& i \in \mathcal{P} & \text{Set of pods} \\
+& j \in \mathcal{F} & \text{Set of flavours (nodes)} \\
+& t \in \mathcal{T} & \text{Set of timeslots} \\
+\end{align}
+
+\subsection{Parameters}
+
+\begin{align}
+& d_i \in \mathbb{Z}^+ & \text{Duration of pod $i$ (in timeslots)} \\
+& c_{i} \in \mathbb{R}^+ & \text{CPU request of pod $i$} \\
+& r_{i} \in \mathbb{R}^+ & \text{RAM request of pod $i$} \\
+& C_{jt} \in \mathbb{R}^+ & \text{Available CPU of node $j$ in timeslot $t$} \\
+& R_{jt} \in \mathbb{R}^+ & \text{Available RAM of node $j$ in timeslot $t$} \\
+& e_{ijt} \in \mathbb{R}^+ & \text{Carbon emissions for running pod $i$ on node $j$ starting at timeslot $t$} \\
+& T_{max} \in \mathbb{Z}^+ & \text{Maximum available timeslot index} \\
+\end{align}
+
+The carbon emissions $e_{ijt}$ are calculated considering:
+\begin{itemize}
+  \item Operational carbon: Based on the pod's resource consumption, node's power profile, and regional carbon intensity forecasts across the pod's execution duration
+  \item Embodied carbon: Accounting for the amortized manufacturing emissions of the hardware over its lifetime
+\end{itemize}
+
+\subsection{Decision Variables}
+
+\begin{align}
+x_{ijt} = 
+\begin{cases} 
+1 & \text{if pod $i$ is placed on node $j$ starting at timeslot $t$} \\
+0 & \text{otherwise}
+\end{cases}
+\end{align}
+
+\subsection{Feasible Placements}
+
+Let $\mathcal{V}_i \subset \mathcal{F} \times \mathcal{T}$ be the set of valid node-timeslot pairs for pod $i$:
+
+\begin{align}
+\mathcal{V}_i = \{(j,t) \in \mathcal{F} \times \mathcal{T} \mid 
+& t + d_i \leq T_{max} \text{ and } \\
+& C_{j(t+k)} \geq c_i \text{ for all } k \in \{0,1,\ldots,d_i-1\} \text{ and } \\
+& R_{j(t+k)} \geq r_i \text{ for all } k \in \{0,1,\ldots,d_i-1\} \}
+\end{align}
+
+\subsection{Mathematical Model}
+
+\subsubsection{Objective Function}
+Minimize total carbon emissions:
+\begin{align}
+\text{Minimize} \quad Z = \sum_{i \in \mathcal{P}} \sum_{(j,t) \in \mathcal{V}_i} e_{ijt} \cdot x_{ijt}
+\end{align}
+
+\subsubsection{Constraints}
+
+\textbf{Assignment constraint:} Each pod must be placed exactly once:
+\begin{align}
+\sum_{(j,t) \in \mathcal{V}_i} x_{ijt} = 1 \quad \forall i \in \mathcal{P}
+\end{align}
+
+\textbf{CPU capacity constraints:} The total CPU usage in each node and timeslot must not exceed capacity:
+\begin{align}
+\sum_{i \in \mathcal{P}} \sum_{t' \in \mathcal{T}_{it}} c_i \cdot x_{ijt'} \leq C_{jt} \quad \forall j \in \mathcal{F}, \forall t \in \mathcal{T}
+\end{align}
+where $\mathcal{T}_{it} = \{t' \in \mathcal{T} \mid t' \leq t < t' + d_i, (j,t') \in \mathcal{V}_i\}$ represents the set of starting timeslots $t'$ such that pod $i$ would be running at timeslot $t$ if started at $t'$.
+
+\textbf{RAM capacity constraints:} The total RAM usage in each node and timeslot must not exceed capacity:
+\begin{align}
+\sum_{i \in \mathcal{P}} \sum_{t' \in \mathcal{T}_{it}} r_i \cdot x_{ijt'} \leq R_{jt} \quad \forall j \in \mathcal{F}, \forall t \in \mathcal{T}
+\end{align}
+
+\textbf{Binary constraint:} Decision variables are binary:
+\begin{align}
+x_{ijt} \in \{0,1\} \quad \forall i \in \mathcal{P}, \forall (j,t) \in \mathcal{V}_i
+\end{align}
+
+\subsection{Emissions Calculation}
+
+The carbon emissions parameter $e_{ijt}$ for running pod $i$ on node $j$ starting at timeslot $t$ is calculated as:
+
+\begin{align}
+e_{ijt} = \sum_{k=0}^{d_i-1} \left( op_{ijt+k} + emb_{ij} \right)
+\end{align}
+
+where:
+\begin{itemize}
+\item $op_{ijt+k}$ is the operational carbon emissions in timeslot $t+k$:
+\begin{align}
+op_{ijt+k} = p_{ij} \cdot \text{CI}_{j,t+k}
+\end{align}
+with $p_{ij}$ being the power consumption of pod $i$ on node $j$ and $\text{CI}_{j,t+k}$ being the carbon intensity forecast for the region of node $j$ in timeslot $t+k$.
+
+\item $emb_{ij}$ is the embodied carbon emissions attributed to pod $i$ on node $j$ for one timeslot:
+\begin{align}
+emb_{ij} = \frac{\text{EC}_j}{L_j \cdot \text{utilization factor}}
+\end{align}
+with $\text{EC}_j$ being the total embodied carbon of node $j$, $L_j$ being the node's expected lifetime in hours, and the utilization factor representing the pod's resource usage as a fraction of the node's total capacity.
+\end{itemize}
+
+\subsection{Implementation Details}
+
+In practice, the problem is solved using the PuLP library with the following approach:
+\begin{enumerate}
+\item Precompute all valid placements for each pod
+\item Create binary decision variables for each valid placement
+\item Define the objective function to minimize total carbon emissions
+\item Add constraints ensuring each pod is placed exactly once
+\item Add resource capacity constraints for CPU and RAM
+\item Solve the MILP problem using the CBC solver with a time limit
+\item Extract the solution from the decision variables
+\end{enumerate}
+
+\end{document}

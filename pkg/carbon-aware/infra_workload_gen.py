@@ -176,7 +176,8 @@ DEFAULT_CONFIG = {
                 }
             }
         },
-        "hardware_assignment_method": "cycle"  # "cycle" or "random"
+        "hardware_assignment_method": "cycle",  # "cycle" or "random"
+        "hardware_cycle_offset": 1  # Offset for shifted_cycle method
     },
     "workload": {
         "output_dir": "workloads",
@@ -253,6 +254,7 @@ def generate_nodes_file(config: Dict[str, Any]):
         "Server": {"cpu": "8", "memory": "16Gi", "embodied_carbon": 1230.656, "lifetime": 3.87}
     })
     hardware_assignment_method = config.get("hardware_assignment_method", "cycle")
+    hardware_cycle_offset = config.get("hardware_cycle_offset", 1)
     
     # Convert hardware subcategories to a list for easier cycling/random selection
     hardware_types = list(hardware_subcategories.keys())
@@ -263,6 +265,8 @@ def generate_nodes_file(config: Dict[str, Any]):
     # Log assignment methods
     print(f"Using {assignment_method} region assignment with seed: {random_seed}")
     print(f"Using {hardware_assignment_method} hardware subcategory assignment")
+    if hardware_assignment_method == "shifted_cycle":
+        print(f"Using hardware cycle offset: {hardware_cycle_offset}")
     
     all_docs = []
     for i in range(num_nodes):
@@ -281,6 +285,14 @@ def generate_nodes_file(config: Dict[str, Any]):
         # Determine hardware subcategory based on assignment method
         if hardware_assignment_method == "cycle":
             subcategory = hardware_types[i % len(hardware_types)]
+        elif hardware_assignment_method == "shifted_cycle":
+            # Calculate the region cycle and region position within the cycle
+            region_cycle = i // len(regions)
+            region_position = i % len(regions)
+            
+            # Calculate the hardware position with an offset that increases with each cycle
+            hardware_position = (region_position + (region_cycle * hardware_cycle_offset)) % len(hardware_types)
+            subcategory = hardware_types[hardware_position]
         else:  # random
             subcategory = random.choice(hardware_types)
         
@@ -347,8 +359,13 @@ def generate_timeslot_files(config: Dict[str, Any]):
     """
     Generate one file per time slot. Each file has a Poisson-distributed 
     number of Deployments with durations and deadlines in hours.
+    
+    Generates two sets of files:
+    1. With custom scheduler ("fogatlas")
+    2. With default Kubernetes scheduler (no schedulerName specified)
     """
     output_dir = config.get("output_dir", "workloads")
+    vanilla_output_dir = config.get("vanilla_output_dir", output_dir + "-vanilla")
     num_timeslots = config.get("num_timeslots", 5)
     poisson_lambda = config.get("poisson_lambda", 2)
     min_services = config.get("min_services", 1)
@@ -393,8 +410,12 @@ def generate_timeslot_files(config: Dict[str, Any]):
         print(f"Deadline flexibility options: {deadline_flexibility_hours} hours")
     print(f"Random seed: {random_seed}")
 
-    # Create the output directory if not exists
+    # Create the output directories if not exists
     os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(vanilla_output_dir, exist_ok=True)
+    print(f"Creating workload files in two directories:")
+    print(f" - Custom scheduler (fogatlas): {output_dir}")
+    print(f" - Default scheduler (vanilla): {vanilla_output_dir}")
 
     # Assign microservice names sequentially across all timeslots
     ms_counter = 0
@@ -410,14 +431,24 @@ def generate_timeslot_files(config: Dict[str, Any]):
     print(f"Will generate {total_services} total microservices across {num_timeslots} timeslots")
 
     for slot_id in range(num_timeslots):
+        # Filenames for both custom and vanilla scheduler
         timeslot_filename = os.path.join(output_dir, f"timeslot_{slot_id}.yaml")
+        vanilla_timeslot_filename = os.path.join(vanilla_output_dir, f"timeslot_{slot_id}.yaml")
         microservices_per_slot = service_counts[slot_id]
         
-        deployments = []
+        custom_deployments = []
+        vanilla_deployments = []
+        
         for _ in range(microservices_per_slot):
-            # Make a new deployment
+            # Make two new deployments (one for each scheduler)
             import copy
-            dep_doc = copy.deepcopy(DEPLOYMENT_TEMPLATE)
+            custom_dep = copy.deepcopy(DEPLOYMENT_TEMPLATE)
+            vanilla_dep = copy.deepcopy(DEPLOYMENT_TEMPLATE)
+            
+            # Remove the custom scheduler from the vanilla deployment
+            # The default scheduler will be used if schedulerName is not specified
+            if "schedulerName" in vanilla_dep["spec"]["template"]["spec"]:
+                del vanilla_dep["spec"]["template"]["spec"]["schedulerName"]
 
             # Generate the core microservice name
             ms_name = f"{base_name}{ms_counter:03d}"  # e.g. "m000"
@@ -458,33 +489,42 @@ def generate_timeslot_files(config: Dict[str, Any]):
             
             # Create the full name with both duration and deadline
             full_name = f"{ms_name}-duration-{duration_str}-deadline-{deadline_str}"
+            
+            # Apply the same configuration to both deployments
+            for dep in [custom_dep, vanilla_dep]:
+                # Fill in the deployment template
+                dep["metadata"]["name"] = full_name
+                dep["metadata"]["labels"]["app"] = full_name
 
-            # Fill in the deployment template
-            dep_doc["metadata"]["name"] = full_name
-            dep_doc["metadata"]["labels"]["app"] = full_name  # CHANGED: Now matches the name
+                # Add duration and deadline labels 
+                dep["metadata"]["labels"]["duration"] = f"duration-{duration_str}"
+                dep["metadata"]["labels"]["deadline"] = f"deadline-{deadline_str}"
 
-            # Add duration and deadline labels 
-            dep_doc["metadata"]["labels"]["duration"] = f"duration-{duration_str}"
-            dep_doc["metadata"]["labels"]["deadline"] = f"deadline-{deadline_str}"
+                # Update selector and pod labels
+                dep["spec"]["selector"]["matchLabels"]["name"] = ms_name
+                dep["spec"]["template"]["metadata"]["labels"]["name"] = ms_name
 
-            # Update selector and pod labels
-            dep_doc["spec"]["selector"]["matchLabels"]["name"] = ms_name
-            dep_doc["spec"]["template"]["metadata"]["labels"]["name"] = ms_name
+                # Fill CPU/mem
+                container = dep["spec"]["template"]["spec"]["containers"][0]
+                container["resources"]["requests"]["cpu"] = cpu_req
+                container["resources"]["requests"]["memory"] = mem_req
+            
+            custom_deployments.append(custom_dep)
+            vanilla_deployments.append(vanilla_dep)
 
-            # Fill CPU/mem
-            container = dep_doc["spec"]["template"]["spec"]["containers"][0]
-            container["resources"]["requests"]["cpu"] = cpu_req
-            container["resources"]["requests"]["memory"] = mem_req
-
-            deployments.append(dep_doc)
-
-        # Write them as a multi-document YAML for this timeslot
+        # Write custom scheduler deployments
         with open(timeslot_filename, "w") as f:
-            for doc in deployments:
+            for doc in custom_deployments:
+                yaml.safe_dump(doc, f, sort_keys=False)
+                f.write("---\n")
+        
+        # Write vanilla scheduler deployments
+        with open(vanilla_timeslot_filename, "w") as f:
+            for doc in vanilla_deployments:
                 yaml.safe_dump(doc, f, sort_keys=False)
                 f.write("---\n")
 
-        print(f"Generated {timeslot_filename} with {microservices_per_slot} microservices.")
+        print(f"Generated timeslot {slot_id} with {microservices_per_slot} microservices in both directories.")
         
     # Report duration distribution
     if duration_assignment_method == "cycle" and total_services > 0:
