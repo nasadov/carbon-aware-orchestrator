@@ -4,6 +4,7 @@
 \usepackage{verbatim}
 \usepackage{amsmath}
 \usepackage{hyperref}
+\usepackage{graphicx}  % Add graphicx package for including figures
 
 \title{Experimental Design for Carbon-Aware Orchestrator Publication}
 \author{}
@@ -99,5 +100,116 @@ Systematically vary:
     \item Show financial cost implications (carbon pricing)
     \item Calculate environmental impact at scale (projections)
 \end{itemize}
+
+\section{Experimental Results and Analysis}
+\label{sec:results}
+
+We conducted extensive experiments to evaluate the performance characteristics and carbon efficiency of our carbon-aware orchestration algorithm. The following sections present our key findings across multiple dimensions.
+
+\subsection{Algorithm Performance Characteristics}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/execution_time_vs_pods.pdf}
+\caption{Execution time of the carbon-aware orchestration algorithm as a function of workload size. Note the logarithmic scale on the y-axis. While most data points show consistent performance, there's a notable outlier with significantly higher execution time that warrants further investigation.}
+\label{fig:execution-time}
+\end{figure}
+
+Figure~\ref{fig:execution-time} illustrates how our algorithm's execution time scales with the number of pods processed. The majority of execution times remain under 20ms regardless of workload size, demonstrating good algorithmic efficiency for typical scenarios. However, we observe an outlier at call 11 (processing 7 pods) that exhibits significantly higher execution time (approximately 17 seconds). This outlier could be attributed to several factors:
+
+\begin{itemize}
+    \item Complex interactions between specific pod characteristics and scheduling constraints
+    \item Resource contention on the host machine during that particular test run
+    \item Search space explosion for specific combinations of pods and constraints
+\end{itemize}
+
+To better understand the algorithm's per-pod efficiency, Figure~\ref{fig:per-pod-time} shows the execution time normalized by the number of pods processed.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/per_pod_execution_time.pdf}
+\caption{Per-pod execution time showing how efficiently the algorithm processes individual workload units. The outlier affects per-pod efficiency significantly.}
+\label{fig:per-pod-time}
+\end{figure}
+
+\subsection{Carbon Efficiency Analysis}
+
+The primary goal of our orchestration system is optimizing carbon efficiency. Figure~\ref{fig:carbon-efficiency} shows the carbon emissions per pod across different workload sizes.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/carbon_efficiency.pdf}
+\caption{Carbon emissions per pod as a function of the number of pods successfully placed. This shows the variation in emissions efficiency across different workloads.}
+\label{fig:carbon-efficiency}
+\end{figure}
+
+We observe significant variations in per-pod emissions across different runs, ranging from approximately 0.1 to 4.2 kg CO\textsubscript{2}e per pod. This variation can be attributed to:
+
+\begin{itemize}
+    \item Different pod resource requirements and durations
+    \item Varying carbon intensity in the regions where pods are placed
+    \item Hardware heterogeneity in the target infrastructure
+\end{itemize}
+
+There appears to be an increasing trend in per-pod emissions as more pods are placed, suggesting that as infrastructure utilization increases, the algorithm must make less optimal placement decisions from a carbon perspective.
+
+\subsection{Multi-dimensional Performance Analysis}
+
+To better understand the relationships between execution time, carbon efficiency, and system utilization, Figure~\ref{fig:multi-dim} presents these metrics across sequential algorithm runs.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/multi_dimension_analysis.pdf}
+\caption{Multi-dimensional analysis showing execution time, carbon emissions per pod, and CPU utilization across sequential algorithm runs. Numbers above data points indicate the number of pods processed in each run.}
+\label{fig:multi-dim}
+\end{figure}
+
+Key observations from this analysis:
+\begin{itemize}
+    \item CPU utilization increases steadily as more pods are added to the system
+    \item Per-pod carbon emissions show significant variation but generally increase as the system becomes more utilized
+    \item The outlier in execution time (call 11) does not correspond to any significant anomaly in carbon efficiency or CPU utilization
+\end{itemize}
+
+\subsection{Algorithmic Complexity Analysis}
+
+To characterize the theoretical complexity of our algorithm, Figure~\ref{fig:scalability} compares our empirical results against standard complexity classes.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/algorithm_scalability.pdf}
+\caption{Comparison of the carbon-aware orchestration algorithm's performance against theoretical complexity classes. The algorithm's behavior most closely resembles linear complexity for the tested workload sizes.}
+\label{fig:scalability}
+\end{figure}
+
+Excluding outliers, our algorithm exhibits behavior closest to linear complexity (O(n)) across the tested workload sizes. This indicates good scalability characteristics for practical deployment scenarios, even as the number of pods increases.
+
+\subsection{Resource Utilization and Carbon Efficiency}
+
+Figure~\ref{fig:resource-carbon} explores the relationships between resource utilization and carbon emissions.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/resource_utilization_carbon_analysis.pdf}
+\caption{Relationships between resource utilization metrics (CPU and memory) and carbon emissions (both total and per-pod). Point sizes represent the number of pods processed.}
+\label{fig:resource-carbon}
+\end{figure}
+
+These visualizations reveal important insights:
+\begin{itemize}
+    \item Total carbon emissions generally increase with CPU utilization, as expected
+    \item Memory utilization shows a less clear correlation with emissions than CPU utilization
+    \item Per-pod emissions tend to increase at higher utilization levels, indicating diminishing returns in carbon efficiency as the system approaches capacity
+\end{itemize}
+
+\subsection{Discussion of Findings}
+
+Our experimental results demonstrate that the heuristic carbon-aware orchestration algorithm achieves good performance characteristics for practical workload sizes, with execution times generally remaining under 20ms. The algorithm exhibits approximately linear complexity, making it suitable for deployment in production environments.
+
+However, the presence of outliers in execution time suggests that certain combinations of pods and constraints can lead to computational challenges. Further optimization could target these edge cases to provide more consistent performance.
+
+From a carbon efficiency perspective, we observe that the algorithm makes effective placement decisions that consider both operational and embodied carbon emissions. However, carbon efficiency decreases as system utilization increases, highlighting the fundamental trade-off between resource efficiency and carbon optimization.
+
+Future work will compare these results against a global optimal algorithm based on mixed-integer linear programming (MILP) to quantify how close our heuristic comes to optimal solutions across different scenarios.
 
 \end{document}

@@ -17,6 +17,9 @@ import idl_pb2
 import idl_pb2_grpc
 from google.protobuf import empty_pb2
 from kubernetes import utils as k8sutils
+from carbon_aware.utils import PerformanceLogger
+from carbon_aware.server import serve
+from carbon_aware.experiments import ExperimentLogger
 
 # Define constants for microservice status
 MICROSERVICE_STATUS_MAP = {
@@ -1201,55 +1204,10 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 # Server Bootstrap
 #####################################
 
-def serve() -> None:
-    """
-    Creates and runs the gRPC server on port 50051, registering the PlacementAlgorithm servicer.
-    Implements graceful shutdown handling.
-    """
-    port = '50051'
-    shutdown_in_progress = False  # Add this flag
-    
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(PlacementAlgorithm(), server)
-    server.add_insecure_port('[::]:' + port)
-
-    # Define graceful shutdown handler
-    def graceful_shutdown(sig, frame):
-        nonlocal shutdown_in_progress
-        if shutdown_in_progress:
-            return  # Skip if shutdown already in progress
-        
-        shutdown_in_progress = True
-        logging.info("⏳ Received shutdown signal, stopping server gracefully...")
-        
-        # Give ongoing requests time to complete
-        threading.Thread(target=server.stop, args=(5,)).start()  # 5 second timeout
-        
-        logging.info("👋 Server shutdown initiated")
-
-    # Register signal handlers
-    signal.signal(signal.SIGINT, graceful_shutdown)
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-    
-    server.start()
-    logging.info(f"🚀 Server started, listening on port {port}")
-    
-    try:
-        # This is a blocking call until server is terminated
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        # Only log if not already shutting down
-        if not shutdown_in_progress:
-            logging.info("Keyboard interrupt received")
-            graceful_shutdown(signal.SIGINT, None)
-    finally:
-        logging.info("Server shutdown complete")
-
-
 def main() -> None:
     """
-    Main entrypoint. Sets up logging based on command-line args, 
-    sets signal handler, and runs the server.
+    Main entrypoint. Sets up logging based on command-line args,
+    initializes performance logging, and runs the server.
     """
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Carbon-aware scheduling server.')
@@ -1258,6 +1216,22 @@ def main() -> None:
         default='INFO',
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
         help='Set the logging level (default: INFO)'
+    )
+    parser.add_argument(
+        '--algorithm', 
+        default='heuristic',
+        choices=['heuristic', 'global-optimal', 'global_optimal', 'optimal'],
+        help='Algorithm to use for scheduling (default: heuristic)'
+    )
+    parser.add_argument(
+        '--experiment',
+        action='store_true',
+        help='Enable experiment mode with detailed metrics collection'
+    )
+    parser.add_argument(
+        '--no-performance-log',
+        action='store_true',
+        help='Disable separate performance logging'
     )
     args = parser.parse_args()
     
@@ -1269,8 +1243,26 @@ def main() -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     
-    logging.info(f"Starting carbon-aware server with log level: {args.loglevel}")
-    serve()
+    # Map algorithm names for consistency
+    algorithm = args.algorithm
+    if algorithm == 'global-optimal' or algorithm == 'global_optimal' or algorithm == 'optimal':
+        algorithm = 'optimal'
+    
+    # Initialize experiment logger if enabled
+    experiment_logger = None
+    if args.experiment:
+        from carbon_aware.experiments import ExperimentLogger
+        experiment_logger = ExperimentLogger()
+        logging.info(f"Starting carbon-aware server in experiment mode")
+    
+    # Initialize performance logger
+    perf_logger = None
+    if not args.no_performance_log:
+        perf_logger = PerformanceLogger(algorithm)
+        logging.info(f"Performance logging enabled: {perf_logger.log_file}")
+    
+    logging.info(f"Starting carbon-aware server with algorithm: {algorithm}, log level: {args.loglevel}")
+    serve(port='50051', algorithm=algorithm, experiment_logger=experiment_logger, perf_logger=perf_logger)
 
 
 if __name__ == "__main__":

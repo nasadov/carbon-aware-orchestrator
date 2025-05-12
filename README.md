@@ -20,6 +20,11 @@ This work is based on the original scheduler plugin developed by Fondazione Brun
     - [Configure Test Infrastructure and Workloads](#configure-test-infrastructure-and-workloads)
     - [Generate Test Data](#generate-test-data)
     - [Run the Experiment](#run-the-experiment)
+    - [Performance Metrics](#performance-metrics)
+    - [Visualizing Results](#visualizing-results)
+- [Recent Updates](#recent-updates)
+    - [Automatic Performance Metrics Tracking](#automatic-performance-metrics-tracking)
+    - [Comprehensive Visualization Toolkit](#comprehensive-visualization-toolkit)
 
 ## Overview
 
@@ -37,10 +42,14 @@ The interface definition is in the `./pkg/idl/idl.proto` file. It models the sna
 ## Repository Structure
 
 - `pkg/idl/`: gRPC interface definition
-- `pkg/algorithm/`: Implementation of the carbon-aware scheduling algorithm
+- `pkg/carbon-aware/`: Implementation of the carbon-aware scheduling algorithm
     - `server-python/`: Python implementation 
-    - `client-go/`: Go client for testing
+    - `client/`: Go client for testing
     - `infra_workload_gen.py`: Tool for generating test infrastructure and workload data
+    - `performance_logs/`: Directory containing performance metrics logs
+- `analysis/`: Tools for analyzing and visualizing performance data
+    - `visualization.py`: Script for generating performance visualizations
+    - `VISUALIZATION_GUIDE.md`: Documentation for using visualizations
 
 ## Carbon-Aware Algorithm
 
@@ -104,7 +113,10 @@ git clone https://github.com/nasadov/carbon-aware-orchestrator.git
 cd carbon-aware-orchestrator
 
 # Install required Python dependencies
-pip install -r pkg/algorithm/server-python/requirements.txt
+pip install -r pkg/carbon-aware/server-python/requirements.txt
+
+# Install additional dependencies for visualization
+pip install matplotlib pandas seaborn
 ```
 
 ### Configure Test Infrastructure and Workloads
@@ -201,25 +213,91 @@ workload:
 
 ```bash
 # Generate infrastructure and workload data based on your config
-python pkg/algorithm/infra_workload_gen.py
+python pkg/carbon-aware/infra_workload_gen.py
 ```
 This will create:
 - `nodes.yaml`: Infrastructure definitions with hardware characteristics and regional assignments
 - `workloads/timeslot_*.yaml`: Directory containing workload definitions for each timeslot
 
-The `shifted_cycle` hardware assignment method ensures that hardware types and regions have diverse pairings across nodes, allowing for more realistic testing scenarios where different hardware profiles are distributed across various regions.
+The `shifted_cycle` hardware assignment method creates different hardware-region combinations across nodes, making tests more realistic.
 
 ### Run the Experiment
 
 ```bash
 # Start the Python server
-cd pkg/algorithm/server-python
-python carbon-aware.py &
+cd pkg/carbon-aware/server-python
+python main.py &
 
 # In a new terminal, run the Go client with the test data
-cd pkg/algorithm/client-go
-go run client.go
+cd pkg/carbon-aware/client
+go run client-test.go
 ```
+
+### Performance Metrics
+
+The orchestrator automatically tracks detailed performance metrics for each scheduling run. These metrics are stored in CSV format in the `pkg/carbon-aware/server-python/performance_logs/` directory.
+
+Performance tracking includes:
+- Execution time (total and per-pod)
+- Number of pods processed, placed, failed, and skipped
+- Total and per-pod carbon emissions
+- CPU and memory utilization
+- Algorithm-specific metrics (iterations, steps)
+- Number of scheduling options considered
+- Region diversity information
+- Hardware type distributions
+
+The metrics are logged automatically without needing any special flags. Each log file is named with the algorithm and timestamp (e.g., `heuristic_20250512_121534.csv`).
+
+### Visualizing Results
+
+The repository includes visualization tools for analyzing performance data:
+
+```bash
+# Generate visualizations from a performance log file
+cd analysis
+python visualization.py --log-file ../pkg/carbon-aware/server-python/performance_logs/heuristic_YYYYMMDD_HHMMSS.csv
+```
+
+Available visualizations:
+1. **Execution Time vs. Pods Processed**: Shows how execution time changes with workload size
+2. **Per-Pod Execution Time Analysis**: Shows time spent on each pod placement
+3. **Carbon Emissions Analysis**: Shows total and per-pod emissions
+4. **Multi-dimensional Performance Analysis**: Shows relationships between time, emissions, and scheduling options
+5. **Algorithm Scalability Analysis**: Shows how the algorithm handles different workload sizes
+6. **Resource Utilization vs. Carbon Emissions**: Shows how resource use relates to carbon emissions
+
+For detailed instructions on using the visualization tools, see `analysis/VISUALIZATION_GUIDE.md`.
+
+## Recent Updates
+
+### Automatic Performance Metrics Tracking
+
+The Carbon-Aware Orchestrator now tracks performance metrics by default. Previously, you needed to use the `--perf-log` flag to enable this feature. Now, all experiments automatically save performance data, which helps with:
+
+- Comparing how the algorithm performs across multiple runs
+- Comparing different algorithms
+- Creating useful visualizations
+- Understanding how placement decisions affect carbon emissions
+- Tracking system performance over time
+- Finding ways to improve
+
+This change was made in the server's main code so that all runs collect the same metrics without needing extra settings. The metrics include timing, throughput, carbon impact, and resource use.
+
+Performance logs are saved as CSV files in the `pkg/carbon-aware/server-python/performance_logs/` directory. Each file is named with the algorithm type and timestamp (e.g., `heuristic_20250512_121534.csv`).
+
+### Visualization Tools
+
+A new script (`analysis/visualization.py`) creates charts from the performance data. The script makes six types of charts:
+
+1. **Execution Time vs. Pods Processed**: Shows how run time increases with more pods, with trendlines to show performance patterns
+2. **Per-Pod Execution Time Analysis**: Shows how much time is spent on each pod placement
+3. **Carbon Emissions Analysis**: Shows total emissions and per-pod emissions
+4. **Multi-dimensional Performance Analysis**: Shows how time, emissions, and other metrics relate to each other
+5. **Algorithm Scalability Analysis**: Shows how the algorithm performs with different workload sizes
+6. **Resource Utilization vs. Carbon Emissions**: Shows how CPU and memory use affect carbon emissions
+
+These charts are saved as PDF and PNG files in the `figures/` directory, ready to use in papers and presentations. A guide on using these tools is available in `analysis/VISUALIZATION_GUIDE.md`.
 
 ## Architecture
 
@@ -229,6 +307,8 @@ The carbon-aware orchestrator follows this architecture for making placement dec
 flowchart TB
       subgraph Orchestration
             K["Kubernetes Scheduler Framework"] <--gRPC API--> C["Carbon-Aware Orchestrator"]
+            P["Performance Tracking"] <-- Metrics --> C
+            V["Visualization Tools"] <-- Analyzes --> P
       end
       
       subgraph Data Sources
@@ -237,12 +317,27 @@ flowchart TB
             W["Workload Specifications - CPU/Memory - Duration"]
       end
       
+      subgraph Analysis Flow
+            CSV["Performance Logs (CSV)"] --> V
+            V --> Figs["Visualization Outputs"]
+            Figs --> Doc["Research Documents"]
+      end
+      
       C <--Reads--> D
       N --"Resource Info"--> C
       W --"Requirements"--> C
       
       C --"Returns Optimized Placements"--> K
+      P --"Logs to CSV"--> CSV
+      
+      style P fill:#f9f,stroke:#333,stroke-width:2px
+      style CSV fill:#bbf,stroke:#333,stroke-width:2px
+      style V fill:#bfb,stroke:#333,stroke-width:2px
 ```
+
+The diagram shows how performance tracking (pink) creates CSV logs (blue) that visualization tools (green) can analyze to help improve the orchestrator.
+
+The architecture includes performance tracking and visualization tools to help analyze how the orchestrator works.
 
 ## Contributing
 

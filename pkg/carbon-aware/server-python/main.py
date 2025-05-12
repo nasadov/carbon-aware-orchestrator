@@ -44,6 +44,17 @@ def main() -> None:
         default='./experiments',
         help='Directory to store experiment results'
     )
+    parser.add_argument(
+        '--perf-log',
+        action='store_true',
+        default=True,  # Enable performance logging by default
+        help='Enable performance logging to CSV files (enabled by default)'
+    )
+    parser.add_argument(
+        '--perf-log-dir',
+        default='./performance_logs',
+        help='Directory to store performance logs'
+    )
     
     args = parser.parse_args()
     
@@ -77,8 +88,24 @@ def main() -> None:
         except Exception as e:
             logging.error(f"Error setting up experiment logger: {e}. Running without experiment logging.")
     
+    # Setup performance logger if enabled
+    perf_logger = None
+    if args.perf_log:
+        try:
+            from carbon_aware.utils import PerformanceLogger
+            
+            # Create the performance logs directory if it doesn't exist
+            os.makedirs(args.perf_log_dir, exist_ok=True)
+            
+            perf_logger = PerformanceLogger(args.algorithm, log_dir=args.perf_log_dir)
+            logging.info(f"📈 Performance logging enabled by default - metrics will be collected in {perf_logger.log_file}")
+        except ImportError:
+            logging.error("Failed to import PerformanceLogger. Running without performance logging.")
+        except Exception as e:
+            logging.error(f"Error setting up performance logger: {e}. Running without performance logging.")
+    
     # Start the server
-    serve(port=args.port, algorithm=args.algorithm, experiment_logger=experiment_logger)
+    serve(port=args.port, algorithm=args.algorithm, experiment_logger=experiment_logger, perf_logger=perf_logger)
 
 
 if __name__ == "__main__":

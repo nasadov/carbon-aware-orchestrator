@@ -18,7 +18,7 @@ from google.protobuf import empty_pb2
 from carbon_aware.models import CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot
 from carbon_aware.utils import (
     parse_infrastructure, parse_microservice, build_timeslots, 
-    print_resource_utilization_report, MICROSERVICE_STATUS_MAP
+    print_resource_utilization_report, MICROSERVICE_STATUS_MAP, PerformanceLogger
 )
 from carbon_aware.state import PersistentStateStorage
 from carbon_aware.algorithms import get_algorithm
@@ -168,31 +168,7 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     self.experiment_logger.session_started = True
                 # Inject logger into algorithm
                 algorithm.experiment_logger = self.experiment_logger
-            """
-            # Add timer around algorithm execution
-            ms_algorithm_start_time = time.time()
-            best_node, best_slot, minimal_emissions = algorithm.find_placement(
-                pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots
-            )
-            ms_algorithm_time = time.time() - ms_algorithm_start_time
-
-            # Record metrics if we're in experiment mode
-            if self.experiment_logger and not hasattr(algorithm, 'experiment_logger'):
-                # Direct measurement in case algorithm implementation doesn't track metrics
-                success = best_node is not None and best_slot is not None
-                node_id = best_node.id if best_node else None
-                slot_id = best_slot.id if best_slot else None
-                considered_options = len(flavours) * len(timeslots)  # Rough estimate
-                self.experiment_logger.record_placement(
-                    pod_id=pod.id,
-                    success=success,
-                    execution_time=ms_algorithm_time,
-                    emissions=minimal_emissions if success else 0.0,
-                    considered_options=considered_options,
-                    selected_node=node_id,
-                    selected_timeslot=slot_id
-                )
-            """
+            
             # Summary counters
             placements_success = 0
             placements_failed = 0
@@ -240,9 +216,29 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     logging.info(f"    ✨ Good scheduling flexibility for {ms.name} - can optimize for carbon")
 
                 # Find optimal placement using the selected algorithm
+                logging.info(f"    🧮 Executing {self.algo.name} algorithm...")
+                algorithm_start_time = time.time()
                 best_node, best_slot, minimal_emissions = algorithm.find_placement(
                     pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots
                 )
+                algorithm_execution_time = time.time() - algorithm_start_time
+                logging.info(f"    ⏱️ Algorithm execution time: {algorithm_execution_time:.3f}s")
+                
+                # Record metrics if we're in experiment mode
+                if self.experiment_logger:
+                    success = best_node is not None and best_slot is not None
+                    node_id = best_node.id if best_node else None
+                    slot_id = best_slot.id if best_slot else None
+                    considered_options = len(flavours) * len(timeslots)  # Rough estimate
+                    self.experiment_logger.record_placement(
+                        pod_id=pod.id,
+                        success=success,
+                        execution_time=algorithm_execution_time,
+                        emissions=minimal_emissions if success else 0.0,
+                        considered_options=considered_options,
+                        selected_node=node_id,
+                        selected_timeslot=slot_id
+                    )
 
                 # Build placement result
                 if best_node and best_slot:
@@ -295,6 +291,63 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             logging.info("=" * 80)
 
             print_resource_utilization_report(flavours, leftover_cpu, leftover_ram, max_time_slots, hours_to_show=24)
+            
+            # Log performance metrics if performance logger is enabled
+            if hasattr(self, 'perf_logger') and self.perf_logger:
+                # Calculate resource utilization percentages
+                cpu_util = 0
+                mem_util = 0
+                total_cpu = 0
+                total_ram = 0
+                used_cpu = 0
+                used_ram = 0
+                
+                # Calculate for current timeslot only (index 0)
+                for flv in flavours:
+                    node_id = flv.id
+                    total_cpu += flv.totalCpu
+                    total_ram += flv.totalRam
+                    if node_id in leftover_cpu and 0 in leftover_cpu[node_id]:
+                        used_cpu += (flv.totalCpu - leftover_cpu[node_id][0])
+                    if node_id in leftover_ram and 0 in leftover_ram[node_id]:
+                        used_ram += (flv.totalRam - leftover_ram[node_id][0])
+                
+                if total_cpu > 0:
+                    cpu_util = (used_cpu / total_cpu) * 100
+                if total_ram > 0:
+                    mem_util = (used_ram / total_ram) * 100
+                
+                # Get list of microservice names
+                microservice_names = [ms.name for ms in request.workload.microservices]
+                
+                # Extract algorithm-specific metrics
+                algorithm_metrics = {
+                    'iterations': getattr(algorithm, 'iterations', 0),
+                    'steps': getattr(algorithm, 'steps', 0)
+                }
+                
+                # Log the overall call performance
+                metrics_summary = self.perf_logger.log_placement_call(
+                    execution_time=(time.time() - start_time),
+                    algorithm_name=self.algo.name,
+                    pods_total=len(request.workload.microservices),
+                    pods_processed=len(request.workload.microservices) - placements_skipped,
+                    pods_placed=placements_success,
+                    pods_failed=placements_failed,
+                    pods_skipped=placements_skipped,
+                    total_emissions=total_emissions,
+                    algorithm_metrics=algorithm_metrics,
+                    flavours=flavours,
+                    timeslots_count=max_time_slots,
+                    cpu_util=cpu_util,
+                    memory_util=mem_util,
+                    microservices=microservice_names
+                )
+                
+                logging.info(f"📊 Performance metrics logged to {self.perf_logger.log_file}")
+                logging.info(f"📈 Call #{self.perf_logger.call_counter}: {metrics_summary['execution_time_ms']:.1f}ms, " +
+                           f"placed {metrics_summary['pods_placed']}/{metrics_summary['pods_total']} pods " +
+                           f"({metrics_summary['avg_placement_time_ms']:.1f}ms/pod)")
             
             return out_placements
 
@@ -371,7 +424,7 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         return placement
 
 
-def serve(port='50051', algorithm='heuristic', experiment_logger=None):
+def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logger=None):
     """
     Creates and runs the gRPC server on the specified port, registering the PlacementAlgorithm servicer.
     Implements graceful shutdown handling.
@@ -380,6 +433,7 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None):
         port (str): Port to listen on, defaults to '50051'
         algorithm (str): Algorithm to use ('heuristic' or 'optimal')
         experiment_logger (ExperimentLogger, optional): Logger for experiment metrics
+        perf_logger (PerformanceLogger, optional): Logger for performance metrics
     """
     shutdown_in_progress = False
     
@@ -412,6 +466,9 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None):
     # Register signal handlers
     signal.signal(signal.SIGINT, graceful_shutdown)
     signal.signal(signal.SIGTERM, graceful_shutdown)
+    
+    # Store the perf_logger in the servicer
+    servicer.perf_logger = perf_logger
     
     server.start()
     logging.info(f"🚀 Server started, listening on port {port}")

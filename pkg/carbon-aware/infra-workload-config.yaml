@@ -5,7 +5,7 @@ nodes:
   filename: nodes.yaml
   
   # Number of nodes to generate
-  num_nodes: 8
+  num_nodes: 4
   
   # Base name for nodes
   base_node_name: kwok-node-0

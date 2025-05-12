@@ -666,3 +666,126 @@ def print_resource_utilization_report(flavours, leftover_cpu, leftover_ram, max_
         logging.info("-" * len(header))
     
     logging.info("=" * 100)
+
+
+#####################################
+# Performance Logging
+#####################################
+
+# Performance logging for research paper metrics
+class PerformanceLogger:
+    """
+    Logger for tracking algorithm performance metrics across multiple calls.
+    Creates a separate CSV log file with detailed performance data suitable for
+    generating research paper figures.
+    """
+    def __init__(self, algorithm_name, log_dir="performance_logs"):
+        import os
+        import datetime
+        
+        self.algorithm_name = algorithm_name
+        self.log_dir = log_dir
+        
+        # Create the log directory if it doesn't exist
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # Create a unique filename with timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = os.path.join(log_dir, f"{algorithm_name}_{timestamp}.csv")
+        
+        # Initialize the log file with headers
+        with open(self.log_file, 'w') as f:
+            f.write("timestamp,call_id,execution_time_ms,algorithm,pods_total,pods_processed,pods_placed,pods_failed,"
+                    "pods_skipped,total_emissions_kg,per_pod_emissions_kg,avg_placement_time_ms,total_flavours,"
+                    "total_timeslots,scheduling_options,cpu_utilization_pct,memory_utilization_pct,"
+                    "regions,algorithm_iterations,algorithm_steps,microservices\n")
+        
+        self.call_counter = 0
+        logging.info(f"Performance logging enabled. Writing to {self.log_file}")
+    
+    def log_placement_call(self, execution_time, algorithm_name, pods_total, pods_processed, pods_placed, 
+                          pods_failed, pods_skipped, total_emissions, algorithm_metrics, 
+                          flavours, timeslots_count, cpu_util=None, memory_util=None, microservices=None):
+        """
+        Log performance metrics for a single CalculatePlacement call.
+        
+        Args:
+            execution_time: Total execution time for the call in seconds
+            algorithm_name: Name of the algorithm used
+            pods_total: Total number of pods in the request
+            pods_processed: Number of pods actually processed (excluding skipped)
+            pods_placed: Number of pods successfully placed
+            pods_failed: Number of pods that failed placement
+            pods_skipped: Number of pods skipped
+            total_emissions: Total carbon emissions in kgCO2e
+            algorithm_metrics: Dict with algorithm-specific metrics like iterations, steps
+            flavours: List of flavours (nodes)
+            timeslots_count: Number of timeslots considered
+            cpu_util: CPU utilization percentage
+            memory_util: Memory utilization percentage
+            microservices: List of microservice names (for tracking what was scheduled)
+        """
+        import datetime
+        
+        # Calculate additional metrics
+        total_flavours = len(flavours)
+        
+        # Calculate scheduling options (number of possible placement combinations)
+        scheduling_options = total_flavours * timeslots_count if pods_processed > 0 else 0
+        
+        # Extract algorithm-specific metrics
+        iterations = algorithm_metrics.get('iterations', 0)
+        steps = algorithm_metrics.get('steps', 0)
+        
+        # Extract regions information
+        regions = set()
+        for flv in flavours:
+            if hasattr(flv, 'region'):
+                regions.add(flv.region)
+        regions_str = "|".join(regions)
+        
+        # Calculate utilization if not provided
+        if cpu_util is None or memory_util is None:
+            cpu_util = -1
+            memory_util = -1
+        
+        # Convert times to milliseconds for better readability
+        execution_time_ms = execution_time * 1000
+        avg_placement_time_ms = 0
+        if pods_processed > 0:
+            avg_placement_time_ms = execution_time_ms / pods_processed
+        
+        # Calculate per-pod emissions
+        per_pod_emissions = 0
+        if pods_placed > 0:
+            per_pod_emissions = total_emissions / pods_placed
+        
+        # Get a compact representation of microservices
+        if microservices is None:
+            microservices_str = "-"
+        else:
+            # Limit to avoid huge CSV fields
+            if len(microservices) > 5:
+                microservices_str = f"{len(microservices)}_pods"
+            else:
+                microservices_str = "|".join(microservices)
+        
+        self.call_counter += 1
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        with open(self.log_file, 'a') as f:
+            f.write(f"{timestamp},{self.call_counter},{execution_time_ms:.2f},{algorithm_name},{pods_total},"
+                    f"{pods_processed},{pods_placed},{pods_failed},{pods_skipped},{total_emissions:.6f},"
+                    f"{per_pod_emissions:.6f},{avg_placement_time_ms:.2f},{total_flavours},{timeslots_count},"
+                    f"{scheduling_options},{cpu_util:.2f},{memory_util:.2f},{regions_str},{iterations},"
+                    f"{steps},{microservices_str}\n")
+        
+        logging.info(f"📊 Performance metrics logged to {self.log_file} (call #{self.call_counter})")
+        
+        # Return a summary for console output
+        return {
+            "execution_time_ms": execution_time_ms,
+            "pods_placed": pods_placed,
+            "pods_total": pods_total,
+            "avg_placement_time_ms": avg_placement_time_ms
+        }

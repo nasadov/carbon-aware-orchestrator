@@ -50,9 +50,24 @@ htmlcov/
 *.synctex.gz
 *.toc
 
+# Ignore paper-two directory
+docs/paper-two/
+
 # Generated experiment results
 **/experiment_results/
 **/experiments/*/
+
+# Performance logs
+pkg/carbon-aware/server-python/performance_logs/*.csv
+
+# Generated visualizations
+figures/*.png
+figures/*.pdf
+figures/*/
+
+# Keep example visualization used in documentation
+!figures/example_*.png
+!figures/example_*.pdf
 
 # Generated workloads
 workloads/
