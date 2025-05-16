@@ -103,8 +103,6 @@ for idx, row in df[df['is_execution_outlier']].iterrows():
 plt.tight_layout()
 plt.savefig(f"{output_dir}/execution_time_vs_pods.pdf", dpi=300, bbox_inches='tight')
 plt.savefig(f"{output_dir}/execution_time_vs_pods.png", dpi=300, bbox_inches='tight')
-# Also save to base directory for LaTeX
-plt.savefig(f"{base_output_dir}/execution_time_vs_pods.pdf", dpi=300, bbox_inches='tight')
 
 # Figure 2: Per-Pod Execution Time Analysis
 plt.figure(figsize=(12, 7))
@@ -140,8 +138,6 @@ plt.title("Carbon-Aware Orchestration: Per-Pod Processing Efficiency")
 plt.tight_layout()
 plt.savefig(f"{output_dir}/per_pod_execution_time.pdf", dpi=300, bbox_inches='tight')
 plt.savefig(f"{output_dir}/per_pod_execution_time.png", dpi=300, bbox_inches='tight')
-# Also save to base directory for LaTeX
-plt.savefig(f"{base_output_dir}/per_pod_execution_time.pdf", dpi=300, bbox_inches='tight')
 
 # Figure 3: Carbon Emissions Analysis
 plt.figure(figsize=(12, 7))
@@ -163,8 +159,6 @@ plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig(f"{output_dir}/carbon_efficiency.pdf", dpi=300, bbox_inches='tight')
 plt.savefig(f"{output_dir}/carbon_efficiency.png", dpi=300, bbox_inches='tight')
-# Also save to base directory for LaTeX
-plt.savefig(f"{base_output_dir}/carbon_efficiency.pdf", dpi=300, bbox_inches='tight')
 
 # Figure 4: Combined Analysis - Execution Time, Carbon, and Resource Utilization
 fig, ax1 = plt.subplots(figsize=(14, 8))
@@ -211,8 +205,6 @@ for i, row in df.iterrows():
 plt.tight_layout()
 plt.savefig(f"{output_dir}/multi_dimension_analysis.pdf", dpi=300, bbox_inches='tight')
 plt.savefig(f"{output_dir}/multi_dimension_analysis.png", dpi=300, bbox_inches='tight')
-# Also save to base directory for LaTeX
-plt.savefig(f"{base_output_dir}/multi_dimension_analysis.pdf", dpi=300, bbox_inches='tight')
 
 # Figure 5: Comparing Algorithm Scalability
 plt.figure(figsize=(12, 7))
@@ -242,8 +234,6 @@ plt.tight_layout()
 
 plt.savefig(f"{output_dir}/algorithm_scalability.pdf", dpi=300, bbox_inches='tight')
 plt.savefig(f"{output_dir}/algorithm_scalability.png", dpi=300, bbox_inches='tight')
-# Also save to base directory for LaTeX
-plt.savefig(f"{base_output_dir}/algorithm_scalability.pdf", dpi=300, bbox_inches='tight')
 
 # Figure 6: Resource Utilization vs Carbon Emissions
 plt.figure(figsize=(12, 8))
@@ -319,8 +309,4 @@ plt.tight_layout()
 plt.savefig(f"{output_dir}/resource_utilization_carbon_analysis.pdf", dpi=300, bbox_inches='tight')
 plt.savefig(f"{output_dir}/resource_utilization_carbon_analysis.png", dpi=300, bbox_inches='tight')
 
-# Also save a copy in the base figures directory for LaTeX access
-plt.savefig(f"{base_output_dir}/resource_utilization_carbon_analysis.pdf", dpi=300, bbox_inches='tight')
-
 print(f"Visualization complete! All figures saved to '{output_dir}'")
-print(f"Copies also saved to '{base_output_dir}' for LaTeX usage")

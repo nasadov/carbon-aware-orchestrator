@@ -322,10 +322,24 @@ def is_timeslot_valid(ts: CarbonAwareTimeslot, pod: CarbonAwarePod) -> bool:
     Determines whether the timeslot is valid for the given pod.
     Valid if:
       - The current time hasn't passed the timeslot's end.
+      - The current time hasn't passed the start of the timeslot (no scheduling in the past).
       - The timeslot starts before the pod's deadline.
     """
     now = datetime.now()
-    valid = (now <= ts.getEnd()) and (ts.getStart() <= pod.deadline)
+    now_date_hour = now.replace(minute=0, second=0, microsecond=0)
+    ts_date_hour = ts.getStart().replace(minute=0, second=0, microsecond=0)
+    not_past_end = now <= ts.getEnd()
+    not_in_past = ts_date_hour >= now_date_hour
+    before_deadline = ts.getStart() <= pod.deadline
+    valid = not_past_end and not_in_past and before_deadline
+    
+    if not valid:
+        if not not_past_end:
+            logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: end time {ts.getEnd()} already passed current time {now}")
+        if not not_in_past:
+            logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: start hour {ts_date_hour} is in the past (current hour: {now_date_hour})")
+        if not before_deadline:
+            logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: starts at {ts.getStart()} which is after deadline {pod.deadline}")
 
     logging.debug(
         f"[is_timeslot_valid] Timeslot {ts.id}: start={ts.getStart()}, "
