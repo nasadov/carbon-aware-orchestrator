@@ -693,35 +693,50 @@ class PerformanceLogger:
     Creates a separate CSV log file with detailed performance data suitable for
     generating research paper figures.
     """
-    def __init__(self, algorithm_name, log_dir="performance_logs"):
+    def __init__(self, algorithm_name): # Removed base_log_dir
         import os
         import datetime
         
         self.algorithm_name = algorithm_name
-        self.log_dir = log_dir
+        self.log_file = None 
+        self.log_dir = None # This will be the session_log_dir set by set_new_log_file
         
-        # Create the log directory if it doesn't exist
-        os.makedirs(log_dir, exist_ok=True)
-        
-        # Create a unique filename with timestamp
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = os.path.join(log_dir, f"{algorithm_name}_{timestamp}.csv")
-        
-        # Initialize the log file with headers
+        self.call_counter = 0
+        # Headers will be written by set_new_log_file
+        logging.info(f"PerformanceLogger initialized for {algorithm_name}. Call set_new_log_file to specify output location.")
+
+    def _write_headers(self):
+        """Writes CSV headers to the current log file."""
+        if not self.log_file:
+            logging.error("PerformanceLogger: log_file is not set. Cannot write headers.")
+            return
         with open(self.log_file, 'w') as f:
             f.write("timestamp,call_id,execution_time_ms,algorithm,pods_total,pods_processed,pods_placed,pods_failed,"
                     "pods_skipped,total_emissions_kg,per_pod_emissions_kg,avg_placement_time_ms,total_flavours,"
                     "total_timeslots,scheduling_options,cpu_utilization_pct,memory_utilization_pct,"
                     "regions,algorithm_iterations,algorithm_steps,microservices\n")
+
+    def set_new_log_file(self, log_dir, filename):
+        """
+        Sets a new log file path within the specified log_dir (which should be a subdirectory 
+        of base_log_dir, typically timestamped and algorithm-specific). 
+        Creates the directory if needed, resets the call counter, and writes headers.
+        """
+        import os
+        self.log_dir = log_dir # This is the specific run's directory, e.g., analysis/heuristic_YYYYMMDD_HHMMSS/
+        os.makedirs(self.log_dir, exist_ok=True)
         
-        self.call_counter = 0
-        logging.info(f"Performance logging enabled. Writing to {self.log_file}")
-    
+        self.log_file = os.path.join(self.log_dir, filename)
+        self.call_counter = 0 # Reset for each new experimental run
+        self._write_headers()
+        logging.info(f"PerformanceLogger: New log file set to {self.log_file}")
+
     def log_placement_call(self, execution_time, algorithm_name, pods_total, pods_processed, pods_placed, 
                           pods_failed, pods_skipped, total_emissions, algorithm_metrics, 
                           flavours, timeslots_count, cpu_util=None, memory_util=None, microservices=None):
         """
         Log performance metrics for a single CalculatePlacement call.
+        Appends to the currently configured log_file.
         
         Args:
             execution_time: Total execution time for the call in seconds
@@ -740,6 +755,15 @@ class PerformanceLogger:
             microservices: List of microservice names (for tracking what was scheduled)
         """
         import datetime
+
+        if not self.log_file:
+            logging.error("PerformanceLogger: log_file is not set. Cannot log performance. Call set_new_log_file first.")
+            return { # Return a default/empty summary
+                "execution_time_ms": execution_time * 1000,
+                "pods_placed": pods_placed,
+                "pods_total": pods_total,
+                "avg_placement_time_ms": (execution_time * 1000 / pods_processed) if pods_processed > 0 else 0
+            }
         
         # Calculate additional metrics
         total_flavours = len(flavours)

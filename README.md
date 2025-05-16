@@ -49,6 +49,8 @@ The interface definition is in the `./pkg/idl/idl.proto` file. It models the sna
     - `performance_logs/`: Directory containing performance metrics logs
 - `analysis/`: Tools for analyzing and visualizing performance data
     - `visualization.py`: Script for generating performance visualizations
+    - `schedule_visualization.py`: Script for visualizing pod placement schedules
+    - `run_schedule_visualization.sh`: Helper script for running schedule visualizations
     - `VISUALIZATION_GUIDE.md`: Documentation for using visualizations
 
 ## Carbon-Aware Algorithm
@@ -251,23 +253,51 @@ The metrics are logged automatically without needing any special flags. Each log
 
 ### Visualizing Results
 
-The repository includes visualization tools for analyzing performance data:
+The repository includes visualization tools for analyzing performance data and pod placement schedules.
+
+**1. Performance Metrics Visualization:**
 
 ```bash
-# Generate visualizations from a performance log file
+# Navigate to the analysis directory
 cd analysis
+
+# Generate visualizations from a performance log file
 python visualization.py --log-file ../pkg/carbon-aware/server-python/performance_logs/heuristic_YYYYMMDD_HHMMSS.csv
 ```
 
-Available visualizations:
-1. **Execution Time vs. Pods Processed**: Shows how execution time changes with workload size
-2. **Per-Pod Execution Time Analysis**: Shows time spent on each pod placement
-3. **Carbon Emissions Analysis**: Shows total and per-pod emissions
-4. **Multi-dimensional Performance Analysis**: Shows relationships between time, emissions, and scheduling options
-5. **Algorithm Scalability Analysis**: Shows how the algorithm handles different workload sizes
-6. **Resource Utilization vs. Carbon Emissions**: Shows how resource use relates to carbon emissions
+This script (`analysis/visualization.py`) generates various plots related to algorithm performance, such as execution time, carbon emissions, and scalability. For detailed instructions, see `analysis/VISUALIZATION_GUIDE.md`. Plots are saved in the `figures/` directory, typically within a subdirectory named after the log file or a custom comparison name.
 
-For detailed instructions on using the visualization tools, see `analysis/VISUALIZATION_GUIDE.md`.
+**2. Pod Placement Schedule Visualization:**
+
+A new system has been implemented to track and visualize the actual pod placements made by the scheduling algorithms.
+
+*   **CSV Tracking:**
+    *   Both `HeuristicAlgorithm` and `GlobalOptimalAlgorithm` now log their pod placement decisions to CSV files.
+    *   These CSVs are stored in timestamped, algorithm-specific subdirectories within the `analysis/` directory (e.g., `analysis/heuristic_YYYYMMDD_HHMMSS/heuristic_placements_YYYYMMDD_HHMMSS.csv`).
+    *   Each directory also contains a symlink (e.g., `heuristic_placements.csv`) pointing to the latest run's CSV for easier access.
+    *   The logged data includes `pod_id`, `node_id`, `start_slot`, `duration`, and for the global optimal algorithm, additional metrics like `cpu_request`, `ram_request`, `total_carbon_emissions`, and solver details.
+
+*   **Visualization Script (`analysis/schedule_visualization.py`):**
+    *   This script reads the placement CSVs and generates two types of plots:
+        1.  **Individual Pod Plot:** A matrix showing which pods are on which nodes at each time slot.
+        2.  **Density Heatmap:** A heatmap showing the number of pods (density) on each node at each time slot.
+    *   Plots are saved in the `figures/` directory, within a subdirectory named after the algorithm and timestamp (e.g., `figures/heuristic_YYYYMMDD_HHMMSS/`) or a custom name if provided.
+
+*   **Helper Script (`run_schedule_visualization.sh`):**
+    *   This shell script simplifies running the `schedule_visualization.py` script.
+    *   It provides options to specify input CSVs (including glob patterns), output directory, visualization mode (`individual`, `density`, or `all`), and a name for the visualization run.
+
+**Example usage for schedule visualization:**
+
+```bash
+# From the project root directory
+./run_schedule_visualization.sh -n "Heuristic_Run_1" -m all analysis/heuristic_YYYYMMDD_HHMMSS/heuristic_placements_YYYYMMDD_HHMMSS.csv
+
+# To visualize all heuristic placements by pattern
+./run_schedule_visualization.sh -n "All_Heuristic_Runs" analysis/heuristic_*/heuristic_placements_*.csv
+```
+
+This will generate plots in `figures/Heuristic_Run_1/` or `figures/All_Heuristic_Runs/` respectively.
 
 ## Recent Updates
 
@@ -286,18 +316,23 @@ This change was made in the server's main code so that all runs collect the same
 
 Performance logs are saved as CSV files in the `pkg/carbon-aware/server-python/performance_logs/` directory. Each file is named with the algorithm type and timestamp (e.g., `heuristic_20250512_121534.csv`).
 
-### Visualization Tools
+### Comprehensive Visualization Toolkit
 
-A new script (`analysis/visualization.py`) creates charts from the performance data. The script makes six types of charts:
+The visualization capabilities have been significantly enhanced:
 
-1. **Execution Time vs. Pods Processed**: Shows how run time increases with more pods, with trendlines to show performance patterns
-2. **Per-Pod Execution Time Analysis**: Shows how much time is spent on each pod placement
-3. **Carbon Emissions Analysis**: Shows total emissions and per-pod emissions
-4. **Multi-dimensional Performance Analysis**: Shows how time, emissions, and other metrics relate to each other
-5. **Algorithm Scalability Analysis**: Shows how the algorithm performs with different workload sizes
-6. **Resource Utilization vs. Carbon Emissions**: Shows how CPU and memory use affect carbon emissions
+*   **Performance Visualization (`analysis/visualization.py`):**
+    *   Generates six types of charts from performance log CSVs (execution time, carbon emissions, scalability, etc.).
+    *   Outputs are saved to `figures/[comparison_name_or_log_name]/`.
+    *   Detailed guide: `analysis/VISUALIZATION_GUIDE.md`.
 
-These charts are saved as PDF and PNG files in the `figures/` directory, ready to use in papers and presentations. A guide on using these tools is available in `analysis/VISUALIZATION_GUIDE.md`.
+*   **Pod Placement Visualization (`analysis/schedule_visualization.py` and `run_schedule_visualization.sh`):**
+    *   **Tracking:** Algorithms now log detailed pod placements (pod ID, node, start time, duration) to CSV files in `analysis/[algorithm_name_timestamp]/`.
+    *   **Visualization:** The new script `analysis/schedule_visualization.py` (runnable via `run_schedule_visualization.sh`) creates:
+        *   **Individual Pod Plots:** Matrix view of pods on nodes over time.
+        *   **Density Heatmaps:** Heatmap of pod density on nodes over time.
+    *   **Output:** Plots are saved in `figures/[run_name_or_timestamp]/`. This allows for a clear visual understanding of how different algorithms schedule pods across the cluster.
+
+These tools provide a comprehensive suite for analyzing both the performance characteristics of the scheduling algorithms and the specifics of the pod placements they decide.
 
 ## Architecture
 

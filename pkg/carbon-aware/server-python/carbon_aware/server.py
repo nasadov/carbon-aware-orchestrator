@@ -37,11 +37,24 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
     """
     gRPC Service Implementation. Each method corresponds to a .proto RPC definition.
     """
-    def __init__(self, algorithm='heuristic', experiment_logger=None):
-        self.algo = Algorithm(algorithm, True)
-        self.command_line_algorithm = algorithm  # Remember what was specified
+    def __init__(self, algorithm_name='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None):
+        self.algo = Algorithm(algorithm_name, True)
+        self.command_line_algorithm = algorithm_name 
         self.persistent_state = PersistentStateStorage()
         self.experiment_logger = experiment_logger
+        self.perf_logger = perf_logger
+        self.session_log_dir = session_log_dir # This is the single directory for the entire server session
+
+        # Configure perf_logger once if it's provided and session_log_dir is set
+        if self.perf_logger and self.session_log_dir:
+            import os
+            # Performance log filename is fixed for the session
+            perf_log_filename = f"{self.command_line_algorithm}_perf_session.csv"
+            # The log_dir for PerformanceLogger is the session_log_dir
+            self.perf_logger.set_new_log_file(log_dir=self.session_log_dir, filename=perf_log_filename)
+            logging.info(f"PlacementAlgorithm: Performance logs will be appended to {self.perf_logger.log_file}")
+        elif self.perf_logger:
+            logging.warning("PlacementAlgorithm: PerformanceLogger provided but session_log_dir is not set. Performance logs may not be saved correctly.")
 
     def Init(self, request: idl_pb2.AlgorithmName, context) -> empty_pb2.Empty:
         # Store original request
@@ -158,18 +171,34 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             out_placements = idl_pb2.Placements()
             
             # Get the right algorithm implementation based on name
-            algorithm = get_algorithm(self.algo.name)
+            algorithm_instance = get_algorithm(self.algo.name)
 
-            # Add these lines to start experiment session and inject logger
+            # Configure algorithm instance with the session directory for placement CSVs
+            if self.session_log_dir:
+                if hasattr(algorithm_instance, 'set_base_log_dir'):
+                    algorithm_instance.set_base_log_dir(self.session_log_dir)
+                    # Crucially, also start a new experiment run for this CalculatePlacement call
+                    # This will set up the run-specific subdirectory and placement CSV file.
+                    if hasattr(algorithm_instance, 'setup_session_placement_log'):
+                        algorithm_instance.setup_session_placement_log()
+                        logging.info(f"Algorithm {self.algo.name}: Setup session placement log for placement logging.")
+                    else:
+                        logging.warning(f"Algorithm {self.algo.name} has set_base_log_dir but no setup_session_placement_log. Placement CSVs may not be properly initialized for this run.")
+                else:
+                    logging.warning(f"Algorithm {self.algo.name} does not have set_base_log_dir. Placement CSVs might not be in the session directory structure.")
+            else:
+                logging.warning(f"Session log directory not set. Placement CSVs will likely not be saved for algorithm {self.algo.name}.")
+            
+            # The PerformanceLogger is already configured in __init__ to append to a single session file.
+            # No need to call set_new_log_file here for perf_logger per CalculatePlacement call.
+
+            # Inject experiment_logger into algorithm (for experiment logger, if used)
             if self.experiment_logger:
-                # Start session if not already started
                 if not hasattr(self.experiment_logger, 'session_started'):
                     self.experiment_logger.start_session(self.algo.name)
                     self.experiment_logger.session_started = True
-                # Inject logger into algorithm
-                algorithm.experiment_logger = self.experiment_logger
+                algorithm_instance.experiment_logger = self.experiment_logger
             
-            # Summary counters
             placements_success = 0
             placements_failed = 0
             placements_skipped = 0
@@ -180,8 +209,7 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                 logging.info(f"  ➡️ ({i+1}/{len(request.workload.microservices)}) Processing: {ms.name}")
                     
                 if hasattr(ms, "status"):
-                    # Process only TO_DEPLOY status
-                    if ms.status != 4:  # Only process TO_DEPLOY (4)
+                    if ms.status != 4:
                         status_name = MICROSERVICE_STATUS_MAP.get(ms.status, f"Status({ms.status})")
                         logging.info(f"    ⏩ Skipping {ms.name} with status {status_name} - only handling TO_DEPLOY")
                         placement = self._build_fallback_placement(ms.name, f"SKIPPED_{status_name}")
@@ -201,10 +229,8 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     placements_failed += 1
                     continue
 
-                # Build timeslots for this pod
                 timeslots = build_timeslots(hours_until_deadline)
                 
-                # Enhanced logging to emphasize scheduling flexibility
                 logging.info(f"    ⏰ Pod {pod.id}: duration={pod.duration}h, deadline in {hours_until_deadline:.1f}h")
                 logging.info(f"    🔄 Scheduling window: {scheduling_window:.1f}h ({len(timeslots)} potential timeslots)")
                 
@@ -215,21 +241,19 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                 else:
                     logging.info(f"    ✨ Good scheduling flexibility for {ms.name} - can optimize for carbon")
 
-                # Find optimal placement using the selected algorithm
                 logging.info(f"    🧮 Executing {self.algo.name} algorithm...")
                 algorithm_start_time = time.time()
-                best_node, best_slot, minimal_emissions = algorithm.find_placement(
+                best_node, best_slot, minimal_emissions = algorithm_instance.find_placement(
                     pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots
                 )
                 algorithm_execution_time = time.time() - algorithm_start_time
                 logging.info(f"    ⏱️ Algorithm execution time: {algorithm_execution_time:.3f}s")
                 
-                # Record metrics if we're in experiment mode
                 if self.experiment_logger:
                     success = best_node is not None and best_slot is not None
                     node_id = best_node.id if best_node else None
                     slot_id = best_slot.id if best_slot else None
-                    considered_options = len(flavours) * len(timeslots)  # Rough estimate
+                    considered_options = len(flavours) * len(timeslots)
                     self.experiment_logger.record_placement(
                         pod_id=pod.id,
                         success=success,
@@ -240,13 +264,10 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                         selected_timeslot=slot_id
                     )
 
-                # Build placement result
                 if best_node and best_slot:
-                    # Update resource tracking for the ENTIRE DURATION
                     start_slot_id = best_slot.id
-                    duration_slots = int(pod.duration)  # Convert hours to slots
+                    duration_slots = int(pod.duration)
                     
-                    # Update persistent state
                     self.persistent_state.update_resources(
                         best_node.id, start_slot_id, duration_slots, 
                         pod.cpuRequest, pod.ramRequest
@@ -255,10 +276,6 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                         ms.name, best_node.id, best_slot.getStart(), pod.duration
                     )
                     
-                    # Log the reservation
-                    logging.info(f"    🔒 Reserved resources for {pod.id} on {best_node.id} for slots {start_slot_id} to {start_slot_id + duration_slots - 1}")
-                    
-                    # Calculate when this workload will start and end
                     import datetime
                     workload_start_time = best_slot.getStart()
                     end_time = workload_start_time + datetime.timedelta(hours=pod.duration)
@@ -279,7 +296,6 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                 out_placements.placements.append(placement)
                 logging.info(f"    🕒 Processing time: {(time.time() - ms_start_time):.3f}s")
 
-            # ======== SUMMARY ========
             logging.info("=" * 60)
             logging.info(f"📋 PLACEMENT SUMMARY")
             logging.info(f"  ▶ Total microservices: {len(request.workload.microservices)}")
@@ -292,17 +308,14 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 
             print_resource_utilization_report(flavours, leftover_cpu, leftover_ram, max_time_slots, hours_to_show=24)
             
-            # Log performance metrics if performance logger is enabled
-            if hasattr(self, 'perf_logger') and self.perf_logger:
-                # Calculate resource utilization percentages
+            if self.perf_logger and self.perf_logger.log_file:
                 cpu_util = 0
                 mem_util = 0
                 total_cpu = 0
                 total_ram = 0
-                used_cpu = 0
-                used_ram = 0
+                used_cpu = 0  # Initialize used_cpu
+                used_ram = 0  # Initialize used_ram
                 
-                # Calculate for current timeslot only (index 0)
                 for flv in flavours:
                     node_id = flv.id
                     total_cpu += flv.totalCpu
@@ -317,16 +330,13 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                 if total_ram > 0:
                     mem_util = (used_ram / total_ram) * 100
                 
-                # Get list of microservice names
                 microservice_names = [ms.name for ms in request.workload.microservices]
                 
-                # Extract algorithm-specific metrics
                 algorithm_metrics = {
-                    'iterations': getattr(algorithm, 'iterations', 0),
-                    'steps': getattr(algorithm, 'steps', 0)
+                    'iterations': getattr(algorithm_instance, 'iterations', 0),
+                    'steps': getattr(algorithm_instance, 'steps', 0)
                 }
                 
-                # Log the overall call performance
                 metrics_summary = self.perf_logger.log_placement_call(
                     execution_time=(time.time() - start_time),
                     algorithm_name=self.algo.name,
@@ -424,7 +434,7 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         return placement
 
 
-def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logger=None):
+def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None):
     """
     Creates and runs the gRPC server on the specified port, registering the PlacementAlgorithm servicer.
     Implements graceful shutdown handling.
@@ -434,50 +444,48 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         algorithm (str): Algorithm to use ('heuristic' or 'optimal')
         experiment_logger (ExperimentLogger, optional): Logger for experiment metrics
         perf_logger (PerformanceLogger, optional): Logger for performance metrics
+        session_log_dir (str, optional): Single directory for all logs of this server session.
     """
     shutdown_in_progress = False
     
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    servicer = PlacementAlgorithm(algorithm, experiment_logger)
+    # Pass perf_logger and session_log_dir to the servicer
+    servicer = PlacementAlgorithm(algorithm_name=algorithm, 
+                                  experiment_logger=experiment_logger, 
+                                  perf_logger=perf_logger, 
+                                  session_log_dir=session_log_dir)
     idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(servicer, server)
     server.add_insecure_port('[::]:' + port)
 
-    # Define graceful shutdown handler with experiment handling
     def graceful_shutdown(sig, frame):
         nonlocal shutdown_in_progress
         if shutdown_in_progress:
-            return  # Skip if shutdown already in progress
+            return
         
         shutdown_in_progress = True
         logging.info("⏳ Received shutdown signal, stopping server gracefully...")
         
-        # Add experiment results saving
         if experiment_logger and hasattr(experiment_logger, 'session_started'):
             experiment_logger.end_session()
             experiment_logger.save_all_results()
             experiment_logger.generate_report()
             logging.info("📊 Experiment results saved")
         
-        # Give ongoing requests time to complete
-        threading.Thread(target=server.stop, args=(5,)).start()  # 5 second timeout
+        threading.Thread(target=server.stop, args=(5,)).start()
         
         logging.info("👋 Server shutdown initiated")
     
-    # Register signal handlers
     signal.signal(signal.SIGINT, graceful_shutdown)
     signal.signal(signal.SIGTERM, graceful_shutdown)
     
-    # Store the perf_logger in the servicer
     servicer.perf_logger = perf_logger
     
     server.start()
     logging.info(f"🚀 Server started, listening on port {port}")
     
     try:
-        # This is a blocking call until server is terminated
         server.wait_for_termination()
     except KeyboardInterrupt:
-        # Only log if not already shutting down
         if not shutdown_in_progress:
             logging.info("Keyboard interrupt received")
             graceful_shutdown(signal.SIGINT, None)

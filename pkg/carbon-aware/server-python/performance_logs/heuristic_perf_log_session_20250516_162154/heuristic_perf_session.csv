@@ -1,0 +1,13 @@
+timestamp,call_id,execution_time_ms,algorithm,pods_total,pods_processed,pods_placed,pods_failed,pods_skipped,total_emissions_kg,per_pod_emissions_kg,avg_placement_time_ms,total_flavours,total_timeslots,scheduling_options,cpu_utilization_pct,memory_utilization_pct,regions,algorithm_iterations,algorithm_steps,microservices
+2025-05-16 16:23:10,1,18.73,heuristic,5,5,5,0,0,1.285812,0.257162,3.75,4,48,192,0.00,0.00,,0,0,m000-duration-1h-deadline-7h|m001-duration-3h-deadline-4h|m002-duration-6h-deadline-12h|m003-duration-1h-deadline-2h|m004-duration-3h-deadline-4h
+2025-05-16 16:23:11,2,8.40,heuristic,9,4,4,0,5,1.141585,0.285396,2.10,4,48,192,2.17,0.15,,0,0,9_pods
+2025-05-16 16:23:15,3,16.42,heuristic,12,4,4,0,8,0.542852,0.135713,4.10,4,48,192,3.26,0.29,,0,0,12_pods
+2025-05-16 16:23:20,4,18.28,heuristic,12,4,4,0,8,1.307125,0.326781,4.57,4,48,192,4.35,1.16,,0,0,12_pods
+2025-05-16 16:23:24,5,11.64,heuristic,8,2,2,0,6,0.548906,0.274453,5.82,4,48,192,4.35,1.16,,0,0,8_pods
+2025-05-16 16:23:27,6,19.75,heuristic,12,5,5,0,7,6.245617,1.249123,3.95,4,48,192,5.43,2.33,,0,0,12_pods
+2025-05-16 16:23:31,7,13.94,heuristic,9,2,2,0,7,3.963537,1.981769,6.97,4,48,192,5.98,2.91,,0,0,9_pods
+2025-05-16 16:23:35,8,10.41,heuristic,12,5,5,0,7,7.634262,1.526852,2.08,4,48,192,6.20,3.05,,0,0,12_pods
+2025-05-16 16:23:39,9,14.67,heuristic,10,3,3,0,7,4.290457,1.430152,4.89,4,48,192,6.63,3.92,,0,0,10_pods
+2025-05-16 16:23:43,10,16.58,heuristic,11,5,5,0,6,20.774484,4.154897,3.32,4,48,192,6.85,4.22,,0,0,11_pods
+2025-05-16 16:23:47,11,14.64,heuristic,15,7,7,0,8,14.795282,2.113612,2.09,4,48,192,7.93,4.36,,0,0,15_pods
+2025-05-16 16:23:53,12,11.32,heuristic,10,1,1,0,9,3.917351,3.917351,11.32,4,48,192,7.93,4.36,,0,0,10_pods
