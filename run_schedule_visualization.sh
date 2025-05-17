@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Helper script to run the schedule_visualization.py script
+#print_usage() {
+  echo "Usage: $0 [-o <base_figures_directory>] [-m <mode>] [-n <n>] [-c <infra_config_path>] [-w <workloads_dir>] <input_csv_path_or_pattern_1> [input_csv_path_or_pattern_2 ...]"elper script to run the schedule_visualization.py script
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PYTHON_SCRIPT="$SCRIPT_DIR/analysis/schedule_visualization.py" # Corrected path to script in analysis subdir
@@ -10,6 +11,7 @@ FIGURES_BASE_DIR="$SCRIPT_DIR/figures"
 MODE="all" # Default mode: individual, density, all
 NAME="" # Optional name for the run/comparison, used for subfolder name
 INFRA_CONFIG_PATH="" # Optional path to the infra-workload-config.yaml
+WORKLOADS_DIR="$SCRIPT_DIR/pkg/carbon-aware/workloads" # Default path to workloads directory
 
 print_usage() {
   echo "Usage: $0 [-o <base_figures_directory>] [-m <mode>] [-n <name>] [-c <infra_config_path>] <input_csv_path_or_pattern_1> [input_csv_path_or_pattern_2 ...]"
@@ -21,6 +23,7 @@ print_usage() {
   echo "  -n <name>                    Optional name for the run/comparison. This will be used as the subdirectory name"
   echo "                             under <base_figures_directory> and in plot titles."
   echo "  -c <infra_config_path>       Path to the infra-workload-config.yaml file."
+  echo "  -w <workloads_dir>         Path to the directory containing workload YAML files with CPU requests."
   echo "  -h                           Display this help message."
   echo ""
   echo "Arguments:"
@@ -31,13 +34,14 @@ print_usage() {
 }
 
 # Parse options
-while getopts "ho:m:n:c:" opt; do
+while getopts "ho:m:n:c:w:" opt; do
   case $opt in
     h) print_usage ;;
     o) FIGURES_BASE_DIR="$OPTARG" ;;
     m) MODE="$OPTARG" ;;
     n) NAME="$OPTARG" ;;
     c) INFRA_CONFIG_PATH="$OPTARG" ;;
+    w) WORKLOADS_DIR="$OPTARG" ;;
     *) print_usage ;;
   esac
 done
@@ -76,7 +80,11 @@ if [ -n "$NAME" ]; then
 fi
 
 if [ -n "$INFRA_CONFIG_PATH" ]; then
-  CMD+=("--infra_config" "$INFRA_CONFIG_PATH")
+  CMD+=("--config_file" "$INFRA_CONFIG_PATH")
+fi
+
+if [ -n "$WORKLOADS_DIR" ]; then
+  CMD+=("--workloads_dir" "$WORKLOADS_DIR")
 fi
 
 # Add all remaining arguments as input CSVs

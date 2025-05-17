@@ -61,7 +61,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             self._placement_csv_writer = csv.writer(self._placement_csv_file_handle)
             
             if not file_exists_and_not_empty:
-                self._placement_csv_writer.writerow(["pod_id", "node_id", "start_slot", "duration", "cpu_request"])
+                self._placement_csv_writer.writerow(["pod_id", "node_id", "start_slot", "duration"])
                 self._placement_csv_file_handle.flush()
             logging.info(f"Heuristic placements will be logged to: {self._placement_csv_path}")
 
@@ -79,13 +79,11 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             except Exception as e:
                 logging.error(f"Error closing placement CSV file in __del__: {e}")
 
-    def _write_placement_to_csv(self, pod_id: str, node_id: str, start_slot: int, duration: float, cpu_request: float):
+    def _write_placement_to_csv(self, pod_id: str, node_id: str, start_slot: int, duration: float):
         if self._placement_csv_writer and self._placement_csv_file_handle:
             try:
-                # Revert: Write cpu_request as is (assuming it's already in the desired unit or not used for proportional height)
-                self._placement_csv_writer.writerow([pod_id, node_id, start_slot, duration, cpu_request])
+                self._placement_csv_writer.writerow([pod_id, node_id, start_slot, duration])
                 self._placement_csv_file_handle.flush()
-                logging.debug(f"Logged placement to CSV: {pod_id}, {node_id}, {start_slot}, {duration}, {cpu_request}")
             except Exception as e:
                 logging.error(f"Error writing to placement CSV for heuristic: {e}")
         else:
@@ -131,8 +129,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                 pod_id=pod.id,
                 node_id=best_node.id,
                 start_slot=best_slot.id,
-                duration=pod.duration,
-                cpu_request=pod.cpuRequest
+                duration=pod.duration
             )
         
         return best_node, best_slot, emissions
