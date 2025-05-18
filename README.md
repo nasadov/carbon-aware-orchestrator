@@ -10,6 +10,7 @@ This work is based on the original scheduler plugin developed by Fondazione Brun
 - [The IDL](#the-idl)
 - [Repository Structure](#repository-structure)
 - [Carbon-Aware Algorithm](#carbon-aware-algorithm)
+    - [Constraints Handling](#constraints-handling)
 - [Carbon-Aware Data Model](#carbon-aware-data-model)
 - [Node Metadata](#node-metadata)
 - [Workload Specifications](#workload-specifications)
@@ -20,11 +21,9 @@ This work is based on the original scheduler plugin developed by Fondazione Brun
     - [Configure Test Infrastructure and Workloads](#configure-test-infrastructure-and-workloads)
     - [Generate Test Data](#generate-test-data)
     - [Run the Experiment](#run-the-experiment)
+    - [Verify Constraint Enforcement](#verify-constraint-enforcement)
     - [Performance Metrics](#performance-metrics)
     - [Visualizing Results](#visualizing-results)
-- [Recent Updates](#recent-updates)
-    - [Automatic Performance Metrics Tracking](#automatic-performance-metrics-tracking)
-    - [Comprehensive Visualization Toolkit](#comprehensive-visualization-toolkit)
 
 ## Overview
 
@@ -67,6 +66,19 @@ The algorithm evaluates:
 - Embodied carbon amortization
 - Workload resource requirements and duration
 - Current cluster utilization
+
+### Constraints Handling
+
+The algorithm enforces several constraints when placing workloads:
+
+- **Resource constraints**: Ensuring pods have enough CPU and memory
+- **Deadline constraints**: Making sure workloads complete before their specified deadlines
+- **Earliest timeslot constraint**: Pods from timeslot_X.yaml files are only scheduled at or after timeslot X
+
+Both the heuristic and global optimization (MILP) algorithms properly enforce the earliest_timeslot constraint, which is a key real-world operational requirement. This implementation includes:
+- Mapping pod IDs to their source files to determine the earliest valid timeslot
+- Validating all potential placements against the earliest_timeslot constraint
+- Special handling in the MILP formulation for the global optimal algorithm
 
 ## Carbon-Aware Data Model
 
@@ -228,16 +240,30 @@ The `shifted_cycle` hardware assignment method creates different hardware-region
 ```bash
 # Start the Python server
 cd pkg/carbon-aware/server-python
-python main.py &
+python3 -m server
 
 # In a new terminal, run the Go client with the test data
-cd pkg/carbon-aware/client
+cd /root/carbon-aware-orchestrator
 go run client-test.go
 ```
 
+### Verify Constraint Enforcement
+
+To verify that the earliest timeslot constraint is properly enforced in placement results:
+
+```bash
+# Check constraints on a specific experiment result CSV file
+python3 tests/check_timeslot_constraints.py /path/to/your/placements_session.csv
+
+# Example: Check the latest heuristic experiment
+python3 tests/check_timeslot_constraints.py pkg/carbon-aware/server-python/experiments/heuristic_perf_log_session_YYYYMMDD_HHMMSS/heuristic_placements_session.csv
+```
+
+The script will analyze the placements and report any constraint violations.
+
 ### Performance Metrics
 
-The orchestrator automatically tracks detailed performance metrics for each scheduling run. These metrics are stored in CSV format in the `pkg/carbon-aware/server-python/performance_logs/` directory.
+The orchestrator automatically tracks detailed performance metrics for each scheduling run, without needing any special flags (previously the `--perf-log` flag was required). These metrics are stored in CSV format in the `pkg/carbon-aware/server-python/performance_logs/` directory.
 
 Performance tracking includes:
 - Execution time (total and per-pod)
@@ -249,7 +275,15 @@ Performance tracking includes:
 - Region diversity information
 - Hardware type distributions
 
-The metrics are logged automatically without needing any special flags. Each log file is named with the algorithm and timestamp (e.g., `heuristic_20250512_121534.csv`).
+The automatic performance tracking helps with:
+- Comparing how the algorithm performs across multiple runs
+- Comparing different algorithms
+- Creating useful visualizations
+- Understanding how placement decisions affect carbon emissions
+- Tracking system performance over time
+- Finding ways to improve
+
+Each log file is named with the algorithm and timestamp (e.g., `heuristic_20250512_121534.csv`).
 
 ### Visualizing Results
 
@@ -269,7 +303,22 @@ This script (`analysis/visualization.py`) generates various plots related to alg
 
 **2. Pod Placement Schedule Visualization:**
 
-A new system has been implemented to track and visualize the actual pod placements made by the scheduling algorithms.
+```bash
+# Basic usage
+python3 analysis/schedule_visualization.py /path/to/your/placements_session.csv
+
+# Example: Visualize the latest heuristic experiment
+python3 analysis/schedule_visualization.py pkg/carbon-aware/server-python/experiments/heuristic_perf_log_session_YYYYMMDD_HHMMSS/heuristic_placements_session.csv
+```
+
+The visualization script creates:
+- A matrix of pod placements across nodes and timeslots
+- A heatmap of pod density
+- Constraint satisfaction markers (if earliest timeslot is respected)
+
+Visualization outputs are saved to the `figures/` directory in a timestamped folder.
+
+**3. CSV Tracking and Output Details:**
 
 *   **CSV Tracking:**
     *   Both `HeuristicAlgorithm` and `GlobalOptimalAlgorithm` now log their pod placement decisions to CSV files.
@@ -277,62 +326,13 @@ A new system has been implemented to track and visualize the actual pod placemen
     *   Each directory also contains a symlink (e.g., `heuristic_placements.csv`) pointing to the latest run's CSV for easier access.
     *   The logged data includes `pod_id`, `node_id`, `start_slot`, `duration`, and for the global optimal algorithm, additional metrics like `cpu_request`, `ram_request`, `total_carbon_emissions`, and solver details.
 
-*   **Visualization Script (`analysis/schedule_visualization.py`):**
-    *   This script reads the placement CSVs and generates two types of plots:
-        1.  **Individual Pod Plot:** A matrix showing which pods are on which nodes at each time slot.
-        2.  **Density Heatmap:** A heatmap showing the number of pods (density) on each node at each time slot.
-    *   Plots are saved in the `figures/` directory, within a subdirectory named after the algorithm and timestamp (e.g., `figures/heuristic_YYYYMMDD_HHMMSS/`) or a custom name if provided.
-
 *   **Helper Script (`run_schedule_visualization.sh`):**
     *   This shell script simplifies running the `schedule_visualization.py` script.
     *   It provides options to specify input CSVs (including glob patterns), output directory, visualization mode (`individual`, `density`, or `all`), and a name for the visualization run.
 
-**Example usage for schedule visualization:**
+The comprehensive visualization toolkit allows for detailed analysis of both algorithm performance characteristics and specifics of pod placements across the cluster.
 
-```bash
-# From the project root directory
-./run_schedule_visualization.sh -n "Heuristic_Run_1" -m all analysis/heuristic_YYYYMMDD_HHMMSS/heuristic_placements_YYYYMMDD_HHMMSS.csv
 
-# To visualize all heuristic placements by pattern
-./run_schedule_visualization.sh -n "All_Heuristic_Runs" analysis/heuristic_*/heuristic_placements_*.csv
-```
-
-This will generate plots in `figures/Heuristic_Run_1/` or `figures/All_Heuristic_Runs/` respectively.
-
-## Recent Updates
-
-### Automatic Performance Metrics Tracking
-
-The Carbon-Aware Orchestrator now tracks performance metrics by default. Previously, you needed to use the `--perf-log` flag to enable this feature. Now, all experiments automatically save performance data, which helps with:
-
-- Comparing how the algorithm performs across multiple runs
-- Comparing different algorithms
-- Creating useful visualizations
-- Understanding how placement decisions affect carbon emissions
-- Tracking system performance over time
-- Finding ways to improve
-
-This change was made in the server's main code so that all runs collect the same metrics without needing extra settings. The metrics include timing, throughput, carbon impact, and resource use.
-
-Performance logs are saved as CSV files in the `pkg/carbon-aware/server-python/performance_logs/` directory. Each file is named with the algorithm type and timestamp (e.g., `heuristic_20250512_121534.csv`).
-
-### Comprehensive Visualization Toolkit
-
-The visualization capabilities have been significantly enhanced:
-
-*   **Performance Visualization (`analysis/visualization.py`):**
-    *   Generates six types of charts from performance log CSVs (execution time, carbon emissions, scalability, etc.).
-    *   Outputs are saved to `figures/[comparison_name_or_log_name]/`.
-    *   Detailed guide: `analysis/VISUALIZATION_GUIDE.md`.
-
-*   **Pod Placement Visualization (`analysis/schedule_visualization.py` and `run_schedule_visualization.sh`):**
-    *   **Tracking:** Algorithms now log detailed pod placements (pod ID, node, start time, duration) to CSV files in `analysis/[algorithm_name_timestamp]/`.
-    *   **Visualization:** The new script `analysis/schedule_visualization.py` (runnable via `run_schedule_visualization.sh`) creates:
-        *   **Individual Pod Plots:** Matrix view of pods on nodes over time.
-        *   **Density Heatmaps:** Heatmap of pod density on nodes over time.
-    *   **Output:** Plots are saved in `figures/[run_name_or_timestamp]/`. This allows for a clear visual understanding of how different algorithms schedule pods across the cluster.
-
-These tools provide a comprehensive suite for analyzing both the performance characteristics of the scheduling algorithms and the specifics of the pod placements they decide.
 
 ## Architecture
 

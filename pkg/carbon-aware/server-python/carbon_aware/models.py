@@ -15,6 +15,7 @@ class CarbonAwarePod:
         self.cpuRequest = cpuRequest
         self.ramRequest = ramRequest
         self.storageRequest = storageRequest
+        self.earliest_timeslot = 0  # Default: can be scheduled from timeslot 0
 
     def _processDeadline(self, deadline_hours: float, reference_time: datetime = None) -> datetime:
         now = datetime.now() if reference_time is None else reference_time

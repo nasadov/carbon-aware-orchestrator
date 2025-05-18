@@ -324,6 +324,7 @@ def is_timeslot_valid(ts: CarbonAwareTimeslot, pod: CarbonAwarePod) -> bool:
       - The current time hasn't passed the timeslot's end.
       - The current time hasn't passed the start of the timeslot (no scheduling in the past).
       - The timeslot starts before the pod's deadline.
+      - The timeslot ID is greater than or equal to the pod's earliest_timeslot 🔒
     """
     now = datetime.now()
     now_date_hour = now.replace(minute=0, second=0, microsecond=0)
@@ -331,7 +332,8 @@ def is_timeslot_valid(ts: CarbonAwareTimeslot, pod: CarbonAwarePod) -> bool:
     not_past_end = now <= ts.getEnd()
     not_in_past = ts_date_hour >= now_date_hour
     before_deadline = ts.getStart() <= pod.deadline
-    valid = not_past_end and not_in_past and before_deadline
+    meets_earliest_constraint = ts.id >= pod.earliest_timeslot  # 🔒 Check earliest_timeslot constraint
+    valid = not_past_end and not_in_past and before_deadline and meets_earliest_constraint
     
     if not valid:
         if not not_past_end:
@@ -340,10 +342,13 @@ def is_timeslot_valid(ts: CarbonAwareTimeslot, pod: CarbonAwarePod) -> bool:
             logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: start hour {ts_date_hour} is in the past (current hour: {now_date_hour})")
         if not before_deadline:
             logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: starts at {ts.getStart()} which is after deadline {pod.deadline}")
+        if not meets_earliest_constraint:
+            logging.debug(f"[is_timeslot_valid] 🔒 Timeslot {ts.id} invalid: timeslot before pod's earliest_timeslot={pod.earliest_timeslot}")
 
     logging.debug(
         f"[is_timeslot_valid] Timeslot {ts.id}: start={ts.getStart()}, "
-        f"end={ts.getEnd()}, now={now}, pod_deadline={pod.deadline}, valid={valid}"
+        f"end={ts.getEnd()}, now={now}, pod_deadline={pod.deadline}, "
+        f"earliest_ts={pod.earliest_timeslot}, valid={valid}"
     )
     return valid
 

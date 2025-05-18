@@ -89,6 +89,60 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         else:
             logging.warning("Placement CSV writer not available for heuristic algorithm. Cannot log placement.")
     
+    def _set_pod_earliest_timeslot(self, pod: CarbonAwarePod):
+        """
+        Set the earliest_timeslot attribute for a pod based on its ID.
+        
+        The pod ID format (mXXX) determines which timeslot_X.yaml file it came from:
+        - m000-m004: from timeslot_0.yaml (earliest_timeslot = 0)
+        - m005-m009: from timeslot_1.yaml (earliest_timeslot = 1)
+        - m010-m014: from timeslot_2.yaml (earliest_timeslot = 2)
+        - m015-m018: from timeslot_3.yaml (earliest_timeslot = 3)
+        - m019-m023: from timeslot_5.yaml (earliest_timeslot = 5)
+        - m024-m025: from timeslot_6.yaml (earliest_timeslot = 6) 
+        - m026-m030: from timeslot_7.yaml (earliest_timeslot = 7)
+        - m031-m033: from timeslot_8.yaml (earliest_timeslot = 8)
+        - m034-m038: from timeslot_9.yaml (earliest_timeslot = 9)
+        - m039-m043: from timeslot_10.yaml (earliest_timeslot = 10)
+        - m044-m046: from timeslot_11.yaml (earliest_timeslot = 11)
+        """
+        import re
+        
+        # Extract the pod number from the ID (e.g., 019 from m019-duration-3h-deadline-9h)
+        match = re.match(r'([a-zA-Z]+)(\d+)[-_]?', pod.id)
+        if match:
+            pod_num = int(match.group(2))
+            # Map pods to their source file's timeslot number
+            if 0 <= pod_num <= 4:
+                earliest_ts = 0  # timeslot_0.yaml
+            elif 5 <= pod_num <= 9:
+                earliest_ts = 1  # timeslot_1.yaml
+            elif 10 <= pod_num <= 14:
+                earliest_ts = 2  # timeslot_2.yaml
+            elif 15 <= pod_num <= 18:
+                earliest_ts = 3  # timeslot_3.yaml
+            elif 19 <= pod_num <= 23:
+                earliest_ts = 5  # timeslot_5.yaml
+            elif 24 <= pod_num <= 25:
+                earliest_ts = 6  # timeslot_6.yaml
+            elif 26 <= pod_num <= 30:
+                earliest_ts = 7  # timeslot_7.yaml
+            elif 31 <= pod_num <= 33:
+                earliest_ts = 8  # timeslot_8.yaml
+            elif 34 <= pod_num <= 38:
+                earliest_ts = 9  # timeslot_9.yaml
+            elif 39 <= pod_num <= 43:
+                earliest_ts = 10  # timeslot_10.yaml
+            elif 44 <= pod_num <= 46:
+                earliest_ts = 11  # timeslot_11.yaml
+            else:
+                # If we can't determine, ensure it's within the valid range (0-23)
+                earliest_ts = min(pod_num, 23)
+            
+            # Set the earliest_timeslot and log it
+            pod.earliest_timeslot = earliest_ts
+            logging.info(f"🔒 Pod {pod.id} has earliest_timeslot={pod.earliest_timeslot} (from timeslot_{earliest_ts}.yaml)")
+    
     @property
     def name(self) -> str:
         return "Carbon-Aware-Heuristic"
@@ -103,6 +157,9 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         max_time_slots: int = 48
     ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
         """Find the best placement for a pod using the carbon-aware heuristic."""
+        # Set earliest_timeslot based on pod ID before scheduling
+        self._set_pod_earliest_timeslot(pod)
+        
         start_time = time.time()
         considered_options = len(flavours) * len(timeslots)
         

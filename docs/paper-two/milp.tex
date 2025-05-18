@@ -28,6 +28,7 @@ We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Progr
 & d_i \in \mathbb{Z}^+ & \text{Duration of pod $i$ (in timeslots)} \\
 & c_{i} \in \mathbb{R}^+ & \text{CPU request of pod $i$} \\
 & r_{i} \in \mathbb{R}^+ & \text{RAM request of pod $i$} \\
+& s_{i} \in \mathbb{Z}^+ & \text{Earliest timeslot for pod $i$} \\
 & C_{jt} \in \mathbb{R}^+ & \text{Available CPU of node $j$ in timeslot $t$} \\
 & R_{jt} \in \mathbb{R}^+ & \text{Available RAM of node $j$ in timeslot $t$} \\
 & e_{ijt} \in \mathbb{R}^+ & \text{Carbon emissions for running pod $i$ on node $j$ starting at timeslot $t$} \\
@@ -56,6 +57,7 @@ Let $\mathcal{V}_i \subset \mathcal{F} \times \mathcal{T}$ be the set of valid n
 
 \begin{align}
 \mathcal{V}_i = \{(j,t) \in \mathcal{F} \times \mathcal{T} \mid 
+& t \geq s_i \text{ and } \\
 & t + d_i \leq T_{max} \text{ and } \\
 & C_{j(t+k)} \geq c_i \text{ for all } k \in \{0,1,\ldots,d_i-1\} \text{ and } \\
 & R_{j(t+k)} \geq r_i \text{ for all } k \in \{0,1,\ldots,d_i-1\} \}
@@ -119,7 +121,8 @@ with $\text{EC}_j$ being the total embodied carbon of node $j$, $L_j$ being the 
 
 In practice, the problem is solved using the PuLP library with the following approach:
 \begin{enumerate}
-\item Precompute all valid placements for each pod
+\item Determine the earliest timeslot ($s_i$) for each pod based on its source file
+\item Precompute all valid placements for each pod, respecting the earliest timeslot constraint
 \item Create binary decision variables for each valid placement
 \item Define the objective function to minimize total carbon emissions
 \item Add constraints ensuring each pod is placed exactly once
@@ -127,5 +130,9 @@ In practice, the problem is solved using the PuLP library with the following app
 \item Solve the MILP problem using the CBC solver with a time limit
 \item Extract the solution from the decision variables
 \end{enumerate}
+
+\subsubsection{Earliest Timeslot Constraint}
+
+The earliest timeslot constraint ($t \geq s_i$) ensures that pods are only scheduled at or after their designated earliest timeslot. This constraint is derived from the pod's source file (timeslot\_X.yaml), where X indicates the earliest timeslot at which the pod can be scheduled. This approach prevents pods from being scheduled before they are available in the system, reflecting real-world operational requirements.
 
 \end{document}

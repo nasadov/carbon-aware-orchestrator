@@ -60,6 +60,10 @@ docs/paper-two/
 # Performance logs
 pkg/carbon-aware/server-python/performance_logs/*.csv
 
+# Test logs and archived test scripts
+test_logs/
+tests/archive/
+
 # Generated visualizations
 figures/*.png
 figures/*.pdf
