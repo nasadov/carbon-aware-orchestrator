@@ -15,6 +15,7 @@ This work is based on the original scheduler plugin developed by Fondazione Brun
 - [Node Metadata](#node-metadata)
 - [Workload Specifications](#workload-specifications)
 - [Carbon Emissions Model](#carbon-emissions-model)
+- [Carbon Units Documentation](docs/carbon_units.md)
 - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
     - [Setup Environment](#setup-environment)
@@ -106,10 +107,12 @@ Workloads include resource requirements and time parameters:
 
 The scheduler calculates emissions for each potential node-workload pairing using:
 
-1. **Dynamic power model**: `idle + (max-active) * CPU_usage_ratio`
-2. **Operational emissions**: `power * duration * carbon_intensity`
-3. **Embodied emissions**: `(embodied_carbon / lifetime_hours) * duration`
-4. **Total emissions**: Sum of operational and embodied emissions
+1. **Dynamic power model**: `idle + (max-active) * CPU_usage_ratio` (measured in Watts)
+2. **Operational emissions**: `power * duration * carbon_intensity` (measured in g CO2e)
+3. **Embodied emissions**: `(embodied_carbon / lifetime_hours) * duration` (measured in g CO2e)
+4. **Total emissions**: Sum of operational and embodied emissions (g CO2e)
+
+**Important**: All embodied carbon values in configuration files are specified in whole grams (g CO2e), not kilograms. For detailed information about units and calculation methods, see the [Carbon Units Documentation](docs/carbon_units.md).
 
 ## Getting Started
 

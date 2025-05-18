@@ -1,10 +1,14 @@
+# Unit definitions:
+# hardware.carbon/embodied_emissions: whole grams of CO2e (g CO2e), not kg
+# hardware.carbon/lifetime_years: years
+# hardware.power/*_watts: watts (W)
 apiVersion: v1
 kind: Node
 metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '27.471'
+    hardware.carbon/embodied_emissions: '27471'
     hardware.carbon/lifetime_years: '5.2'
     hardware.power/idle_watts: '0.5'
     hardware.power/active_watts: '2.0'
@@ -50,7 +54,7 @@ metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '52.729'
+    hardware.carbon/embodied_emissions: '52729'
     hardware.carbon/lifetime_years: '3.03'
     hardware.power/idle_watts: '1.0'
     hardware.power/active_watts: '3.0'
@@ -96,7 +100,7 @@ metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '231.855'
+    hardware.carbon/embodied_emissions: '231855'
     hardware.carbon/lifetime_years: '4.13'
     hardware.power/idle_watts: '10.0'
     hardware.power/active_watts: '40.0'
@@ -142,32 +146,32 @@ metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '1230.656'
-    hardware.carbon/lifetime_years: '3.87'
-    hardware.power/idle_watts: '100.0'
-    hardware.power/active_watts: 200.0# Watts
-    hardware.power/max_watts: '400.0'
+    hardware.carbon/embodied_emissions: '52729'
+    hardware.carbon/lifetime_years: '3.03'
+    hardware.power/idle_watts: '1.0'
+    hardware.power/active_watts: '3.0'
+    hardware.power/max_watts: '15.0'
   labels:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-3-it-no-server
+    kubernetes.io/hostname: node-3-it-no-smartphone
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: IT-NO
-    hardware.carbon/subcategory: Server
-  name: node-3-it-no-server
+    hardware.carbon/subcategory: Smartphone
+  name: node-3-it-no-smartphone
 spec: {}
 status:
   allocatable:
-    cpu: '32'
-    memory: 64Gi
+    cpu: '4'
+    memory: 4Gi
     pods: 110
   capacity:
-    cpu: '32'
-    memory: 64Gi
+    cpu: '4'
+    memory: 4Gi
     pods: 110
   nodeInfo:
     architecture: amd64
