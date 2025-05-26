@@ -1,8 +1,8 @@
 # Carbon-Aware Orchestrator
 
-This repository contains the implementation of a carbon-aware orchestrator that optimizes workload placement based on both operational and embodied carbon emissions. It integrates with Kubernetes scheduling through a custom scheduler plugin, allowing for environmentally-conscious placement decisions.
+This repository contains an experimental implementation of a carbon-aware orchestrator that attempts to optimize workload placement based on both operational and embodied carbon emissions. The goal is to explore environmentally-conscious placement decisions within Kubernetes scheduling frameworks.
 
-This work is based on the original scheduler plugin developed by Fondazione Bruno Kessler (FBK).
+This work builds upon the original scheduler plugin developed by Fondazione Bruno Kessler (FBK), and remains an ongoing research project.
 
 ## Table of Contents
 
@@ -10,6 +10,8 @@ This work is based on the original scheduler plugin developed by Fondazione Brun
 - [The IDL](#the-idl)
 - [Repository Structure](#repository-structure)
 - [Carbon-Aware Algorithm](#carbon-aware-algorithm)
+    - [Heuristic Algorithm](#heuristic-algorithm)
+    - [MILP Global Optimizer](#milp-global-optimizer)
     - [Constraints Handling](#constraints-handling)
 - [Carbon-Aware Data Model](#carbon-aware-data-model)
 - [Node Metadata](#node-metadata)
@@ -22,22 +24,25 @@ This work is based on the original scheduler plugin developed by Fondazione Brun
     - [Configure Test Infrastructure and Workloads](#configure-test-infrastructure-and-workloads)
     - [Generate Test Data](#generate-test-data)
     - [Run the Experiment](#run-the-experiment)
+    - [MILP Global Optimizer](#running-milp-global-optimizer)
     - [Verify Constraint Enforcement](#verify-constraint-enforcement)
     - [Performance Metrics](#performance-metrics)
     - [Visualizing Results](#visualizing-results)
 
 ## Overview
 
-The carbon-aware orchestrator considers multiple factors when placing workloads:
+The carbon-aware orchestrator attempts to consider multiple factors when placing workloads:
 
-1. **Operational carbon emissions**: Based on regional carbon intensity forecasts and the power consumption model of each node
-2. **Embodied carbon emissions**: Accounting for hardware manufacturing emissions amortized over device lifetime
+1. **Operational carbon emissions**: Estimates based on regional carbon intensity forecasts and power consumption models
+2. **Embodied carbon emissions**: Approximations of hardware manufacturing emissions amortized over device lifetime
 3. **Node characteristics**: Including hardware type, region, and resource constraints
 4. **Workload characteristics**: Including duration, resource requirements, and constraints
 
+This is experimental work and the accuracy of carbon calculations depends on the quality of input data and modeling assumptions.
+
 ## The IDL 
 
-The interface definition is in the `./pkg/idl/idl.proto` file. It models the snapshot of a Kubernetes cluster in terms of infrastructure and workload deployment, along with placement information including scheduling time for each microservice and scores for each pod and node. This gRPC interface decouples the FogAtlas code (written in Go) from the placement algorithm implementations that can be written in various programming languages.
+The interface definition is in the `./pkg/idl/idl.proto` file. It models a snapshot of a Kubernetes cluster in terms of infrastructure and workload deployment, along with placement information including scheduling time for each microservice and scores for each pod and node. This gRPC interface aims to decouple the FogAtlas code (written in Go) from the placement algorithm implementations that can be written in various programming languages.
 
 ## Repository Structure
 
@@ -47,26 +52,58 @@ The interface definition is in the `./pkg/idl/idl.proto` file. It models the sna
     - `client/`: Go client for testing
     - `infra_workload_gen.py`: Tool for generating test infrastructure and workload data
     - `performance_logs/`: Directory containing performance metrics logs
+    - `nodes.yaml`: Node configuration with CPU capacities and hardware metadata
+- `tests/`: Testing tools and experimental results
+    - `milp_global_optimizer.py`: MILP-based global optimization algorithm
+    - `experiments/`: Generated experiment results from MILP runs
+    - `check_timeslot_constraints.py`: Constraint validation tools
 - `analysis/`: Tools for analyzing and visualizing performance data
+    - `schedule_visualization.py`: Enhanced script for visualizing pod placement schedules
     - `visualization.py`: Script for generating performance visualizations
+    - `simple_carbon_heatmap.py`: Carbon emissions visualization tools
+- `figures/`: Generated visualization outputs organized by experiment
+- `docs/`: Documentation including research papers and guides
     - `schedule_visualization.py`: Script for visualizing pod placement schedules
     - `run_schedule_visualization.sh`: Helper script for running schedule visualizations
     - `VISUALIZATION_GUIDE.md`: Documentation for using visualizations
 
 ## Carbon-Aware Algorithm
 
-The carbon-aware algorithm optimizes workload placement based on total carbon emissions.
+The carbon-aware orchestrator currently provides two scheduling approaches, both of which are still under active development and may have limitations:
 
-The usage workflow is:
-1. The client initializes the algorithm with `Init()`
-2. The client provides the current cluster status to the algorithm via `CalculatePlacement()`, which returns scores for each node-pod pairing
+### Heuristic Algorithm
 
-The algorithm evaluates:
-- Node power consumption models
-- Regional carbon intensity data
-- Embodied carbon amortization
-- Workload resource requirements and duration
-- Current cluster utilization
+The heuristic algorithm aims to provide reasonable placement decisions by:
+
+1. **Carbon Score Calculation**: For each pod-node pairing, calculating total carbon emissions (operational + embodied)
+2. **Constraint Filtering**: Ensuring resource requirements and timing constraints are met
+3. **Greedy Selection**: Choosing the node with lowest carbon emissions for each pod
+
+This approach is fast and practical, but may not always find the global optimum.
+
+### MILP Global Optimizer
+
+The Mixed Integer Linear Programming (MILP) optimizer attempts to find globally optimal solutions by:
+
+1. **Mathematical Modeling**: Formulating the entire scheduling problem as a linear program
+2. **Global Optimization**: Finding the best solution across all pods and nodes simultaneously
+3. **Constraint Satisfaction**: Guaranteeing all resource and timing constraints are respected
+4. **Solver Integration**: Using CPLEX or Gurobi for optimization (if available)
+
+The MILP optimizer is available in `tests/milp_global_optimizer.py` and generates experiment results for comparison with heuristic approaches. Please note that this is an experimental feature and may require significant computational resources for larger problems.
+
+#### Running MILP Global Optimizer
+
+```bash
+# Navigate to the tests directory
+cd tests
+
+# Run MILP optimization with 4 nodes (example)
+python milp_global_optimizer.py
+
+# Results are saved to experiments/ directory with timestamp
+# Example: experiments/milp_global_optimizer_4nodes_YYYYMMDD_HHMMSS/
+```
 
 ### Constraints Handling
 

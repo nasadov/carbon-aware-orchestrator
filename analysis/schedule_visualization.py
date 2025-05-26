@@ -13,6 +13,67 @@ from collections import defaultdict  # Add defaultdict
 
 CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "pkg", "carbon-aware", "infra-workload-config.yaml")
 
+def load_nodes_yaml_config(nodes_yaml_path):
+    """Loads node configuration directly from a nodes.yaml file with multiple Kubernetes node documents."""
+    logging.info(f"Loading nodes configuration from: {nodes_yaml_path}")
+    
+    if not os.path.exists(nodes_yaml_path):
+        logging.warning(f"Nodes YAML file not found: {nodes_yaml_path}")
+        return {}
+    
+    try:
+        with open(nodes_yaml_path, 'r') as f:
+            # Handle multiple YAML documents (Kubernetes node definitions)
+            all_docs = list(yaml.safe_load_all(f))
+            
+            # Extract node information from Kubernetes node definitions
+            nodes = []
+            node_cpu_capacities = {}
+            
+            for doc in all_docs:
+                if doc and isinstance(doc, dict) and doc.get('kind') == 'Node':
+                    metadata = doc.get('metadata', {})
+                    labels = metadata.get('labels', {})
+                    hostname = labels.get('kubernetes.io/hostname')
+                    
+                    if hostname:
+                        nodes.append(hostname)
+                        
+                        # Extract CPU capacity from node status or spec
+                        status = doc.get('status', {})
+                        capacity = status.get('capacity', {})
+                        cpu_capacity = capacity.get('cpu', '1')  # Default to 1 CPU
+                        
+                        # Convert CPU capacity to float (handle formats like '2' or '2000m')
+                        try:
+                            if isinstance(cpu_capacity, str):
+                                if cpu_capacity.endswith('m'):
+                                    cpu_cores = float(cpu_capacity[:-1]) / 1000.0
+                                else:
+                                    cpu_cores = float(cpu_capacity)
+                            else:
+                                cpu_cores = float(cpu_capacity)
+                            node_cpu_capacities[hostname] = cpu_cores
+                            logging.info(f"Node {hostname} has {cpu_cores} CPU cores")
+                        except (ValueError, TypeError):
+                            logging.warning(f"Could not parse CPU capacity '{cpu_capacity}' for node {hostname}, using default 1.0")
+                            node_cpu_capacities[hostname] = 1.0
+            
+            # Build config structure
+            config = {
+                'nodes': sorted(nodes),
+                'node_cpu_capacities': node_cpu_capacities,
+                'total_timeslots': 24  # Default timeslots
+            }
+            
+            logging.info(f"Successfully loaded nodes config. Nodes: {nodes}")
+            logging.info(f"Node CPU capacities: {node_cpu_capacities}")
+            return config
+            
+    except Exception as e:
+        logging.error(f"Error parsing nodes YAML file {nodes_yaml_path}: {e}")
+        return {}
+
 def load_infra_config(config_path_str=CONFIG_FILE_PATH):
     """Loads infrastructure configuration (nodes) from a YAML file."""
     if not config_path_str:
@@ -32,6 +93,10 @@ def load_infra_config(config_path_str=CONFIG_FILE_PATH):
         config_path_abs = os.path.normpath(config_path_str)
 
     logging.info(f"Attempting to load infra config from: {config_path_abs}")
+
+    # Check if this is a nodes.yaml file (contains Kubernetes node definitions)
+    if config_path_abs.endswith('nodes.yaml'):
+        return load_nodes_yaml_config(config_path_abs)
 
     try:
         with open(config_path_abs, 'r') as f:
@@ -131,8 +196,12 @@ def load_data(csv_path, pod_cpu_requests=None):
         
         # Ensure cpuRequest is available
         if 'cpuRequest' not in df.columns:
+            # Check for alternative column names like 'cpu_request'
+            if 'cpu_request' in df.columns:
+                logging.info(f"Found 'cpu_request' column, mapping to 'cpuRequest'")
+                df['cpuRequest'] = pd.to_numeric(df['cpu_request'], errors='coerce').fillna(0.2)
             # If we have pod CPU requests from workload files, use them
-            if pod_cpu_requests and not df.empty and 'pod_id' in df.columns:
+            elif pod_cpu_requests and not df.empty and 'pod_id' in df.columns:
                 logging.info(f"Setting cpuRequest based on workload YAML files")
                 # Function to lookup CPU request for each pod ID
                 def get_cpu_request(pod_id):
@@ -184,6 +253,16 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     logging.info(f"Plotting individual pods. Infra config provided: {bool(total_timeslots_from_config)}")
     logging.info(f"Value of 'total_timeslots_from_config': {total_timeslots_from_config} (type: {type(total_timeslots_from_config)})")
     logging.info(f"Node CPU capacities provided: {bool(node_cpu_capacities)}")
+    
+    # Debug: Check if we have CPU data
+    if df is not None and not df.empty and 'cpuRequest' in df.columns:
+        cpu_values = df['cpuRequest'].unique()
+        logging.info(f"Found CPU request values in data: {sorted(cpu_values)}")
+    elif df is not None and not df.empty and 'cpu_request' in df.columns:
+        cpu_values = df['cpu_request'].unique()
+        logging.info(f"Found cpu_request values in data: {sorted(cpu_values)}")
+    else:
+        logging.warning("No CPU request data found in DataFrame")
 
     # Data type conversion should happen early if df is not None
     if df is not None and not df.empty:
@@ -198,6 +277,9 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
                 df['node_id'] = df['node_id'].astype(str)
             if 'cpuRequest' in df.columns:
                 df['cpuRequest'] = pd.to_numeric(df['cpuRequest'], errors='coerce').fillna(0.2)
+            elif 'cpu_request' in df.columns:
+                # Handle different column name convention
+                df['cpuRequest'] = pd.to_numeric(df['cpu_request'], errors='coerce').fillna(0.2)
             else:
                 # Default CPU request if not provided
                 logging.info(f"cpuRequest column not found in DataFrame. Using default of 0.2.")
@@ -242,9 +324,9 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
         ax.set_xlim(-0.5, plot_time_slots - 0.5)
         
         # Set ylim based on node positions
-        max_y = max(list(node_y_positions.values()) + [0]) + max(node_heights.values(), default=1) / 2 + 0.5
         min_y = min(list(node_y_positions.values()) + [0]) - max(node_heights.values(), default=1) / 2 - 0.5
-        ax.set_ylim(max_y, min_y)
+        max_y = max(list(node_y_positions.values()) + [0]) + max(node_heights.values(), default=1) / 2 + 0.5
+        ax.set_ylim(min_y, max_y)
         
         # Draw empty node capacity indicators
         for node in plot_nodes:
@@ -403,7 +485,8 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     total_height = max(10, sum(node_heights.values()) * 1.5 + (len(plot_nodes) - 1) * 0.3)
     
     # Calculate width based on time slots with more space per slot for better legibility
-    plot_width = max(14, plot_time_slots * 0.6)
+    # Increase base width to accommodate legend on the right side
+    plot_width = max(16, plot_time_slots * 0.7)  # Increased from 14 and 0.6
     
     # Create figure with improved size parameters
     fig, ax = plt.subplots(figsize=(plot_width, total_height))
@@ -411,18 +494,33 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     # Add a bit more margin on both sides of the time axis
     ax.set_xlim(-0.7, plot_time_slots - 0.3)
     
-    # Set ylim based on node positions, with a larger margin for better visual spacing
-    max_y = max(list(node_y_positions.values()) + [0]) + max(node_heights.values(), default=1) / 2 + 1.0
-    min_y = min(list(node_y_positions.values()) + [0]) - max(node_heights.values(), default=1) / 2 - 1.0
-    ax.set_ylim(max_y, min_y)  # Reverse y-axis to put the first node at the top
+    # Calculate tight ylim based on actual node boundaries
+    # Find the actual top and bottom edges of all nodes
+    if plot_nodes and node_y_positions and node_heights:
+        # Top edge of the topmost node (smallest y-coordinate)
+        top_edge = min(node_y_positions[node] - node_heights[node]/2 for node in plot_nodes)
+        # Bottom edge of the bottommost node (largest y-coordinate)  
+        bottom_edge = max(node_y_positions[node] + node_heights[node]/2 for node in plot_nodes)
+        
+        # Add minimal margins (0.1 instead of large values)
+        margin = 0.1
+        min_y = top_edge - margin    # Visual top (smallest y-value)
+        max_y = bottom_edge + margin # Visual bottom (largest y-value)
+    else:
+        # Fallback for empty data
+        min_y = -1.0
+        max_y = 1.0
     
-    logging.info(f"Plot ylim: {min_y}, {max_y}")
+    ax.set_ylim(max_y, min_y)  # Reverse y-axis to put node-0 at top
+    
+    logging.info(f"Plot ylim: {max_y}, {min_y} (reversed for top-to-bottom node order)")
     logging.info(f"Plot size: {plot_width} x {total_height}")
 
     unique_pods = df['pod_id'].unique() if df is not None and not df.empty else []
     num_unique_pods = len(unique_pods)
     
     pod_to_color = {}
+    pod_to_hatch = {}  # Initialize hatching patterns mapping
     if num_unique_pods > 0:
         # Use a combination of colorful colormaps for better distinction
         if num_unique_pods <= 10:
@@ -447,10 +545,65 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
         # Create mapping from pod ID to color
         pod_to_color = {pod: colors[i] for i, pod in enumerate(unique_pods)}
         
+        # Add hatching patterns for similar colored pods
+        def color_distance(c1, c2):
+            """Calculate Euclidean distance between two RGB colors."""
+            return np.sqrt(sum((a - b) ** 2 for a, b in zip(c1[:3], c2[:3])))
+        
+        def assign_hatching_patterns(pod_colors):
+            """Assign hatching patterns to pods with similar colors."""
+            hatch_patterns = ['', '///', '\\\\\\', '|||', '---', '+++', 'xxx', 'ooo', '...', '***']
+            pod_to_hatch = {}
+            color_threshold = 0.2  # Threshold for color similarity
+            
+            used_patterns = []
+            for pod_id, color in pod_colors.items():
+                # Check if this color is similar to any previous colors
+                similar_found = False
+                for prev_pod, prev_color in pod_colors.items():
+                    if prev_pod != pod_id and prev_pod in pod_to_hatch:
+                        if color_distance(color, prev_color) < color_threshold:
+                            # Find a pattern not used by similar colors
+                            for pattern in hatch_patterns:
+                                if pattern not in [pod_to_hatch[p] for p in pod_colors.keys() 
+                                                 if p in pod_to_hatch and color_distance(pod_colors[p], color) < color_threshold]:
+                                    pod_to_hatch[pod_id] = pattern
+                                    similar_found = True
+                                    break
+                            if similar_found:
+                                break
+                
+                if not similar_found:
+                    pod_to_hatch[pod_id] = ''  # No hatching for distinct colors
+            
+            return pod_to_hatch
+        
+        pod_to_hatch = assign_hatching_patterns(pod_to_color)
+        
         logging.info(f"Assigned {len(pod_to_color)} colors to pods")
+        logging.info(f"Assigned hatching patterns: {sum(1 for h in pod_to_hatch.values() if h)} pods have hatching")
 
-    # Initialize a dictionary to keep track of CPU usage in each slot per node
-    cpu_usage_tracker = defaultdict(float)
+    # Initialize a dictionary to keep track of pod positioning within each node
+    # This will track all overlapping time slots for better space distribution
+    node_pod_layout = defaultdict(list)  # node -> [(start, end, pod_id, cpu_request)]
+    
+    # First pass: collect all pods for each node to plan layout
+    if not df.empty:
+        for _, row in df.iterrows():
+            if row['node_id'] not in plot_nodes:
+                continue
+            node = row['node_id']
+            start_slot = int(row['start_slot'])
+            duration = int(row['duration'])
+            end_slot = start_slot + duration
+            pod_id = row['pod_id']
+            cpu_request = float(row['cpuRequest'])
+            
+            node_pod_layout[node].append((start_slot, end_slot, pod_id, cpu_request))
+    
+    # Sort pods by start time for each node
+    for node in node_pod_layout:
+        node_pod_layout[node].sort(key=lambda x: x[0])  # Sort by start_slot
     
     # Draw node capacity indicators (light gray rectangles)
     for node in plot_nodes:
@@ -470,6 +623,7 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
             )
             ax.add_patch(node_rect)
 
+    # Second pass: draw pods with better space distribution
     if not df.empty:
         for _, row in df.iterrows():
             if row['node_id'] not in plot_nodes:
@@ -479,29 +633,63 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
             node_y_center = node_y_positions[node]
             node_height = node_heights[node]
             
-            start_slot = row['start_slot']
-            duration = row['duration']
+            start_slot = int(row['start_slot'])
+            duration = int(row['duration'])
             pod_id = row['pod_id']
-            cpu_request = float(row['cpuRequest'])  # Use CPU request for pod height
+            cpu_request = float(row['cpuRequest'])
             
             # Calculate pod height as a proportion of the node's height based on CPU request
             node_cpu_capacity = node_cpu_capacities.get(node, 1.0) if node_cpu_capacities else 1.0
             
             # Pod height proportional to its CPU request relative to node capacity
-            # But capped at the node's height to avoid pods being larger than nodes
             pod_height_proportion = min(cpu_request / node_cpu_capacity, 1.0)
             pod_height = node_height * pod_height_proportion
             
-            # Keep track of CPU usage for this node and slot for vertical positioning
-            overlap_key = (node, start_slot)
-            current_cpu_usage = cpu_usage_tracker[overlap_key]
+            # Calculate pod positioning based on actual time overlaps and CPU capacity
+            pods_in_node = node_pod_layout[node]
             
-            # Position the pod vertically within the node area based on current CPU usage
-            # This stacks pods on top of each other inside the node's capacity area
-            pod_y_bottom = node_y_center - node_height/2 + current_cpu_usage * node_height
+            # Find all pods that overlap in time with this pod at this specific time slot
+            overlapping_pods_at_time = []
+            for time_slot in range(start_slot, start_slot + duration):
+                for s, e, p, c in pods_in_node:
+                    if s <= time_slot < e and not any(pod[2] == p for pod in overlapping_pods_at_time):
+                        overlapping_pods_at_time.append((s, e, p, c))
             
-            # Update the CPU usage tracker for this node and slot
-            cpu_usage_tracker[overlap_key] += pod_height_proportion
+            # Sort overlapping pods by start time, then by pod_id for consistent ordering
+            overlapping_pods_at_time.sort(key=lambda x: (x[0], x[2]))
+            
+            # Find this pod's position among the overlapping pods
+            pod_index = next(i for i, (s, e, p, c) in enumerate(overlapping_pods_at_time) if p == pod_id)
+            total_overlapping = len(overlapping_pods_at_time)
+            
+            # Calculate the total CPU demand from overlapping pods
+            total_cpu_demand = sum(c for s, e, p, c in overlapping_pods_at_time)
+            node_cpu_capacity = node_cpu_capacities.get(node, 1.0) if node_cpu_capacities else 1.0
+            
+            # If total CPU demand exceeds capacity, we have a capacity violation
+            capacity_violation = total_cpu_demand > node_cpu_capacity
+            
+            if total_overlapping > 1:
+                # Stack overlapping pods vertically to show capacity violations
+                available_height = node_height * 0.9  # Use 90% of node height
+                margin_top = node_height * 0.05
+                
+                # If there's a capacity violation, extend beyond the node bounds to show the problem
+                if capacity_violation:
+                    # Allow pods to extend beyond node capacity area to show violation
+                    stack_height = available_height * 1.3  # 30% extra space to show violations
+                    pod_slot_height = stack_height / total_overlapping
+                else:
+                    # Normal stacking within node bounds
+                    pod_slot_height = available_height / total_overlapping
+                    
+                pod_y_offset = margin_top + (pod_index * pod_slot_height) + (pod_slot_height - pod_height) / 2
+                
+            else:
+                # Single pod, center it in the node
+                pod_y_offset = (node_height - pod_height) / 2
+            
+            pod_y_bottom = node_y_center - node_height/2 + pod_y_offset
             
             # Center position for the label
             text_y_center = pod_y_bottom + pod_height / 2
@@ -514,53 +702,31 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
             height_adjustment = (visible_pod_height - pod_height) / 2
             adjusted_pod_y_bottom = pod_y_bottom - height_adjustment
             
-            # Draw the pod rectangle with improved visibility
+            # Choose edge color and style based on capacity violation
+            if capacity_violation:
+                edge_color = 'red'
+                line_width = 1.2
+                edge_alpha = 1.0
+            else:
+                edge_color = 'black'
+                line_width = 0.8
+                edge_alpha = 0.8
+            
+            # Draw the pod rectangle with capacity violation indicators
             rect = plt.Rectangle(
                 (start_slot - 0.5, adjusted_pod_y_bottom),  # bottom left (x, y)
                 duration,  # width (number of time slots)
                 visible_pod_height,  # height with minimum visibility
                 facecolor=pod_to_color.get(pod_id, 'gray'),
-                edgecolor='black',
+                edgecolor=edge_color,
                 alpha=0.8,  # Increased from 0.7 for better visibility
-                linewidth=0.8,  # Increased from 0.5 for better visibility
+                linewidth=line_width,  # Thicker red border for capacity violations
+                hatch=pod_to_hatch.get(pod_id, ''),  # Add hatching for similar colored pods
                 zorder=2  # Above node backgrounds
             )
             ax.add_patch(rect)
             
-            # Only add text label if the rectangle is big enough to be readable
-            # Minimum thresholds for text display
-            MIN_WIDTH = 1.0  # Reduced from 1.5 for showing more labels
-            MIN_HEIGHT = 0.08  # Increased from 0.05 for better visibility threshold
-            
-            short_pod_id_for_rect = shorten_pod_label(pod_id)
-            
-            # Adjusted text y-center for visible pod height
-            text_y_center = adjusted_pod_y_bottom + visible_pod_height / 2
-            
-            if duration > MIN_WIDTH and visible_pod_height > MIN_HEIGHT:
-                # Determine font size based on rectangle size - more generous scaling
-                font_size = min(9, max(7, 8 * visible_pod_height))
-                
-                # Decide what text to show based on rectangle size
-                if duration > 2 and visible_pod_height > 0.15:
-                    # For larger rectangles, show ID and CPU request
-                    label_text = f"{short_pod_id_for_rect}\n({cpu_request})"
-                else:
-                    # For smaller rectangles, just show ID
-                    label_text = f"{short_pod_id_for_rect}"
-                    
-                ax.text(
-                    start_slot - 0.5 + duration / 2,  # x position (center of pod rectangle)
-                    text_y_center,  # y position (center of pod rectangle)
-                    label_text,
-                    va='center',
-                    ha='center',
-                    fontsize=font_size, 
-                    color='black',
-                    fontweight='bold',  # Make text bold for better visibility
-                    zorder=3,  # Above rectangles
-                    bbox=dict(facecolor='white', alpha=0.7, edgecolor='gray', boxstyle='round,pad=0.2')  # Improved text background
-                )
+            # Pod labels have been removed for cleaner visualization
 
     # Set x-ticks for time slots - limit to a reasonable number if there are many
     max_xticks = min(plot_time_slots, 30)  # Don't show more than 30 ticks for readability
@@ -639,6 +805,11 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     patches.append(node_capacity_legend)
     patch_labels.append("Node capacity area")
     
+    # Add capacity violation indicator to legend
+    violation_legend = plt.Rectangle((0, 0), 1, 1, facecolor='lightblue', edgecolor='red', linewidth=1.2, alpha=0.8)
+    patches.append(violation_legend)
+    patch_labels.append("Capacity violation (red border)")
+    
     if node_cpu_capacities:
         # Create a rectangle example showing CPU usage
         cpu_legend = plt.Rectangle((0, 0), 1, 1, facecolor='lightblue', edgecolor='black', alpha=0.8)
@@ -648,24 +819,21 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     # Sort pods for consistent legend order
     sorted_legend_pods = sorted(list(unique_pods))
     
-    # Limit the number of pods in the legend to avoid overwhelming display
-    max_legend_pods = 15  # Maximum number of pods to show in legend
-    
-    if len(sorted_legend_pods) > max_legend_pods:
-        # If we have too many pods, only show some and add a note
-        legend_pods = sorted_legend_pods[:max_legend_pods]
-        note_text = f"+ {len(sorted_legend_pods) - max_legend_pods} more pods"
-    else:
-        legend_pods = sorted_legend_pods
-        note_text = None
+    # Show all pods in legend - remove artificial limit for better visibility
+    legend_pods = sorted_legend_pods  # Show all pods
+    note_text = None  # No truncation message needed
     
     # Add pods to legend
     for pod_id_leg in legend_pods:
         if pod_id_leg in pod_to_color:
-            patches.append(plt.Rectangle((0,0),1,1, facecolor=pod_to_color[pod_id_leg], edgecolor='black', alpha=0.8))
-            # Show short ID for better legend readability
+            patches.append(plt.Rectangle((0,0),1,1, 
+                                       facecolor=pod_to_color[pod_id_leg], 
+                                       edgecolor='black', 
+                                       alpha=0.8,
+                                       hatch=pod_to_hatch.get(pod_id_leg, '')))  # Include hatching in legend
+            # Show only short ID for cleaner legend (no double labeling)
             short_id = shorten_pod_label(pod_id_leg)
-            patch_labels.append(f"{short_id} ({pod_id_leg})")
+            patch_labels.append(short_id)
     
     # Add the "more pods" note if necessary
     if note_text:
@@ -673,30 +841,38 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
         patch_labels.append(note_text)
     
     if patches:
-        # Calculate optimal number of columns based on total patches
+        # Calculate optimal number of columns for legend - use more columns for horizontal layout
         num_patches = len(patches)
-        if num_patches <= 3:
-            num_legend_cols = num_patches
-        elif num_patches <= 8:
-            num_legend_cols = 3
-        elif num_patches <= 15:
-            num_legend_cols = 4
+        if num_patches <= 10:
+            num_legend_cols = min(num_patches, 5)  # 1-5 columns for small numbers
+        elif num_patches <= 25:
+            num_legend_cols = 6  # 6 columns for medium numbers
+        elif num_patches <= 50:
+            num_legend_cols = 8  # 8 columns for larger numbers
         else:
-            num_legend_cols = 5
+            num_legend_cols = 10  # Maximum 10 columns for very large numbers
             
-        # Create a more visually appealing legend with better spacing
+        # Position legend below the plot for better use of horizontal space
         fig.legend(patches, patch_labels, 
-                  loc='lower center',
-                  bbox_to_anchor=(0.5, -0.02),
+                  loc='upper center',
+                  bbox_to_anchor=(0.5, -0.02),  # Position below the plot
                   ncol=num_legend_cols,
                   title='Legend',
-                  fontsize=9,
+                  fontsize=8,  # Slightly larger font for readability
                   frameon=True, 
                   fancybox=True,
                   framealpha=0.9,
-                  title_fontsize=11)
+                  title_fontsize=10,
+                  columnspacing=0.8,  # Increase spacing between columns for clarity
+                  handletextpad=0.3,  # Spacing between legend markers and text
+                  handlelength=1.2,   # Legend marker length
+                  markerscale=0.9)    # Legend marker size
 
-    fig.subplots_adjust(bottom=0.15 if patches else 0.1)
+    # Use tight layout with padding for the legend below
+    plt.tight_layout()
+    if patches:
+        # Adjust the plot to make room for the legend below
+        plt.subplots_adjust(bottom=0.15)  # Leave space at the bottom for legend
     plt.savefig(output_path, bbox_inches='tight')
     plt.close(fig)
     print(f"Individual pod placement plot saved to {output_path}")

@@ -35,6 +35,21 @@ def main() -> None:
         help='Scheduling algorithm to use: heuristic (fast, local optimization), optimal (MILP, per-pod optimization), or global-optimal (MILP, considers all pods simultaneously) (default: heuristic)'
     )
     parser.add_argument(
+        '--workloads-dir',
+        default='./workloads',
+        help='Directory containing timeslot_*.yaml workload files (required for global-optimal algorithm)'
+    )
+    parser.add_argument(
+        '--nodes-file',
+        default='../nodes.yaml',
+        help='Path to nodes.yaml file (used by global-optimal algorithm)'
+    )
+    parser.add_argument(
+        '--forecasts-file',
+        default='./all_forecasts.json',
+        help='Path to all_forecasts.json file (used by global-optimal algorithm)'
+    )
+    parser.add_argument(
         '--experiment',
         action='store_true',
         help='Enable experiment logging mode'
@@ -55,6 +70,11 @@ def main() -> None:
         default='./performance_logs',
         help='Directory to store performance logs'
     )
+    parser.add_argument(
+        '--prioritize-efficiency',
+        action='store_true',
+        help='Prioritize carbon efficiency per CPU rather than total emissions for scheduling decisions'
+    )
     
     args = parser.parse_args()
     
@@ -63,7 +83,7 @@ def main() -> None:
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        datefmt="%Y-%m-%d %H%M%S",
     )
     
     # Determine the main log directory for this server session
@@ -143,7 +163,17 @@ def main() -> None:
     # Start the server
     # Pass the session_log_dir to the server, so it can pass it to algorithms
     # for consistent logging paths for placements.
-    serve(port=args.port, algorithm=args.algorithm, experiment_logger=experiment_logger, perf_logger=perf_logger, session_log_dir=session_log_dir)
+    serve(
+        port=args.port, 
+        algorithm=args.algorithm, 
+        experiment_logger=experiment_logger, 
+        perf_logger=perf_logger, 
+        session_log_dir=session_log_dir,
+        workloads_dir=args.workloads_dir,
+        nodes_file=args.nodes_file,
+        forecasts_file=args.forecasts_file,
+        prioritize_efficiency=args.prioritize_efficiency
+    )
 
 
 if __name__ == "__main__":

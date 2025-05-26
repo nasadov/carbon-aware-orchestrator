@@ -37,13 +37,21 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
     """
     gRPC Service Implementation. Each method corresponds to a .proto RPC definition.
     """
-    def __init__(self, algorithm_name='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None):
+    def __init__(self, algorithm_name='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None, 
+                 workloads_dir=None, nodes_file=None, forecasts_file=None, prioritize_efficiency=False):
         self.algo = Algorithm(algorithm_name, True)
         self.command_line_algorithm = algorithm_name 
         self.persistent_state = PersistentStateStorage()
         self.experiment_logger = experiment_logger
         self.perf_logger = perf_logger
         self.session_log_dir = session_log_dir # This is the single directory for the entire server session
+        
+        # Global optimization parameters
+        self.workloads_dir = workloads_dir
+        self.nodes_file = nodes_file
+        self.forecasts_file = forecasts_file
+        self.prioritize_efficiency = prioritize_efficiency
+        self.comprehensive_initialized = False  # Keeping this name for backward compatibility
 
         # Configure perf_logger once if it's provided and session_log_dir is set
         if self.perf_logger and self.session_log_dir:
@@ -192,6 +200,28 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             # The PerformanceLogger is already configured in __init__ to append to a single session file.
             # No need to call set_new_log_file here for perf_logger per CalculatePlacement call.
 
+            # Initialize global optimization for global-optimal algorithm (always enabled by default)
+            if self.algo.name == 'global-optimal' and not self.comprehensive_initialized:
+                logging.info(f"🌟 Initializing global optimization mode (default behavior)")
+                logging.info(f"  ▶ Workloads directory: {self.workloads_dir}")
+                logging.info(f"  ▶ Nodes file: {self.nodes_file}")
+                logging.info(f"  ▶ Forecasts file: {self.forecasts_file}")
+                
+                if hasattr(algorithm_instance, 'precompute_all_workloads'):
+                    success = algorithm_instance.precompute_all_workloads(
+                        workloads_dir=self.workloads_dir,
+                        nodes_file=self.nodes_file,
+                        forecasts_file=self.forecasts_file
+                    )
+                    
+                    if success:
+                        logging.info(f"✅ Global optimization initialized successfully")
+                        self.comprehensive_initialized = True
+                    else:
+                        logging.error(f"❌ Failed to initialize global optimization")
+                else:
+                    logging.error(f"❌ Algorithm {self.algo.name} does not support global optimization")
+            
             # Inject experiment_logger into algorithm (for experiment logger, if used)
             if self.experiment_logger:
                 if not hasattr(self.experiment_logger, 'session_started'):
@@ -434,7 +464,9 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         return placement
 
 
-def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None):
+def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None,
+         workloads_dir="./workloads", nodes_file="../nodes.yaml", forecasts_file="./all_forecasts.json",
+         prioritize_efficiency=False):
     """
     Creates and runs the gRPC server on the specified port, registering the PlacementAlgorithm servicer.
     Implements graceful shutdown handling.
@@ -445,15 +477,25 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         experiment_logger (ExperimentLogger, optional): Logger for experiment metrics
         perf_logger (PerformanceLogger, optional): Logger for performance metrics
         session_log_dir (str, optional): Single directory for all logs of this server session.
+        workloads_dir (str): Directory containing timeslot_*.yaml files
+        nodes_file (str): Path to nodes.yaml
+        forecasts_file (str): Path to all_forecasts.json
+        prioritize_efficiency (bool): Whether to prioritize carbon efficiency per CPU
     """
     shutdown_in_progress = False
     
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    # Pass perf_logger and session_log_dir to the servicer
-    servicer = PlacementAlgorithm(algorithm_name=algorithm, 
-                                  experiment_logger=experiment_logger, 
-                                  perf_logger=perf_logger, 
-                                  session_log_dir=session_log_dir)
+    # Pass parameters to the servicer
+    servicer = PlacementAlgorithm(
+        algorithm_name=algorithm, 
+        experiment_logger=experiment_logger, 
+        perf_logger=perf_logger, 
+        session_log_dir=session_log_dir,
+        workloads_dir=workloads_dir,
+        nodes_file=nodes_file,
+        forecasts_file=forecasts_file,
+        prioritize_efficiency=prioritize_efficiency
+    )
     idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(servicer, server)
     server.add_insecure_port('[::]:' + port)
 

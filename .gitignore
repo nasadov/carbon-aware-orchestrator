@@ -64,7 +64,10 @@ pkg/carbon-aware/server-python/performance_logs/*.csv
 test_logs/
 tests/archive/
 
-# Generated visualizations
+# MILP optimizer test results
+tests/experiments/*/
+
+# Generated visualizations and figure outputs
 figures/*.png
 figures/*.pdf
 figures/*/
@@ -72,6 +75,10 @@ figures/*/
 # Keep example visualization used in documentation
 !figures/example_*.png
 !figures/example_*.pdf
+
+# Analysis cache files
+analysis/__pycache__/
+analysis/*.pyc
 
 # Generated workloads
 workloads/

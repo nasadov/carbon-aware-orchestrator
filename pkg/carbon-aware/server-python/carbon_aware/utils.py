@@ -832,3 +832,25 @@ class PerformanceLogger:
             "pods_total": pods_total,
             "avg_placement_time_ms": avg_placement_time_ms
         }
+
+    def compute_emissions_per_cpu(flavour: CarbonAwareFlavour, timeslot_id: int, pod: CarbonAwarePod) -> float:
+        """
+        Calculate the carbon emissions per CPU core for a specific pod placement.
+        This function helps prioritize nodes that are more carbon efficient per unit of compute.
+        
+        Args:
+            flavour: The node (flavor) to consider
+            timeslot_id: The starting timeslot ID for the placement
+            pod: The pod to place
+            
+        Returns:
+            Carbon emissions per CPU core (normalized by node's total CPU)
+        """
+        # Calculate total emissions for this placement
+        total_emissions = compute_emissions(flavour, timeslot_id, pod)
+        
+        # Calculate emissions per CPU core
+        # Add a small epsilon to prevent division by zero
+        emissions_per_cpu = total_emissions / (flavour.totalCpu + 1e-6)
+        
+        return emissions_per_cpu
