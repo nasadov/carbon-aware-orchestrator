@@ -8,9 +8,9 @@ optimization. It reads pods from all workload files, nodes.yaml, and carbon inte
 forecasts, then solves the optimization problem and saves placement results in CSV format.
 
 Example usage:
-    python milp_global_optimizer.py --workloads-dir ../pkg/carbon-aware/server-python/workloads \\
-                                  --nodes-file ../pkg/carbon-aware/server-python/nodes.yaml \\
-                                  --forecasts-file ../pkg/carbon-aware/server-python/all_forecasts.json \\
+    python milp_global_optimizer.py --workloads-dir pkg/carbon-aware/server-python/workloads \\
+                                  --nodes-file pkg/carbon-aware/server-python/nodes.yaml \\
+                                  --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \\
                                   --output results_global_optimization.csv
 """
 import argparse
@@ -587,7 +587,15 @@ class GlobalOptimizer:
             
             # STEP 3: Solve the MILP
             logging.info("🔍 STEP 3: Solving the MILP problem")
-            pulp_solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=300)  # 5 min time limit
+            logging.info("  - Starting CBC solver with optimized settings:")
+            logging.info("    • Time limit: 20 seconds (reduced from 300s for efficiency)")
+            logging.info("    • Gap tolerance: 1% (early termination when near-optimal)")
+            logging.info("    • Enhanced heuristics and preprocessing enabled")
+            pulp_solver = pulp.PULP_CBC_CMD(
+                msg=True,                      # Enable verbose output
+                timeLimit=20,                  # Reduced from 300s - most solutions found early
+                gapRel=0.01                   # Stop when gap between best and bound <= 1%
+            )
             
             solution_start_time = time.time()
             prob.solve(pulp_solver)
@@ -669,17 +677,17 @@ def main():
     parser = argparse.ArgumentParser(description='Standalone MILP Global Optimizer')
     parser.add_argument(
         '--workloads-dir',
-        default='../pkg/carbon-aware/server-python/workloads',
+        default='pkg/carbon-aware/server-python/workloads',
         help='Directory containing timeslot_*.yaml workload files'
     )
     parser.add_argument(
         '--nodes-file',
-        default='../pkg/carbon-aware/server-python/nodes.yaml',
+        default='pkg/carbon-aware/nodes.yaml',
         help='Path to nodes.yaml file'
     )
     parser.add_argument(
         '--forecasts-file',
-        default='../pkg/carbon-aware/server-python/all_forecasts.json',
+        default='pkg/carbon-aware/server-python/all_forecasts.json',
         help='Path to all_forecasts.json file'
     )
     parser.add_argument(

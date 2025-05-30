@@ -80,76 +80,87 @@ def main() -> None:
     
     # Configure logging with specified level
     log_level = getattr(logging, args.loglevel)
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H%M%S",
+    
+    # Create a custom logger to handle both console and file output
+    logger = logging.getLogger()
+    logger.setLevel(log_level)
+    
+    # Clear any existing handlers
+    logger.handlers.clear()
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
     )
+    
+    # Console handler (always present)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
     
     # Determine the main log directory for this server session
     session_log_dir = None
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Define the base directory for session logs. Default to experiment_dir if any logging is active.
+    # Set up session directory for logging
     if args.experiment:
-        base_session_parent_dir = args.experiment_dir # Default: './experiments'
         session_type_prefix = "experiment_session"
-        logging.info(f"🧪 Experiment session mode. Base log directory for session: {base_session_parent_dir}")
-    elif args.perf_log:
-        # If not in explicit experiment mode, but performance logging is on (default),
-        # use the experiment_dir as the base for consistency.
-        base_session_parent_dir = args.experiment_dir # Default: './experiments'
-        session_type_prefix = "perf_log_session" 
-        logging.info(f"📈 Performance logging session mode (using experiment directory as base). Base log directory for session: {base_session_parent_dir}")
-    else:
-        # Fallback if neither experiment nor performance logging is enabled.
-        # session_log_dir will remain None if no logs are to be generated.
-        base_session_parent_dir = args.experiment_dir 
-        session_type_prefix = "general_session"
-        logging.info(f"General session mode (using experiment directory as base). Base log directory for session: {base_session_parent_dir}")
-
-    # Create session_log_dir only if experiment or performance logging is enabled
-    if args.experiment or args.perf_log:
-        session_log_dir = os.path.join(base_session_parent_dir, f"{args.algorithm}_{session_type_prefix}_{timestamp}")
+        session_log_dir = os.path.join(args.experiment_dir, f"{args.algorithm}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
-        logging.info(f"Session log directory created at: {session_log_dir}")
+        logging.info(f"🧪 Experiment mode: {session_log_dir}")
+    elif args.perf_log:
+        session_type_prefix = "perf_log_session" 
+        session_log_dir = os.path.join(args.experiment_dir, f"{args.algorithm}_{session_type_prefix}_{timestamp}")
+        os.makedirs(session_log_dir, exist_ok=True)
+        logging.info(f"📈 Performance logging: {session_log_dir}")
     else:
-        session_log_dir = None # No session directory if no relevant logging is enabled
-        logging.info("No experiment or performance logging enabled; session directory not created.")
+        session_log_dir = None
+
+    # Add file handler if we have a session directory
+    if session_log_dir:
+        log_filename = f"{args.algorithm}_server_{timestamp}.log"
+        log_filepath = os.path.join(session_log_dir, log_filename)
+        
+        # Create file handler
+        file_handler = logging.FileHandler(log_filepath)
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(formatter)
+        
+        # Add file handler to logger
+        logger = logging.getLogger()
+        logger.addHandler(file_handler)
+        
+        logging.info(f"📝 Server logs will be saved to: {log_filepath}")
 
     # Setup experiment logger if enabled
     experiment_logger = None
     if args.experiment and session_log_dir:
         try:
-            from carbon_aware.experiments import ExperimentLogger # Ensure this import is correct
+            from carbon_aware.experiments import ExperimentLogger
             experiment_logger = ExperimentLogger(output_dir=session_log_dir)
-            logging.info(f"📊 Experiment logging enabled. Results will be in {session_log_dir}")
+            logging.info(f"📊 Experiment logging initialized")
         except ImportError:
             logging.error("Failed to import ExperimentLogger. Running without experiment logging.")
-            experiment_logger = None # Ensure it's None if import fails
+            experiment_logger = None
         except Exception as e:
             logging.error(f"Error setting up experiment logger: {e}. Running without experiment logging.")
-            experiment_logger = None # Ensure it's None on other errors
+            experiment_logger = None
     
     # Setup performance logger if enabled
     perf_logger = None
     if args.perf_log:
         try:
             from carbon_aware.utils import PerformanceLogger
-            
-            perf_logger = PerformanceLogger(args.algorithm) # Initialize with algorithm name
+            perf_logger = PerformanceLogger(args.algorithm)
 
             if session_log_dir:
-                # Configure perf_logger with the session directory and a fixed filename for the session
                 perf_log_filename = f"{args.algorithm}_perf_session.csv" 
                 perf_logger.set_new_log_file(log_dir=session_log_dir, filename=perf_log_filename)
-                logging.info(f"📈 Performance logging configured. File: {perf_logger.log_file}")
+                logging.info(f"📈 Performance logging configured")
             else:
-                # This case should ideally not be hit if args.perf_log is true, as session_log_dir would be set.
-                # However, as a safeguard:
-                logging.warning("Performance logging enabled, but no session directory was established. Performance logs may not be saved as expected.")
-                # perf_logger remains instantiated but won't log correctly without set_new_log_file being called with a valid path.
-                # The PerformanceLogger's own __init__ might create a default file, or log_placement_call will error/warn.
+                logging.warning("Performance logging enabled, but no session directory established. Performance logs may not be saved as expected.")
         except ImportError:
             logging.error("Failed to import PerformanceLogger. Running without performance logging.")
             perf_logger = None

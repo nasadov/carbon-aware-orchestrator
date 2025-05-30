@@ -566,18 +566,19 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             logging.info(f"🔍 STEP 3: Setting up objective function and constraints")
             # Objective: Minimize total carbon emissions
             logging.info(f"  - Setting objective: minimize total carbon emissions")
-            prob += pulp.lpSum([emissions * x[(pod.id, flv_id, ts_id)]
+            prob += pulp.lpSum([emissions * x[(pod_id, flv_id, ts_id)]
                                 for pod_id, pod_placements in placements.items()
                                 for flv_id, ts_id, emissions in pod_placements])
 
             logging.info(f"  - Setting up resource capacity constraints")
             # Resource constraints: Don't exceed capacity at any node/timeslot
-            used_cpu = {}
-            used_ram = {}
+            
+            # Dictionary to collect resource usage expressions for each (node, timeslot)
+            cpu_usage = {}  # (flv_id, ts_id) -> list of expressions
+            ram_usage = {}  # (flv_id, ts_id) -> list of expressions
 
-            # Add capacity constraints for each node and timeslot
-            constraint_count = 0
-            for pod_id, pod_placements_list in placements.items():  # Renamed for clarity
+            # Collect resource usage expressions for each node-timeslot combination
+            for pod_id, pod_placements_list in placements.items():
                 current_pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
                 if not current_pod_obj:
                     logging.warning(f"  - Pod {pod_id} not found in self.pending_pods during constraint setup. Skipping.")
@@ -586,45 +587,178 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 for flv_id, ts_id, _ in pod_placements_list:  # ts_id is the starting timeslot
                     # For each timeslot in the pod's duration
                     for offset in range(int(current_pod_obj.duration)):
-                        current_ts = ts_id + offset  # Use ts_id from pod_placements_list
+                        current_ts = ts_id + offset
                         if current_ts >= max_time_slots:
                             continue
 
-                        # Add CPU constraint
+                        # Collect CPU usage expressions
                         cpu_key = (flv_id, current_ts)
-                        if cpu_key not in used_cpu:
-                            used_cpu[cpu_key] = 0
-                        used_cpu[cpu_key] += current_pod_obj.cpuRequest * x[(pod_id, flv_id, ts_id)]
+                        if cpu_key not in cpu_usage:
+                            cpu_usage[cpu_key] = []
+                        cpu_usage[cpu_key].append(current_pod_obj.cpuRequest * x[(pod_id, flv_id, ts_id)])
 
-                        # Add RAM constraint
+                        # Collect RAM usage expressions
                         ram_key = (flv_id, current_ts)
-                        if ram_key not in used_ram:
-                            used_ram[ram_key] = 0
-                        used_ram[ram_key] += current_pod_obj.ramRequest * x[(pod_id, flv_id, ts_id)]
-                        
-                        constraint_count += 2  # One for CPU, one for RAM
+                        if ram_key not in ram_usage:
+                            ram_usage[ram_key] = []
+                        ram_usage[ram_key].append(current_pod_obj.ramRequest * x[(pod_id, flv_id, ts_id)])
 
-            # Add actual capacity constraints
-            for flv in flavours:
-                for ts_id in range(max_time_slots):
-                    cpu_key = (flv.id, ts_id)
-                    ram_key = (flv.id, ts_id)
+            # Add capacity constraints to the model using available leftover capacity as limits
+            constraint_count = 0
 
-                    if cpu_key in used_cpu:
-                        prob += used_cpu[cpu_key] <= leftover_cpu[flv.id][ts_id]
-                    if ram_key in used_ram:
-                        prob += used_ram[ram_key] <= leftover_ram[flv.id][ts_id]
+            # Add CPU capacity constraints using leftover CPU
+            for (flv_id, ts_id), usage_expressions in cpu_usage.items():
+                if flv_id in leftover_cpu and ts_id in leftover_cpu[flv_id]:
+                    constraint_count += 1
+                    cpu_limit = leftover_cpu[flv_id][ts_id]
+                    prob += pulp.lpSum(usage_expressions) <= cpu_limit, f"CPU_{flv_id}_{ts_id}"
+                    logging.debug(f"     - Added CPU constraint for node {flv_id}, timeslot {ts_id}: usage <= {cpu_limit}")
+                    # Additional validation logging
+                    if len(usage_expressions) > 0:
+                        logging.debug(f"       Constraint involves {len(usage_expressions)} pods for node {flv_id} at timeslot {ts_id}")
+                else:
+                    logging.warning(f"     - Missing CPU capacity data for node {flv_id}, timeslot {ts_id}")
+
+            # Add RAM capacity constraints using leftover RAM
+            for (flv_id, ts_id), usage_expressions in ram_usage.items():
+                if flv_id in leftover_ram and ts_id in leftover_ram[flv_id]:
+                    constraint_count += 1
+                    ram_limit = leftover_ram[flv_id][ts_id]
+                    prob += pulp.lpSum(usage_expressions) <= ram_limit, f"RAM_{flv_id}_{ts_id}"
+                    logging.debug(f"     - Added RAM constraint for node {flv_id}, timeslot {ts_id}: usage <= {ram_limit}")
+                    # Additional validation logging
+                    if len(usage_expressions) > 0:
+                        logging.debug(f"       Constraint involves {len(usage_expressions)} pods for node {flv_id} at timeslot {ts_id}")
+                else:
+                    logging.warning(f"     - Missing RAM capacity data for node {flv_id}, timeslot {ts_id}")
             
             logging.info(f"  - Created {constraint_count} resource capacity constraints")
             logging.info(f"  - Final problem size: {len(x)} variables, {len(prob.constraints)} constraints")
 
             # Solve the problem
             logging.info(f"🔍 STEP 4: Solving global optimization problem")
-            logging.info(f"  - Starting CBC solver with 60 second time limit")
+            logging.info(f"  - Starting CBC solver with constraint-enforcing settings:")
+            logging.info(f"    • Time limit: 20 seconds")
+            logging.info(f"    • NO gap tolerance (strict constraint enforcement)")
+            logging.info(f"    • Enhanced heuristics and preprocessing enabled")
+            logging.info(f"    • PRIORITY: Constraint satisfaction over solution speed")
             solver_start_time = time.time()
 
-            # Use CBC solver with a time limit and verbose output
-            prob.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=60))
+            # Use CBC solver with detailed logging to a temporary file
+            import tempfile
+            import os
+            import sys
+            from contextlib import redirect_stdout, redirect_stderr
+            import io
+            
+            # Create temporary file for CBC log output
+            with tempfile.NamedTemporaryFile(mode='w+', suffix='.cbc_log', delete=False) as temp_log:
+                cbc_log_file = temp_log.name
+            
+            # Also capture stdout/stderr as backup
+            stdout_buffer = io.StringIO()
+            stderr_buffer = io.StringIO()
+            
+            try:
+                logging.info(f"  - CBC detailed logs will be captured to: {cbc_log_file}")
+                
+                # Try multiple approaches to capture CBC output
+                cbc_output_captured = False
+                
+                # Approach 1: Use PuLP's built-in logPath parameter (most reliable)
+                try:
+                    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+                        solver = pulp.PULP_CBC_CMD(
+                            msg=True,
+                            timeLimit=20,                   # Time limit to prevent excessive computation
+                            logPath=cbc_log_file,          # Use PuLP's built-in log file parameter
+                            keepFiles=True                  # Keep temporary files to help with debugging
+                            # NO gapRel parameter - enforce strict constraint satisfaction
+                        )
+                        prob.solve(solver)
+                        cbc_output_captured = True
+                        logging.info("CBC solver completed with logPath approach")
+                        
+                except Exception as e:
+                    logging.warning(f"CBC logPath approach failed: {e}")
+                
+                # Approach 2: Fallback - try with explicit options for log verbosity
+                if not cbc_output_captured:
+                    try:
+                        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+                            solver = pulp.PULP_CBC_CMD(
+                                msg=True, 
+                                timeLimit=20,                   # Consistent with primary approach
+                                # NO gapRel parameter - enforce strict constraint satisfaction
+                                options=['log', '2', 'printingOptions', 'all']  # Maximum verbosity
+                            )
+                            prob.solve(solver)
+                            cbc_output_captured = True
+                            logging.info("CBC solver completed with verbose options approach")
+                    except Exception as e:
+                        logging.error(f"CBC verbose options approach failed: {e}")
+                
+                # Approach 3: Final fallback - basic solve with msg=True
+                if not cbc_output_captured:
+                    logging.warning("Using basic CBC solver without output capture")
+                    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+                        prob.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20))
+                        # NO gapRel parameter - enforce strict constraint satisfaction
+                
+                # Process captured output from log file
+                if os.path.exists(cbc_log_file) and os.path.getsize(cbc_log_file) > 0:
+                    try:
+                        with open(cbc_log_file, 'r') as f:
+                            cbc_log_content = f.read().strip()
+                            
+                        if cbc_log_content:
+                            logging.info("=== DETAILED CBC SOLVER LOG FILE OUTPUT ===")
+                            for line in cbc_log_content.split('\n'):
+                                line = line.strip()
+                                if line:
+                                    logging.info(f"CBC: {line}")
+                            logging.info("=== END DETAILED CBC SOLVER LOG FILE OUTPUT ===")
+                            
+                    except Exception as e:
+                        logging.error(f"Failed to read CBC log file: {e}")
+                
+                # Process captured stdout/stderr
+                captured_stdout = stdout_buffer.getvalue().strip()
+                captured_stderr = stderr_buffer.getvalue().strip()
+                
+                if captured_stdout:
+                    logging.info("=== CBC SOLVER STDOUT CAPTURE ===")
+                    for line in captured_stdout.split('\n'):
+                        line = line.strip()
+                        if line:
+                            logging.info(f"CBC: {line}")
+                    logging.info("=== END CBC SOLVER STDOUT CAPTURE ===")
+                    
+                if captured_stderr:
+                    logging.info("=== CBC SOLVER STDERR CAPTURE ===")
+                    for line in captured_stderr.split('\n'):
+                        line = line.strip()
+                        if line:
+                            logging.warning(f"CBC: {line}")
+                    logging.info("=== END CBC SOLVER STDERR CAPTURE ===")
+                
+                # If no output was captured, note this
+                if (not os.path.exists(cbc_log_file) or os.path.getsize(cbc_log_file) == 0) and \
+                   not captured_stdout and not captured_stderr:
+                    logging.warning("No CBC solver detailed output was captured - this may indicate CBC is running silently or output is going elsewhere")
+                    
+            except Exception as e:
+                logging.error(f"Error in CBC solver output capture: {e}")
+                # Final fallback
+                prob.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=60))
+                
+            finally:
+                # Clean up temporary log file
+                try:
+                    if os.path.exists(cbc_log_file):
+                        os.unlink(cbc_log_file)
+                except Exception as e:
+                    logging.debug(f"Could not remove temporary CBC log file: {e}")
 
             solution_time = time.time() - solver_start_time
             self.status = pulp.LpStatus[prob.status]
@@ -645,6 +779,33 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 placements_saved_to_csv = 0
 
                 logging.info(f"  - Found optimal solution! Extracting placements...")
+                
+                # CONSTRAINT VALIDATION: Verify the solution respects all constraints
+                logging.info(f"🔍 STEP 5a: Validating solution constraints")
+                is_valid, constraint_violations = self._validate_solution_constraints(
+                    {pod_id: (flv_id, ts_id, emissions) for pod_id, pod_placements_list in placements.items()
+                     for flv_id, ts_id, emissions in pod_placements_list
+                     if (pod_id, flv_id, ts_id) in x and x[(pod_id, flv_id, ts_id)].value() is not None and x[(pod_id, flv_id, ts_id)].value() > 0.5},
+                    flavours, timeslots, leftover_cpu, leftover_ram
+                )
+                
+                if not is_valid:
+                    logging.error(f"❌ CRITICAL: Solution violates {len(constraint_violations)} constraints!")
+                    for violation in constraint_violations[:10]:  # Show first 10 violations
+                        logging.error(f"  - VIOLATION: {violation}")
+                    if len(constraint_violations) > 10:
+                        logging.error(f"  - ... and {len(constraint_violations) - 10} more violations")
+                    
+                    # Log detailed constraint information for debugging
+                    self._log_constraint_debugging_info(constraint_violations, {})
+                    
+                    logging.error("❌ REJECTING INVALID SOLUTION - treating as infeasible")
+                    self.status = "Infeasible_Due_To_Constraint_Violations"
+                    self.has_solved = False
+                    return
+                else:
+                    logging.info("✅ Solution constraint validation PASSED - all constraints satisfied")
+                
                 for pod_id_sol, current_pod_placements in placements.items():
                     for flv_id_sol, ts_id_sol, emissions_sol in current_pod_placements:
                         placement_key = (pod_id_sol, flv_id_sol, ts_id_sol)
@@ -734,6 +895,132 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         else:
             logging.critical(f"⚠️ CSV FILE PATH NOT SET")
 
+    def _validate_solution_constraints(
+        self,
+        solution: Dict[str, Tuple[str, int, float]],
+        flavours: List[CarbonAwareFlavour],
+        timeslots: List[CarbonAwareTimeslot],
+        leftover_cpu: Dict[str, Dict[int, float]],
+        leftover_ram: Dict[str, Dict[int, float]]
+    ) -> Tuple[bool, List[str]]:
+        """
+        Validate that the solution satisfies all constraints.
+        
+        Args:
+            solution: Dictionary of pod_id -> (node_id, timeslot_id, emissions)
+            flavours: List of available flavours
+            timeslots: List of available timeslots
+            leftover_cpu: Available CPU resources
+            leftover_ram: Available RAM resources
+            
+        Returns:
+            Tuple of (is_valid, list_of_violations)
+        """
+        violations = []
+        
+        # Track resource usage by node and timeslot
+        cpu_usage = {}  # (node_id, timeslot_id) -> total_cpu_used
+        ram_usage = {}  # (node_id, timeslot_id) -> total_ram_used
+        
+        # Create pod lookup
+        pending_pods_dict = {p.id: p for p in self.pending_pods}
+        
+        for pod_id, (node_id, timeslot_id, emissions) in solution.items():
+            pod = pending_pods_dict.get(pod_id)
+            if not pod:
+                violations.append(f"Pod {pod_id} not found in pending pods")
+                continue
+                
+            # Check timeslot constraints
+            if hasattr(pod, 'earliest_timeslot') and pod.earliest_timeslot is not None:
+                if timeslot_id < pod.earliest_timeslot:
+                    violations.append(f"Pod {pod_id} scheduled at timeslot {timeslot_id} before earliest allowed {pod.earliest_timeslot}")
+            
+            # Check deadline constraints
+            if hasattr(pod, 'deadline_slot') and pod.deadline_slot is not None:
+                if timeslot_id + pod.duration > pod.deadline_slot:
+                    violations.append(f"Pod {pod_id} scheduled to finish at {timeslot_id + pod.duration} after deadline {pod.deadline_slot}")
+            
+            # Accumulate resource usage for capacity validation
+            for offset in range(int(pod.duration)):
+                current_slot = timeslot_id + offset
+                key = (node_id, current_slot)
+                
+                if key not in cpu_usage:
+                    cpu_usage[key] = 0
+                    ram_usage[key] = 0
+                    
+                cpu_usage[key] += pod.cpuRequest
+                ram_usage[key] += pod.ramRequest
+        
+        # Validate capacity constraints
+        for (node_id, timeslot_id), total_cpu in cpu_usage.items():
+            if node_id in leftover_cpu and timeslot_id in leftover_cpu[node_id]:
+                available_cpu = leftover_cpu[node_id][timeslot_id]
+                if total_cpu > available_cpu:
+                    violations.append(f"CPU overallocation on node {node_id} at timeslot {timeslot_id}: {total_cpu:.2f} > {available_cpu:.2f}")
+            else:
+                violations.append(f"Missing CPU capacity data for node {node_id} at timeslot {timeslot_id}")
+        
+        for (node_id, timeslot_id), total_ram in ram_usage.items():
+            if node_id in leftover_ram and timeslot_id in leftover_ram[node_id]:
+                available_ram = leftover_ram[node_id][timeslot_id]
+                if total_ram > available_ram:
+                    violations.append(f"RAM overallocation on node {node_id} at timeslot {timeslot_id}: {total_ram:.2f} > {available_ram:.2f}")
+            else:
+                violations.append(f"Missing RAM capacity data for node {node_id} at timeslot {timeslot_id}")
+        
+        is_valid = len(violations) == 0
+        return is_valid, violations
+
+    def _log_constraint_debugging_info(
+        self,
+        violations: List[str],
+        solution: Dict[str, Tuple[str, int, float]]
+    ) -> None:
+        """
+        Log detailed constraint debugging information.
+        
+        Args:
+            violations: List of constraint violations
+            solution: The solution being validated
+        """
+        logging.error(f"🚨 CONSTRAINT VIOLATIONS DETECTED: {len(violations)} violations found")
+        
+        # Group violations by type
+        capacity_violations = [v for v in violations if "overallocation" in v]
+        timeslot_violations = [v for v in violations if "timeslot" in v or "deadline" in v]
+        other_violations = [v for v in violations if v not in capacity_violations and v not in timeslot_violations]
+        
+        if capacity_violations:
+            logging.error(f"📊 CAPACITY VIOLATIONS ({len(capacity_violations)}):")
+            for violation in capacity_violations[:10]:  # Limit output
+                logging.error(f"  - {violation}")
+            if len(capacity_violations) > 10:
+                logging.error(f"  - ... and {len(capacity_violations) - 10} more capacity violations")
+        
+        if timeslot_violations:
+            logging.error(f"⏰ TIMESLOT VIOLATIONS ({len(timeslot_violations)}):")
+            for violation in timeslot_violations:
+                logging.error(f"  - {violation}")
+        
+        if other_violations:
+            logging.error(f"❓ OTHER VIOLATIONS ({len(other_violations)}):")
+            for violation in other_violations:
+                logging.error(f"  - {violation}")
+        
+        # Log solution summary
+        if solution:
+            node_counts = {}
+            for pod_id, (node_id, timeslot_id, emissions) in solution.items():
+                node_counts[node_id] = node_counts.get(node_id, 0) + 1
+            
+            logging.error("📋 SOLUTION SUMMARY:")
+            logging.error(f"  - Total pods placed: {len(solution)}")
+            logging.error(f"  - Nodes used: {len(node_counts)}")
+            for node_id, count in sorted(node_counts.items()):
+                logging.error(f"    * {node_id}: {count} pods")
+
     def find_placement(
         self,
         pod: CarbonAwarePod,
@@ -776,68 +1063,104 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     logging.warning(f"⚠️ Found solution for pod {pod.id} but node or timeslot not available in current context")
             else:
                 logging.warning(f"⚠️ No placement for pod {pod.id} in the comprehensive solution")
-                
+            
             # Pod not in comprehensive solution - this is unusual if we did comprehensive optimization
             logging.warning(f"🔍 Pod {pod.id} not found in comprehensive solution")
+
+        # Fallback to incremental optimization or greedy approach
+        logging.debug(f"🔄 Falling back to incremental placement for pod {pod.id}")
         
-        # Fall back to incremental optimization if comprehensive solution not available or failed
-        # Check if this pod already has a solution
-        if pod.id in self.global_solution:
-            flv_id, ts_id, emissions = self.global_solution[pod.id]
-
-            # Find the corresponding objects
-            flv = next((f for f in flavours if f.id == flv_id), None)
-            ts = next((t for t in timeslots if t.id == ts_id), None)
-
-            if flv and ts:
-                logging.info(f"Using cached placement for pod {pod.id}: {flv_id}, timeslot {ts_id}")
-                if self.experiment_logger:
-                    execution_time = time.time() - start_time
-                    self.experiment_logger.record_placement(
-                        pod_id=pod.id, success=True, execution_time=execution_time,
-                        emissions=emissions, considered_options=len(self.global_solution),
-                        selected_node=flv_id, selected_timeslot=ts_id,
-                        solver_iterations=self.iterations, solver_status=self.status
-                    )
-                return flv, ts, emissions
-
-        # Add this pod to pending list if not already there
-        if not any(p.id == pod.id for p in self.pending_pods):
+        # Add pod to pending list if not already there
+        if pod not in self.pending_pods:
             self.pending_pods.append(pod)
-            logging.info(f"Added pod {pod.id} to pending queue (now {len(self.pending_pods)} pods)")
-
-        # Solve if needed
-        current_time = time.time()
-        if (current_time - self.last_solve_time > self.solve_interval) or len(self.pending_pods) >= 5:
+        
+        # Trigger incremental global optimization if enough pods or time has passed
+        should_solve = (
+            len(self.pending_pods) >= self.solve_interval or
+            (time.time() - self.last_solve_time) > self.solve_interval
+        )
+        
+        if should_solve:
+            logging.info(f"🚀 Triggering incremental global optimization for {len(self.pending_pods)} pods")
             self.solve_global_optimization(flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots)
+            
+            # Check if the pod is now in the solution
+            if pod.id in self.global_solution:
+                flv_id, ts_id, emissions = self.global_solution[pod.id]
+                flv = next((f for f in flavours if f.id == flv_id), None)
+                ts = next((t for t in timeslots if t.id == ts_id), None)
+                
+                if flv and ts:
+                    logging.info(f"📌 Using incremental optimization placement for pod {pod.id}: {flv_id}, timeslot {ts_id}")
+                    if self.experiment_logger:
+                        execution_time = time.time() - start_time
+                        self.experiment_logger.record_placement(
+                            pod_id=pod.id, success=True, execution_time=execution_time,
+                            emissions=emissions, considered_options=len(self.global_solution),
+                            selected_node=flv_id, selected_timeslot=ts_id,
+                            solver_iterations=self.iterations, solver_status="Incremental"
+                        )
+                    return flv, ts, emissions
+        
+        # Final fallback: greedy placement
+        logging.warning(f"🔄 Using greedy fallback for pod {pod.id}")
+        return self._greedy_placement(pod, flavours, timeslots, leftover_cpu, leftover_ram)
 
-        # Check if we now have a solution
-        if pod.id in self.global_solution:
-            flv_id, ts_id, emissions = self.global_solution[pod.id]
-            flv = next((f for f in flavours if f.id == flv_id), None)
-            ts = next((t for t in timeslots if t.id == ts_id), None)
-
-            if flv and ts:
-                if self.experiment_logger:
-                    execution_time = time.time() - start_time
-                    self.experiment_logger.record_placement(
-                        pod_id=pod.id, success=True, execution_time=execution_time,
-                        emissions=emissions, considered_options=len(self.global_solution),
-                        selected_node=flv_id, selected_timeslot=ts_id,
-                        solver_iterations=self.iterations, solver_status=self.status
-                    )
-                return flv, ts, emissions
-
-        # No solution found
-        logging.warning(f"❌ No placement found for pod {pod.id}")
-        if self.experiment_logger:
-            execution_time = time.time() - start_time
-            self.experiment_logger.record_placement(
-                pod_id=pod.id, success=False, execution_time=execution_time,
-                emissions=0.0, considered_options=0, selected_node=None,
-                selected_timeslot=None, solver_iterations=0, solver_status="No Solution"
-            )
-        return None, None, float('inf')
+    def _greedy_placement(
+        self,
+        pod: CarbonAwarePod,
+        flavours: List[CarbonAwareFlavour],
+        timeslots: List[CarbonAwareTimeslot],
+        leftover_cpu: Dict[str, Dict[int, float]],
+        leftover_ram: Dict[str, Dict[int, float]]
+    ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
+        """
+        Greedy placement fallback when global optimization fails.
+        """
+        best_placement = None
+        best_emissions = float('inf')
+        
+        for ts in timeslots:
+            # Check earliest timeslot constraint
+            if hasattr(pod, 'earliest_timeslot') and pod.earliest_timeslot is not None:
+                if ts.id < pod.earliest_timeslot:
+                    continue
+            
+            # Check deadline constraint
+            if hasattr(pod, 'deadline_slot') and pod.deadline_slot is not None:
+                if ts.id + pod.duration > pod.deadline_slot:
+                    continue
+            
+            for flv in flavours:
+                # Check resource availability for the entire duration
+                can_place = True
+                for offset in range(int(pod.duration)):
+                    slot = ts.id + offset
+                    if (flv.id not in leftover_cpu or slot not in leftover_cpu[flv.id] or
+                        leftover_cpu[flv.id][slot] < pod.cpuRequest):
+                        can_place = False
+                        break
+                    if (flv.id not in leftover_ram or slot not in leftover_ram[flv.id] or
+                        leftover_ram[flv.id][slot] < pod.ramRequest):
+                        can_place = False
+                        break
+                
+                if can_place:
+                    try:
+                        emissions = compute_emissions(flv, ts.id, pod)
+                        if emissions < best_emissions:
+                            best_emissions = emissions
+                            best_placement = (flv, ts, emissions)
+                    except Exception as e:
+                        logging.warning(f"Error computing emissions for greedy placement: {e}")
+        
+        if best_placement:
+            flv, ts, emissions = best_placement
+            logging.info(f"📌 Greedy placement for pod {pod.id}: {flv.id}, timeslot {ts.id}")
+            return flv, ts, emissions
+        else:
+            logging.warning(f"❌ No valid placement found for pod {pod.id}")
+            return None, None, 0.0
 
     def _load_nodes_from_yaml(self, nodes_file: str) -> List[CarbonAwareFlavour]:
         """
@@ -1156,15 +1479,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         
         try:
             with open(yaml_file, 'r') as f:
-                data = yaml.safe_load(f)
-            
-            # Extract the timestamp if available
-            reference_time = datetime.now()
-            if "timestamp" in data:
-                try:
-                    reference_time = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
-                except:
-                    pass
+                # Handle multi-document YAML files (separated by ---) 
+                all_documents = list(yaml.safe_load_all(f))
             
             # Extract the timeslot ID from the filename
             timeslot_id = 0
@@ -1172,46 +1488,74 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             if match:
                 timeslot_id = int(match.group(1))
             
-            # Process each microservice (pod)
-            for ms in data.get("microservices", []):
-                if not ms or "name" not in ms:
+            # Extract the timestamp if available from any document
+            reference_time = datetime.now()
+            
+            # Process each document (Kubernetes Deployment)
+            for doc in all_documents:
+                if not doc or not isinstance(doc, dict):
+                    continue
+                    
+                # Skip non-Deployment documents
+                if doc.get('kind') != 'Deployment':
+                    continue
+                    
+                # Extract pod info from Kubernetes Deployment
+                metadata = doc.get('metadata', {})
+                deployment_name = metadata.get('name', '')
+                
+                if not deployment_name:
                     continue
                 
-                # Parse duration and deadline from name or fields
+                # Parse duration and deadline from deployment name
                 duration = 1.0  # Default 1 hour
                 deadline = 24.0  # Default 24 hours
                 
-                # Try to extract from name first (e.g., mXXX-duration-6h-deadline-12h)
-                name_duration_match = re.search(r'-duration-(\d+)h', ms["name"])
+                # Try to extract from name (e.g., mXXX-duration-6h-deadline-12h)
+                name_duration_match = re.search(r'-duration-(\d+)h', deployment_name)
                 if name_duration_match:
                     duration = float(name_duration_match.group(1))
                 
-                name_deadline_match = re.search(r'-deadline-(\d+)h', ms["name"])
+                name_deadline_match = re.search(r'-deadline-(\d+)h', deployment_name)
                 if name_deadline_match:
                     deadline = float(name_deadline_match.group(1))
                 
-                # If not in name, check for explicit fields
-                if "duration" in ms:
-                    duration_str = ms["duration"]
-                    if duration_str.endswith('h'):
-                        duration = float(duration_str[:-1])
-                    else:
-                        duration = float(duration_str)
+                # Extract resource requirements from container spec
+                spec = doc.get('spec', {})
+                template = spec.get('template', {})
+                pod_spec = template.get('spec', {})
+                containers = pod_spec.get('containers', [])
                 
-                if "deadline" in ms:
-                    deadline_str = ms["deadline"]
-                    if deadline_str.endswith('h'):
-                        deadline = float(deadline_str[:-1])
-                    else:
-                        deadline = float(deadline_str)
+                if not containers:
+                    logging.warning(f"No containers found in deployment {deployment_name}")
+                    continue
                 
-                # Extract CPU and RAM requirements
-                cpu_request = float(ms.get("cpu", "0.1"))
-                ram_request = float(ms.get("ram", "128"))  # Default 128MB
+                # Get resource requests from first container
+                container = containers[0]
+                resources = container.get('resources', {})
+                requests = resources.get('requests', {})
+                
+                # Parse CPU request (e.g., "1000m" -> 1.0)
+                cpu_str = requests.get('cpu', '100m')
+                if cpu_str.endswith('m'):
+                    cpu_request = float(cpu_str[:-1]) / 1000.0
+                else:
+                    cpu_request = float(cpu_str)
+                
+                # Parse memory request (e.g., "1Gi" -> 1024 MB)
+                memory_str = requests.get('memory', '128Mi')
+                if memory_str.endswith('Mi'):
+                    ram_request = float(memory_str[:-2])
+                elif memory_str.endswith('Gi'):
+                    ram_request = float(memory_str[:-2]) * 1024
+                elif memory_str.endswith('Ki'):
+                    ram_request = float(memory_str[:-2]) / 1024
+                else:
+                    ram_request = float(memory_str)  # Assume MB
                 
                 # Create the pod
                 pod = CarbonAwarePod(
-                    id=ms["name"],
+                    id=deployment_name,
                     deadline_hours=deadline,
                     duration=duration,
                     powerConsumption=0.0,  # Will be calculated during emission computation
@@ -1225,8 +1569,68 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 pod.earliest_timeslot = timeslot_id
                 
                 pods.append(pod)
-                logging.debug(f"Extracted pod {ms['name']} with duration={duration}h, " +
+                logging.debug(f"Extracted pod {deployment_name} with duration={duration}h, " +
                             f"deadline={deadline}h, CPU={cpu_request}, RAM={ram_request}")
+            
+            # Legacy format support - if no Deployments found, try old microservices format
+            if not pods:
+                for doc in all_documents:
+                    if doc and isinstance(doc, dict) and "microservices" in doc:
+                        # Process each microservice (pod) in legacy format
+                        for ms in doc.get("microservices", []):
+                            if not ms or "name" not in ms:
+                                continue
+                            
+                            # Parse duration and deadline from name or fields
+                            duration = 1.0  # Default 1 hour
+                            deadline = 24.0  # Default 24 hours
+                            
+                            # Try to extract from name first (e.g., mXXX-duration-6h-deadline-12h)
+                            name_duration_match = re.search(r'-duration-(\d+)h', ms["name"])
+                            if name_duration_match:
+                                duration = float(name_duration_match.group(1))
+                            
+                            name_deadline_match = re.search(r'-deadline-(\d+)h', ms["name"])
+                            if name_deadline_match:
+                                deadline = float(name_deadline_match.group(1))
+                            
+                            # If not in name, check for explicit fields
+                            if "duration" in ms:
+                                duration_str = ms["duration"]
+                                if duration_str.endswith('h'):
+                                    duration = float(duration_str[:-1])
+                                else:
+                                    duration = float(duration_str)
+                            
+                            if "deadline" in ms:
+                                deadline_str = ms["deadline"]
+                                if deadline_str.endswith('h'):
+                                    deadline = float(deadline_str[:-1])
+                                else:
+                                    deadline = float(deadline_str)
+                            
+                            # Extract CPU and RAM requirements
+                            cpu_request = float(ms.get("cpu", "0.1"))
+                            ram_request = float(ms.get("ram", "128"))  # Default 128MB
+                            
+                            # Create the pod
+                            pod = CarbonAwarePod(
+                                id=ms["name"],
+                                deadline_hours=deadline,
+                                duration=duration,
+                                powerConsumption=0.0,  # Will be calculated during emission computation
+                                cpuRequest=cpu_request,
+                                ramRequest=ram_request,
+                                storageRequest=100 * 1024 * 1024,  # Default 100MB
+                                reference_time=reference_time
+                            )
+                            
+                            # Set earliest_timeslot based on the file
+                            pod.earliest_timeslot = timeslot_id
+                            
+                            pods.append(pod)
+                            logging.debug(f"Extracted pod {ms['name']} with duration={duration}h, " +
+                                        f"deadline={deadline}h, CPU={cpu_request}, RAM={ram_request}")
             
             logging.info(f"Extracted {len(pods)} pods from {yaml_file}")
             return pods

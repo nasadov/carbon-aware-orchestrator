@@ -38,7 +38,8 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
     gRPC Service Implementation. Each method corresponds to a .proto RPC definition.
     """
     def __init__(self, algorithm_name='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None, 
-                 workloads_dir=None, nodes_file=None, forecasts_file=None, prioritize_efficiency=False):
+                 workloads_dir=None, nodes_file=None, forecasts_file=None, prioritize_efficiency=False,
+                 precomputed_solution=None, precomputation_done=False):
         self.algo = Algorithm(algorithm_name, True)
         self.command_line_algorithm = algorithm_name 
         self.persistent_state = PersistentStateStorage()
@@ -51,7 +52,16 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         self.nodes_file = nodes_file
         self.forecasts_file = forecasts_file
         self.prioritize_efficiency = prioritize_efficiency
-        self.comprehensive_initialized = False  # Keeping this name for backward compatibility
+        self.comprehensive_initialized = precomputation_done  # Set to True if precomputation was done
+        
+        # Store precomputed solution if available
+        self.precomputed_solution = precomputed_solution or {}
+        self.precomputation_done = precomputation_done
+        
+        if precomputation_done:
+            logging.info(f"🎯 PlacementAlgorithm initialized with precomputed solution containing {len(self.precomputed_solution)} placements")
+        else:
+            logging.info(f"📋 PlacementAlgorithm initialized for algorithm: {algorithm_name}")
 
         # Configure perf_logger once if it's provided and session_log_dir is set
         if self.perf_logger and self.session_log_dir:
@@ -200,27 +210,42 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             # The PerformanceLogger is already configured in __init__ to append to a single session file.
             # No need to call set_new_log_file here for perf_logger per CalculatePlacement call.
 
-            # Initialize global optimization for global-optimal algorithm (always enabled by default)
+            # Initialize global optimization for global-optimal algorithm
             if self.algo.name == 'global-optimal' and not self.comprehensive_initialized:
-                logging.info(f"🌟 Initializing global optimization mode (default behavior)")
-                logging.info(f"  ▶ Workloads directory: {self.workloads_dir}")
-                logging.info(f"  ▶ Nodes file: {self.nodes_file}")
-                logging.info(f"  ▶ Forecasts file: {self.forecasts_file}")
-                
-                if hasattr(algorithm_instance, 'precompute_all_workloads'):
-                    success = algorithm_instance.precompute_all_workloads(
-                        workloads_dir=self.workloads_dir,
-                        nodes_file=self.nodes_file,
-                        forecasts_file=self.forecasts_file
-                    )
+                if self.precomputation_done:
+                    # Use precomputed solution from server startup
+                    logging.info(f"🎯 Using precomputed global optimization solution")
+                    logging.info(f"  📊 Precomputed solution contains {len(self.precomputed_solution)} pod placements")
                     
-                    if success:
-                        logging.info(f"✅ Global optimization initialized successfully")
-                        self.comprehensive_initialized = True
-                    else:
-                        logging.error(f"❌ Failed to initialize global optimization")
+                    # Transfer the precomputed solution to the algorithm instance
+                    if hasattr(algorithm_instance, 'global_solution'):
+                        algorithm_instance.global_solution = self.precomputed_solution
+                        algorithm_instance.optimization_done = True
+                        algorithm_instance.has_solved = True
+                        logging.info(f"✅ Precomputed solution loaded into algorithm instance")
+                    
+                    self.comprehensive_initialized = True
                 else:
-                    logging.error(f"❌ Algorithm {self.algo.name} does not support global optimization")
+                    # Fallback to old behavior if precomputation wasn't done
+                    logging.info(f"🌟 Initializing global optimization mode (fallback behavior)")
+                    logging.info(f"  ▶ Workloads directory: {self.workloads_dir}")
+                    logging.info(f"  ▶ Nodes file: {self.nodes_file}")
+                    logging.info(f"  ▶ Forecasts file: {self.forecasts_file}")
+                    
+                    if hasattr(algorithm_instance, 'precompute_all_workloads'):
+                        success = algorithm_instance.precompute_all_workloads(
+                            workloads_dir=self.workloads_dir,
+                            nodes_file=self.nodes_file,
+                            forecasts_file=self.forecasts_file
+                        )
+                        
+                        if success:
+                            logging.info(f"✅ Global optimization initialized successfully")
+                            self.comprehensive_initialized = True
+                        else:
+                            logging.error(f"❌ Failed to initialize global optimization")
+                    else:
+                        logging.error(f"❌ Algorithm {self.algo.name} does not support global optimization")
             
             # Inject experiment_logger into algorithm (for experiment logger, if used)
             if self.experiment_logger:
@@ -273,9 +298,37 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 
                 logging.info(f"    🧮 Executing {self.algo.name} algorithm...")
                 algorithm_start_time = time.time()
-                best_node, best_slot, minimal_emissions = algorithm_instance.find_placement(
-                    pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots
-                )
+                
+                # Use atomic placement method to prevent race conditions
+                if hasattr(algorithm_instance, 'find_placement_atomic'):
+                    logging.debug(f"    🔒 Using atomic placement method for {self.algo.name}")
+                    best_node, best_slot, minimal_emissions = algorithm_instance.find_placement_atomic(
+                        pod, flavours, timeslots, self.persistent_state, max_time_slots
+                    )
+                else:
+                    # Fallback to non-atomic method for algorithms that don't support it
+                    logging.debug(f"    ⚠️  Using non-atomic placement method for {self.algo.name}")
+                    best_node, best_slot, minimal_emissions = algorithm_instance.find_placement(
+                        pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots
+                    )
+                    
+                    # If using non-atomic method, we still need to update resources separately
+                    if best_node and best_slot:
+                        start_slot_id = best_slot.id
+                        duration_slots = int(pod.duration)
+                        
+                        # Try to atomically allocate (this may fail if resources were taken)
+                        allocation_success = self.persistent_state.atomic_check_and_allocate(
+                            best_node.id, start_slot_id, duration_slots, 
+                            pod.cpuRequest, pod.ramRequest
+                        )
+                        
+                        if not allocation_success:
+                            logging.warning(f"    ⚠️  Resource allocation failed for {ms.name} - resources taken by another thread")
+                            best_node = None
+                            best_slot = None
+                            minimal_emissions = float('inf')
+                
                 algorithm_execution_time = time.time() - algorithm_start_time
                 logging.info(f"    ⏱️ Algorithm execution time: {algorithm_execution_time:.3f}s")
                 
@@ -295,13 +348,8 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     )
 
                 if best_node and best_slot:
-                    start_slot_id = best_slot.id
-                    duration_slots = int(pod.duration)
-                    
-                    self.persistent_state.update_resources(
-                        best_node.id, start_slot_id, duration_slots, 
-                        pod.cpuRequest, pod.ramRequest
-                    )
+                    # Resources are already allocated by the atomic method
+                    # No need to call update_resources again
                     self.persistent_state.record_placement(
                         ms.name, best_node.id, best_slot.getStart(), pod.duration
                     )
@@ -484,6 +532,73 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
     """
     shutdown_in_progress = False
     
+    # MILP Precomputation for global-optimal algorithm BEFORE starting server
+    if algorithm == 'global-optimal':
+        logging.info("=" * 80)
+        logging.info("🧮 STARTING MILP PRECOMPUTATION BEFORE SERVER STARTUP")
+        logging.info("=" * 80)
+        
+        try:
+            from carbon_aware.algorithms.global_optimal import GlobalOptimalAlgorithm
+            
+            # Create algorithm instance for precomputation
+            precompute_algorithm = GlobalOptimalAlgorithm()
+            
+            # Set up session log directory if available
+            if session_log_dir:
+                precompute_algorithm.set_base_log_dir(session_log_dir)
+                precompute_algorithm.setup_session_placement_log()
+                logging.info(f"📊 CSV logging configured for precomputation")
+            
+            # Perform the comprehensive MILP precomputation
+            logging.info(f"🔄 Starting comprehensive global optimization...")
+            logging.info(f"  📂 Workloads directory: {workloads_dir}")
+            logging.info(f"  📋 Nodes file: {nodes_file}")
+            logging.info(f"  📊 Forecasts file: {forecasts_file}")
+            
+            precomputation_start_time = time.time()
+            
+            success = precompute_algorithm.precompute_all_workloads(
+                workloads_dir=workloads_dir,
+                nodes_file=nodes_file,
+                forecasts_file=forecasts_file
+            )
+            
+            precomputation_time = time.time() - precomputation_start_time
+            
+            if success:
+                logging.info("=" * 80)
+                logging.info("✅ MILP PRECOMPUTATION COMPLETED SUCCESSFULLY!")
+                logging.info(f"⏱️  Total precomputation time: {precomputation_time:.2f} seconds")
+                logging.info(f"📊 Global solution contains {len(precompute_algorithm.global_solution)} pod placements")
+                logging.info("🎯 THE EXPERIMENT CAN NOW START - SERVER IS READY!")
+                logging.info("=" * 80)
+                
+                # Store the precomputed solution for use by the servicer
+                global_precomputed_solution = precompute_algorithm.global_solution
+                global_optimization_done = True
+                
+            else:
+                logging.error("=" * 80)
+                logging.error("❌ MILP PRECOMPUTATION FAILED!")
+                logging.error(f"⏱️  Time spent attempting precomputation: {precomputation_time:.2f} seconds")
+                logging.error("🚫 SERVER STARTUP ABORTED")
+                logging.error("=" * 80)
+                return
+                
+        except Exception as e:
+            logging.error("=" * 80)
+            logging.error(f"❌ CRITICAL ERROR during MILP precomputation: {e}")
+            logging.error("🚫 SERVER STARTUP ABORTED")
+            logging.error("=" * 80)
+            import traceback
+            logging.error(traceback.format_exc())
+            return
+    else:
+        global_precomputed_solution = {}
+        global_optimization_done = False
+        logging.info(f"ℹ️  Algorithm '{algorithm}' does not require MILP precomputation")
+    
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     # Pass parameters to the servicer
     servicer = PlacementAlgorithm(
@@ -494,7 +609,9 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         workloads_dir=workloads_dir,
         nodes_file=nodes_file,
         forecasts_file=forecasts_file,
-        prioritize_efficiency=prioritize_efficiency
+        prioritize_efficiency=prioritize_efficiency,
+        precomputed_solution=global_precomputed_solution,
+        precomputation_done=global_optimization_done
     )
     idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(servicer, server)
     server.add_insecure_port('[::]:' + port)

@@ -708,7 +708,6 @@ class PerformanceLogger:
         
         self.call_counter = 0
         # Headers will be written by set_new_log_file
-        logging.info(f"PerformanceLogger initialized for {algorithm_name}. Call set_new_log_file to specify output location.")
 
     def _write_headers(self):
         """Writes CSV headers to the current log file."""
@@ -734,7 +733,6 @@ class PerformanceLogger:
         self.log_file = os.path.join(self.log_dir, filename)
         self.call_counter = 0 # Reset for each new experimental run
         self._write_headers()
-        logging.info(f"PerformanceLogger: New log file set to {self.log_file}")
 
     def log_placement_call(self, execution_time, algorithm_name, pods_total, pods_processed, pods_placed, 
                           pods_failed, pods_skipped, total_emissions, algorithm_metrics, 

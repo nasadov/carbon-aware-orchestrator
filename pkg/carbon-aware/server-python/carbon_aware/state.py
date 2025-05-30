@@ -102,3 +102,77 @@ class PersistentStateStorage:
                 "start_time": start_time,
                 "duration": duration
             }
+    
+    def atomic_check_and_allocate(self, node_id: str, start_slot: int, duration: int, 
+                                  cpu_request: float, ram_request: float) -> bool:
+        """
+        Atomically check resource constraints and allocate resources if feasible.
+        
+        This method prevents race conditions by performing constraint checking
+        and resource updates within a single critical section.
+        
+        Args:
+            node_id: ID of the node
+            start_slot: Starting timeslot
+            duration: Duration in slots
+            cpu_request: CPU to reserve
+            ram_request: RAM to reserve
+            
+        Returns:
+            True if resources were successfully allocated, False if constraints violated
+        """
+        with self.state_lock:
+            # First, check if allocation is feasible for all required slots
+            for offset in range(duration):
+                slot_id = start_slot + offset
+                if slot_id >= self.max_time_slots:
+                    logging.debug(
+                        f"[atomic_check_and_allocate] Slot {slot_id} exceeds tracking window for "
+                        f"node={node_id}, start_slot={start_slot}, duration={duration}"
+                    )
+                    return False  # Slot beyond tracking window
+                
+                # Check CPU availability
+                if (node_id not in self.leftover_cpu or 
+                    slot_id not in self.leftover_cpu[node_id] or
+                    self.leftover_cpu[node_id][slot_id] < cpu_request):
+                    
+                    available_cpu = self.leftover_cpu.get(node_id, {}).get(slot_id, 0)
+                    logging.debug(
+                        f"[atomic_check_and_allocate] CPU constraint violation at slot {slot_id}: "
+                        f"need {cpu_request:.2f}, available {available_cpu:.2f}"
+                    )
+                    return False  # CPU constraint violated
+                
+                # Check RAM availability
+                if (node_id not in self.leftover_ram or 
+                    slot_id not in self.leftover_ram[node_id] or
+                    self.leftover_ram[node_id][slot_id] < ram_request):
+                    
+                    available_ram = self.leftover_ram.get(node_id, {}).get(slot_id, 0)
+                    logging.debug(
+                        f"[atomic_check_and_allocate] RAM constraint violation at slot {slot_id}: "
+                        f"need {ram_request:.2f}, available {available_ram:.2f}"
+                    )
+                    return False  # RAM constraint violated
+            
+            # All constraints satisfied - proceed with allocation
+            logging.debug(
+                f"[atomic_check_and_allocate] Allocating resources: node={node_id}, "
+                f"start_slot={start_slot}, duration={duration}, cpu={cpu_request:.2f}, ram={ram_request:.2f}"
+            )
+            
+            for offset in range(duration):
+                slot_id = start_slot + offset
+                
+                # Update CPU
+                self.leftover_cpu[node_id][slot_id] -= cpu_request
+                if self.leftover_cpu[node_id][slot_id] < 0:
+                    self.leftover_cpu[node_id][slot_id] = 0
+                
+                # Update RAM
+                self.leftover_ram[node_id][slot_id] -= ram_request
+                if self.leftover_ram[node_id][slot_id] < 0:
+                    self.leftover_ram[node_id][slot_id] = 0
+            
+            return True  # Successfully allocated

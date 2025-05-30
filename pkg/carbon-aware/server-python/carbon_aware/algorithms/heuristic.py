@@ -191,6 +191,87 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         
         return best_node, best_slot, emissions
 
+    def find_placement_atomic(
+        self,
+        pod: CarbonAwarePod,
+        flavours: List[CarbonAwareFlavour],
+        timeslots: List[CarbonAwareTimeslot],
+        persistent_state,
+        max_time_slots: int = 48
+    ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
+        """
+        Find and atomically allocate the best placement for a pod.
+        
+        This method prevents race conditions by using atomic constraint checking
+        and resource allocation within the persistent state.
+        
+        Args:
+            pod: The pod to place
+            flavours: Available node types
+            timeslots: Available scheduling timeslots
+            persistent_state: PersistentStateStorage instance for atomic operations
+            max_time_slots: Maximum number of timeslots to consider
+            
+        Returns:
+            Tuple of (best_node, best_timeslot, emissions) or (None, None, inf) if no placement found
+        """
+        candidates = []  # List of (node, timeslot, emissions) tuples
+        
+        # First pass: find all feasible placements and calculate their emissions
+        for ts in timeslots:
+            if not is_timeslot_valid(ts, pod):
+                logging.debug(f"[find_placement_atomic] Skipping timeslot={ts.id}, not valid for pod={pod.id}")
+                continue
+
+            for flv in flavours:
+                # Check if this placement would be feasible (without actually allocating)
+                duration_feasible = True
+                for slot_offset in range(int(pod.duration)):
+                    current_slot = ts.id + slot_offset
+                    if current_slot >= max_time_slots:
+                        duration_feasible = False
+                        logging.debug(f"[find_placement_atomic] Slot {ts.id}+{slot_offset}={current_slot} exceeds tracking window for pod={pod.id}")
+                        break
+                
+                if duration_feasible:
+                    # Calculate emissions for this candidate
+                    total_emi = compute_emissions(flv, ts.id, pod)
+                    candidates.append((flv, ts, total_emi))
+                    logging.debug(
+                        f"[find_placement_atomic] Candidate for pod={pod.id}: "
+                        f"node={flv.id}, timeslot={ts.id}, emissions={total_emi:.3f}"
+                    )
+        
+        if not candidates:
+            logging.debug(f"[find_placement_atomic] No feasible candidates found for pod={pod.id}")
+            return None, None, float('inf')
+        
+        # Sort candidates by emissions (best first)
+        candidates.sort(key=lambda x: x[2])
+        
+        # Second pass: try to atomically allocate the best candidate
+        for flv, ts, emissions in candidates:
+            success = persistent_state.atomic_check_and_allocate(
+                flv.id, ts.id, int(pod.duration), 
+                pod.cpuRequest, pod.ramRequest
+            )
+            
+            if success:
+                logging.debug(
+                    f"[find_placement_atomic] Successfully allocated pod={pod.id}: "
+                    f"node={flv.id}, timeslot={ts.id}, emissions={emissions:.3f}"
+                )
+                return flv, ts, emissions
+            else:
+                logging.debug(
+                    f"[find_placement_atomic] Failed to allocate pod={pod.id} on "
+                    f"node={flv.id}, timeslot={ts.id} (resources no longer available)"
+                )
+        
+        # No candidate could be allocated (all resources were taken by other threads)
+        logging.debug(f"[find_placement_atomic] All candidates exhausted for pod={pod.id}")
+        return None, None, float('inf')
+
 
 def find_best_node_and_timeslot(
     pod: CarbonAwarePod,
