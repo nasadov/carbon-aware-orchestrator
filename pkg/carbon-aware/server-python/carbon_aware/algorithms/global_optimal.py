@@ -6,6 +6,7 @@ import logging
 import time
 import os
 import yaml
+import threading
 from typing import Dict, List, Optional, Tuple
 import pulp
 import csv
@@ -64,62 +65,75 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         self._csv_writer = None
         self._csv_file_handle = None
         
+        # Track processed pods to prevent duplicate processing and CSV writing
+        self._processed_pods = set()  # Set of pod IDs that have been successfully processed
+        self._is_solving = False  # Flag to prevent concurrent solver calls
+        self._solving_lock = threading.Lock()  # 🚨 CRITICAL: Proper thread-safe lock for solver protection
+        
         logging.info(f"✅ Global Optimal Algorithm instance created with CSV headers: {self.CSV_HEADERS}")
         logging.info(f"📋 This algorithm will track placements in a CSV file once set_base_log_dir is called")
 
     def _set_pod_earliest_timeslot(self, pod: CarbonAwarePod):
         """
-        Set the earliest_timeslot attribute for a pod based on its ID.
+        Ensure the pod has earliest_timeslot set and calculate deadline_slot.
         
-        The pod ID format (mXXX) determines which timeslot_X.yaml file it came from:
-        - m000-m004: from timeslot_0.yaml (earliest_timeslot = 0)
-        - m005-m009: from timeslot_1.yaml (earliest_timeslot = 1)
-        - m010-m014: from timeslot_2.yaml (earliest_timeslot = 2)
-        - m015-m018: from timeslot_3.yaml (earliest_timeslot = 3)
-        - m019-m023: from timeslot_5.yaml (earliest_timeslot = 5)
-        - m024-m025: from timeslot_6.yaml (earliest_timeslot = 6) 
-        - m026-m030: from timeslot_7.yaml (earliest_timeslot = 7)
-        - m031-m033: from timeslot_8.yaml (earliest_timeslot = 8)
-        - m034-m038: from timeslot_9.yaml (earliest_timeslot = 9)
-        - m039-m043: from timeslot_10.yaml (earliest_timeslot = 10)
-        - m044-m046: from timeslot_11.yaml (earliest_timeslot = 11)
+        This method validates that the pod has its earliest_timeslot properly set
+        (usually done during pod creation from YAML files) and calculates the
+        deadline_slot relative to that earliest_timeslot.
+        
+        If earliest_timeslot is not set, it extracts it from the timeslot YAML file
+        that contains this pod's definition.
         """
+        # 🔧 FORCE re-extraction from YAML files to get correct earliest_timeslot
+        # Don't trust the default value of 0 - always check the actual YAML source
+        pod.earliest_timeslot = self._extract_earliest_timeslot_from_yaml_files(pod.id)
+        logging.warning(f"⚠️ Pod {pod.id} had no earliest_timeslot set, extracted from YAML: {pod.earliest_timeslot}")
+        
+        logging.info(f"🔒 Pod {pod.id} has earliest_timeslot={pod.earliest_timeslot}")
+        
+        # Calculate deadline_slot relative to earliest_timeslot
+        pod.calculate_deadline_slot()
+        logging.info(f"⏰ Pod {pod.id} deadline_slot calculated as {pod.deadline_slot}")
+
+    def _extract_earliest_timeslot_from_yaml_files(self, pod_id: str) -> int:
+        """
+        Extract the earliest timeslot by finding which timeslot_X.yaml file contains this pod.
+        
+        This is the CORRECT way to determine earliest timeslot - by looking at which 
+        timeslot file the pod came from. If pod is in timeslot_4.yaml, then earliest_timeslot=4.
+        """
+        import os
         import re
         
-        # Extract the pod number from the ID (e.g., 019 from m019-duration-3h-deadline-9h)
-        match = re.match(r'([a-zA-Z]+)(\d+)[-_]?', pod.id)
-        if match:
-            pod_num = int(match.group(2))
-            # Map pods to their source file's timeslot number
-            if 0 <= pod_num <= 4:
-                earliest_ts = 0  # timeslot_0.yaml
-            elif 5 <= pod_num <= 9:
-                earliest_ts = 1  # timeslot_1.yaml
-            elif 10 <= pod_num <= 14:
-                earliest_ts = 2  # timeslot_2.yaml
-            elif 15 <= pod_num <= 18:
-                earliest_ts = 3  # timeslot_3.yaml
-            elif 19 <= pod_num <= 23:
-                earliest_ts = 5  # timeslot_5.yaml
-            elif 24 <= pod_num <= 25:
-                earliest_ts = 6  # timeslot_6.yaml
-            elif 26 <= pod_num <= 30:
-                earliest_ts = 7  # timeslot_7.yaml
-            elif 31 <= pod_num <= 33:
-                earliest_ts = 8  # timeslot_8.yaml
-            elif 34 <= pod_num <= 38:
-                earliest_ts = 9  # timeslot_9.yaml
-            elif 39 <= pod_num <= 43:
-                earliest_ts = 10  # timeslot_10.yaml
-            elif 44 <= pod_num <= 46:
-                earliest_ts = 11  # timeslot_11.yaml
-            else:
-                # If we can't determine, ensure it's within the valid range (0-23)
-                earliest_ts = min(pod_num, 23)
-            
-            # Set the earliest_timeslot and log it
-            pod.earliest_timeslot = earliest_ts
-            logging.info(f"🔒 Pod {pod.id} has earliest_timeslot={pod.earliest_timeslot} (from timeslot_{earliest_ts}.yaml)")
+        # Look in the workloads directory for timeslot_*.yaml files
+        workloads_dir = "/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads"
+        
+        try:
+            for filename in os.listdir(workloads_dir):
+                if re.match(r'timeslot_(\d+)\.yaml$', filename):
+                    filepath = os.path.join(workloads_dir, filename)
+                    
+                    # Extract timeslot number from filename
+                    match = re.match(r'timeslot_(\d+)\.yaml$', filename)
+                    timeslot_num = int(match.group(1))
+                    
+                    # Check if this pod is defined in this file
+                    try:
+                        with open(filepath, 'r') as f:
+                            content = f.read()
+                            # Look for the pod name in deployment metadata
+                            if f"name: {pod_id}" in content:
+                                logging.info(f"Found pod {pod_id} in {filename} → earliest_timeslot={timeslot_num}")
+                                return timeslot_num
+                    except Exception as e:
+                        logging.warning(f"⚠️ Error reading {filepath}: {e}")
+                        continue
+        except Exception as e:
+            logging.warning(f"⚠️ Error scanning workloads directory {workloads_dir}: {e}")
+        
+        # Fallback: if not found in any timeslot file, default to 0
+        logging.warning(f"⚠️ Pod {pod_id} not found in any timeslot_X.yaml file, defaulting to earliest_timeslot=0")
+        return 0
 
     def __del__(self):
         self.close_csv()
@@ -369,18 +383,28 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         for pod in self.pending_pods:
             self._set_pod_earliest_timeslot(pod)
 
-        # Run the global optimization with our prepared data
-        max_timeslots = max(ts.id for ts in self.all_timeslots) + 1
-        self.solve_global_optimization(
-            self.all_flavours,
-            self.all_timeslots,
-            self.resource_state["cpu"],
-            self.resource_state["ram"],
-            max_timeslots
-        )
+        # 🚨 CRITICAL: Use thread-safe lock to prevent race conditions
+        if not self._solving_lock.acquire(blocking=False):
+            logging.warning("🚫 Solver already running at main call site. Skipping to prevent race condition.")
+            return
 
-        # Mark as done
-        self.optimization_done = self.has_solved
+        try:
+            # Run the global optimization with our prepared data
+            max_timeslots = max(ts.id for ts in self.all_timeslots) + 1
+            self.solve_global_optimization(
+                self.all_flavours,
+                self.all_timeslots,
+                self.resource_state["cpu"],
+                self.resource_state["ram"],
+                max_timeslots
+            )
+
+            # Mark as done
+            self.optimization_done = self.has_solved
+        finally:
+            # 🚨 CRITICAL: Always release the lock
+            self._solving_lock.release()
+            logging.debug("🔓 Solver lock released at main call site")
 
         # Log results
         if self.optimization_done:
@@ -441,10 +465,19 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         
         try:
             import pulp
+            
+            # Filter out already processed pods to prevent duplicates
+            original_pending_count = len(self.pending_pods)
+            self.pending_pods = [pod for pod in self.pending_pods if pod.id not in self._processed_pods]
+            filtered_count = len(self.pending_pods)
+            
+            if original_pending_count != filtered_count:
+                logging.info(f"🔍 Filtered out {original_pending_count - filtered_count} already processed pods")
+                logging.info(f"  - Original pending: {original_pending_count}, After filter: {filtered_count}")
 
             # Ensure we have pods to place
             if not self.pending_pods:
-                logging.warning("🚫 No pending pods to place. Exiting solver.")
+                logging.warning("🚫 No new pending pods to place (all already processed). Exiting solver.")
                 return
 
             # Create the LP problem
@@ -639,7 +672,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             logging.info(f"🔍 STEP 4: Solving global optimization problem")
             logging.info(f"  - Starting CBC solver with constraint-enforcing settings:")
             logging.info(f"    • Time limit: 20 seconds")
-            logging.info(f"    • NO gap tolerance (strict constraint enforcement)")
+            logging.info(f"    • Gap tolerance: 0% (STRICT constraint enforcement - no violations allowed)")
             logging.info(f"    • Enhanced heuristics and preprocessing enabled")
             logging.info(f"    • PRIORITY: Constraint satisfaction over solution speed")
             solver_start_time = time.time()
@@ -672,8 +705,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             msg=True,
                             timeLimit=20,                   # Time limit to prevent excessive computation
                             logPath=cbc_log_file,          # Use PuLP's built-in log file parameter
-                            keepFiles=True                  # Keep temporary files to help with debugging
-                            # NO gapRel parameter - enforce strict constraint satisfaction
+                            keepFiles=True,                 # Keep temporary files to help with debugging
+                            gapRel=0.0,                     # CRITICAL FIX: No gap tolerance - enforce strict feasibility
+                            options=['preprocess', 'on', 'heuristicsOnOff', 'on']  # Enhanced constraint checking
                         )
                         prob.solve(solver)
                         cbc_output_captured = True
@@ -689,8 +723,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             solver = pulp.PULP_CBC_CMD(
                                 msg=True, 
                                 timeLimit=20,                   # Consistent with primary approach
-                                # NO gapRel parameter - enforce strict constraint satisfaction
-                                options=['log', '2', 'printingOptions', 'all']  # Maximum verbosity
+                                gapRel=0.0,                     # CRITICAL FIX: No gap tolerance - enforce strict feasibility
+                                options=['log', '2', 'printingOptions', 'all', 'preprocess', 'on']  # Maximum verbosity + strict checking
                             )
                             prob.solve(solver)
                             cbc_output_captured = True
@@ -702,8 +736,11 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 if not cbc_output_captured:
                     logging.warning("Using basic CBC solver without output capture")
                     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                        prob.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20))
-                        # NO gapRel parameter - enforce strict constraint satisfaction
+                        prob.solve(pulp.PULP_CBC_CMD(
+                            msg=True, 
+                            timeLimit=20,
+                            gapRel=0.0                      # CRITICAL FIX: No gap tolerance - enforce strict feasibility
+                        ))
                 
                 # Process captured output from log file
                 if os.path.exists(cbc_log_file) and os.path.getsize(cbc_log_file) > 0:
@@ -749,8 +786,12 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     
             except Exception as e:
                 logging.error(f"Error in CBC solver output capture: {e}")
-                # Final fallback
-                prob.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=60))
+                # Final fallback - ensure strict constraint satisfaction even in error case
+                prob.solve(pulp.PULP_CBC_CMD(
+                    msg=True, 
+                    timeLimit=60,
+                    gapRel=0.0                           # CRITICAL FIX: No gap tolerance - enforce strict feasibility
+                ))
                 
             finally:
                 # Clean up temporary log file
@@ -780,13 +821,24 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
 
                 logging.info(f"  - Found optimal solution! Extracting placements...")
                 
-                # CONSTRAINT VALIDATION: Verify the solution respects all constraints
-                logging.info(f"🔍 STEP 5a: Validating solution constraints")
+                # CRITICAL FIX: Pre-validate solution before accepting it
+                logging.info(f"🔍 STEP 5a: Validating solution constraints BEFORE processing")
+                
+                # Extract decision variables first for validation
+                solution_dict = {}
+                for var_name, var in x.items():
+                    if var.value() and var.value() > 0.5:  # Binary variable is active
+                        pod_id, flv_id, ts_id = var_name
+                        # Find the emissions value for this placement
+                        pod_placements = placements.get(pod_id, [])
+                        emissions = next((e for f, t, e in pod_placements if f == flv_id and t == ts_id), 0.0)
+                        solution_dict[pod_id] = (flv_id, ts_id, emissions)
+                
+                logging.info(f"  - Found {len(solution_dict)} pod placements in solver solution")
+                
+                # Validate constraints on the extracted solution
                 is_valid, constraint_violations = self._validate_solution_constraints(
-                    {pod_id: (flv_id, ts_id, emissions) for pod_id, pod_placements_list in placements.items()
-                     for flv_id, ts_id, emissions in pod_placements_list
-                     if (pod_id, flv_id, ts_id) in x and x[(pod_id, flv_id, ts_id)].value() is not None and x[(pod_id, flv_id, ts_id)].value() > 0.5},
-                    flavours, timeslots, leftover_cpu, leftover_ram
+                    solution_dict, flavours, timeslots, leftover_cpu, leftover_ram
                 )
                 
                 if not is_valid:
@@ -797,7 +849,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         logging.error(f"  - ... and {len(constraint_violations) - 10} more violations")
                     
                     # Log detailed constraint information for debugging
-                    self._log_constraint_debugging_info(constraint_violations, {})
+                    self._log_constraint_debugging_info(constraint_violations, solution_dict)
                     
                     logging.error("❌ REJECTING INVALID SOLUTION - treating as infeasible")
                     self.status = "Infeasible_Due_To_Constraint_Violations"
@@ -806,51 +858,81 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 else:
                     logging.info("✅ Solution constraint validation PASSED - all constraints satisfied")
                 
-                for pod_id_sol, current_pod_placements in placements.items():
-                    for flv_id_sol, ts_id_sol, emissions_sol in current_pod_placements:
-                        placement_key = (pod_id_sol, flv_id_sol, ts_id_sol)
 
-                        if placement_key not in x:
-                            logging.debug(f"  - Placement key {placement_key} not found in decision variables. Skipping.")
+                
+                # Extract only the SELECTED placements from the solution
+                # First, identify which placements were actually selected by the solver
+                selected_placements = {}  # pod_id -> (flv_id, ts_id, emissions)
+                
+                # Iterate through all decision variables to find selected ones
+                for placement_key, decision_var in x.items():
+                    if decision_var.value() is not None and decision_var.value() > 0.5:  # Binary variable is selected
+                        pod_id_sol, flv_id_sol, ts_id_sol = placement_key
+                        
+                        # Find the emissions for this specific placement
+                        pod_placements_list = placements.get(pod_id_sol, [])
+                        emissions_sol = next(
+                            (emissions for flv_id, ts_id, emissions in pod_placements_list 
+                             if flv_id == flv_id_sol and ts_id == ts_id_sol), 
+                            0.0  # Default to 0 if not found
+                        )
+                        
+                        selected_placements[pod_id_sol] = (flv_id_sol, ts_id_sol, emissions_sol)
+                
+                logging.info(f"  - Solver selected {len(selected_placements)} unique pod placements")
+                
+                # Now process only the selected placements
+                for pod_id_sol, (flv_id_sol, ts_id_sol, emissions_sol) in selected_placements.items():
+                    current_pod = pending_pods_dict.get(pod_id_sol)
+                    if not current_pod:
+                        logging.error(f"  - ERROR: Pod {pod_id_sol} not found in pending_pods_dict. Skipping CSV write for this placement.")
+                        continue
+
+                    logging.info(f"  - Selected placement: Pod {pod_id_sol} -> Node {flv_id_sol}, Timeslot {ts_id_sol}, Emissions {emissions_sol:.2f}kg CO2e")
+                    
+                    # Check for duplicate placement (prevent writing the same pod placement twice)
+                    if pod_id_sol in self.global_solution:
+                        existing_flv, existing_ts, existing_emissions = self.global_solution[pod_id_sol]
+                        if existing_flv == flv_id_sol and existing_ts == ts_id_sol:
+                            logging.debug(f"  - Pod {pod_id_sol} placement already exists in global solution, skipping CSV write")
                             continue
+                    
+                    # Log this placement to CSV (only write each pod placement once)
+                    try:
+                        self._write_placement_to_csv(
+                            pod_id=current_pod.id,
+                            node_id=flv_id_sol,
+                            start_slot=ts_id_sol,
+                            duration=current_pod.duration,
+                            cpu_request=current_pod.cpuRequest,
+                            ram_request=current_pod.ramRequest,
+                            total_carbon_emissions=emissions_sol,  # This is per-pod carbon for this placement
+                            solver_status=str(self.status),  # self.status is set after prob.solve()
+                            solver_iterations=self.iterations,  # self.iterations is set after prob.solve()
+                            solution_time_seconds=solution_time  # solution_time is calculated before this loop
+                        )
+                        placements_saved_to_csv += 1
+                        logging.debug(f"  - Wrote placement for pod {current_pod.id} to CSV")
+                    except Exception as e:
+                        logging.error(f"  - ERROR: Failed to write placement for pod {current_pod.id} to CSV: {e}")
+                        logging.error(traceback.format_exc())
 
-                        if x[placement_key].value() is not None and x[placement_key].value() > 0.5:  # Selected placement
-                            current_pod = pending_pods_dict.get(pod_id_sol)
-                            if not current_pod:
-                                logging.error(f"  - ERROR: Pod {pod_id_sol} not found in pending_pods_dict. Skipping CSV write for this placement.")
-                                continue
-
-                            logging.info(f"  - Selected placement: Pod {pod_id_sol} -> Node {flv_id_sol}, Timeslot {ts_id_sol}, Emissions {emissions_sol:.2f}kg CO2e")
-                            
-                            # Log this placement to CSV
-                            try:
-                                self._write_placement_to_csv(
-                                    pod_id=current_pod.id,
-                                    node_id=flv_id_sol,
-                                    start_slot=ts_id_sol,
-                                    duration=current_pod.duration,
-                                    cpu_request=current_pod.cpuRequest,
-                                    ram_request=current_pod.ramRequest,
-                                    total_carbon_emissions=emissions_sol,  # This is per-pod carbon for this placement
-                                    solver_status=str(self.status),  # self.status is set after prob.solve()
-                                    solver_iterations=self.iterations,  # self.iterations is set after prob.solve()
-                                    solution_time_seconds=solution_time  # solution_time is calculated before this loop
-                                )
-                                placements_saved_to_csv += 1
-                                logging.debug(f"  - Wrote placement for pod {current_pod.id} to CSV")
-                            except Exception as e:
-                                logging.error(f"  - ERROR: Failed to write placement for pod {current_pod.id} to CSV: {e}")
-                                logging.error(traceback.format_exc())
-
-                            solution[pod_id_sol] = (flv_id_sol, ts_id_sol, emissions_sol)
-                            total_emissions_objective += emissions_sol
+                    solution[pod_id_sol] = (flv_id_sol, ts_id_sol, emissions_sol)
+                    total_emissions_objective += emissions_sol
 
                 logging.info(f"✅ Found optimal global solution with total objective emissions: {total_emissions_objective:.2f}")
                 logging.info(f"✅ Placed {len(solution)}/{len(self.pending_pods)} pods")
                 logging.info(f"📊 Wrote {placements_saved_to_csv} placements to CSV")
 
-                # Update the solution and remove placed pods
+                # Update the solution and mark pods as processed
                 self.global_solution.update(solution)
+                
+                # Mark all successfully placed pods as processed to prevent duplicate processing
+                for pod_id in solution.keys():
+                    self._processed_pods.add(pod_id)
+                    logging.debug(f"  - Marked pod {pod_id} as processed")
+                
+                # Remove placed pods from pending list
                 self.pending_pods = [p for p in self.pending_pods if p.id not in solution]
                 self.has_solved = True
                 
@@ -1081,8 +1163,17 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         )
         
         if should_solve:
-            logging.info(f"🚀 Triggering incremental global optimization for {len(self.pending_pods)} pods")
-            self.solve_global_optimization(flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots)
+            # 🚨 CRITICAL: Use thread-safe lock to prevent race conditions (incremental path)
+            if not self._solving_lock.acquire(blocking=False):
+                logging.warning("🚫 Solver already running at incremental call site. Skipping to prevent race condition.")
+            else:
+                try:
+                    logging.info(f"🚀 Triggering incremental global optimization for {len(self.pending_pods)} pods")
+                    self.solve_global_optimization(flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots)
+                finally:
+                    # 🚨 CRITICAL: Always release the lock
+                    self._solving_lock.release()
+                    logging.debug("🔓 Solver lock released at incremental call site")
             
             # Check if the pod is now in the solution
             if pod.id in self.global_solution:
@@ -1222,7 +1313,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         else:
                             total_cpu = float(cpu_str)
                     
-                    # Parse RAM (convert from Ki, Mi, Gi to bytes)
+                    # Parse RAM (convert from Ki, Mi, Gi to MB for consistency with pod requests)
                     ram_str = allocatable.get("memory", "0")
                     ram_match = re.match(r'(\d+)([KMG]i?)?', ram_str)
                     
@@ -1231,13 +1322,13 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         ram_unit = ram_match.group(2) if ram_match.group(2) else ""
                         
                         if ram_unit.startswith('K'):
-                            total_ram = ram_value * 1024
+                            total_ram = ram_value / 1024  # Ki to MB
                         elif ram_unit.startswith('M'):
-                            total_ram = ram_value * 1024 * 1024
+                            total_ram = ram_value  # Mi to MB (same)
                         elif ram_unit.startswith('G'):
-                            total_ram = ram_value * 1024 * 1024 * 1024
+                            total_ram = ram_value * 1024  # Gi to MB
                         else:
-                            total_ram = ram_value
+                            total_ram = ram_value  # Assume MB if no unit
                     else:
                         total_ram = 0
                     
@@ -1835,13 +1926,24 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 
             # Solve the optimization problem
             logging.info("🔍 Starting MILP solver for global optimization problem")
-            self.solve_global_optimization(
-                self.all_flavours,
-                self.all_timeslots,
-                self.resource_state["cpu"],
-                self.resource_state["ram"],
-                len(self.all_timeslots)
-            )
+            
+            # 🚨 CRITICAL: Use thread-safe lock to prevent race conditions (batch path)
+            if not self._solving_lock.acquire(blocking=False):
+                logging.warning("🚫 Solver already running at batch call site. Skipping to prevent race condition.")
+                return False
+            
+            try:
+                self.solve_global_optimization(
+                    self.all_flavours,
+                    self.all_timeslots,
+                    self.resource_state["cpu"],
+                    self.resource_state["ram"],
+                    len(self.all_timeslots)
+                )
+            finally:
+                # 🚨 CRITICAL: Always release the lock
+                self._solving_lock.release()
+                logging.debug("🔓 Solver lock released at batch call site")
             
             # Set flags
             self.optimization_done = self.has_solved

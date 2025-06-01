@@ -589,12 +589,12 @@ class GlobalOptimizer:
             logging.info("🔍 STEP 3: Solving the MILP problem")
             logging.info("  - Starting CBC solver with optimized settings:")
             logging.info("    • Time limit: 20 seconds (reduced from 300s for efficiency)")
-            logging.info("    • Gap tolerance: 1% (early termination when near-optimal)")
+            logging.info("    • Gap tolerance: 0% (STRICT constraint enforcement - no violations allowed)")
             logging.info("    • Enhanced heuristics and preprocessing enabled")
             pulp_solver = pulp.PULP_CBC_CMD(
                 msg=True,                      # Enable verbose output
                 timeLimit=20,                  # Reduced from 300s - most solutions found early
-                gapRel=0.01                   # Stop when gap between best and bound <= 1%
+                gapRel=0.0                     # CRITICAL FIX: No gap tolerance - enforce strict constraint satisfaction
             )
             
             solution_start_time = time.time()

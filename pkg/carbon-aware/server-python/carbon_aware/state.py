@@ -103,6 +103,44 @@ class PersistentStateStorage:
                 "duration": duration
             }
     
+    def check_resources_available(self, node_id: str, start_slot: int, duration: int, 
+                                  cpu_request: float, ram_request: float) -> bool:
+        """
+        Check if resources would be available for allocation without actually allocating them.
+        
+        This method is used to check feasibility before attempting atomic allocation.
+        
+        Args:
+            node_id: ID of the node
+            start_slot: Starting timeslot
+            duration: Duration in slots
+            cpu_request: CPU required
+            ram_request: RAM required
+            
+        Returns:
+            True if resources would be available, False otherwise
+        """
+        with self.state_lock:
+            # Check if allocation would be feasible for all required slots
+            for offset in range(duration):
+                slot_id = start_slot + offset
+                if slot_id >= self.max_time_slots:
+                    return False  # Slot beyond tracking window
+                
+                # Check CPU availability
+                if (node_id not in self.leftover_cpu or 
+                    slot_id not in self.leftover_cpu[node_id] or
+                    self.leftover_cpu[node_id][slot_id] < cpu_request):
+                    return False  # CPU constraint violated
+                
+                # Check RAM availability
+                if (node_id not in self.leftover_ram or 
+                    slot_id not in self.leftover_ram[node_id] or
+                    self.leftover_ram[node_id][slot_id] < ram_request):
+                    return False  # RAM constraint violated
+            
+            return True  # All constraints satisfied
+
     def atomic_check_and_allocate(self, node_id: str, start_slot: int, duration: int, 
                                   cpu_request: float, ram_request: float) -> bool:
         """

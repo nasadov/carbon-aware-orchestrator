@@ -10,6 +10,7 @@ class CarbonAwarePod:
                  reference_time: datetime = None) -> None:
         self.id = id
         self.deadline = self._processDeadline(deadline_hours, reference_time)
+        self.deadline_hours = deadline_hours  # Store deadline hours for relative calculation
         self.duration = duration
         self.powerConsumption = powerConsumption
         self.cpuRequest = cpuRequest
@@ -22,6 +23,16 @@ class CarbonAwarePod:
         now = datetime.now() if reference_time is None else reference_time
         delta = timedelta(hours=deadline_hours)
         return now + delta
+    
+    def calculate_deadline_slot(self):
+        """
+        Calculate deadline_slot as earliest_timeslot + deadline_hours.
+        This ensures deadlines are relative to the pod's origin timeslot rather than from timeslot 0.
+        """
+        if hasattr(self, 'earliest_timeslot') and hasattr(self, 'deadline_hours'):
+            self.deadline_slot = self.earliest_timeslot + self.deadline_hours
+        else:
+            self.deadline_slot = None
 
 class CarbonAwareFlavour:
     """Represents a node with carbon-aware characteristics"""

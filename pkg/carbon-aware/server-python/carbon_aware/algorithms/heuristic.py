@@ -61,7 +61,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             self._placement_csv_writer = csv.writer(self._placement_csv_file_handle)
             
             if not file_exists_and_not_empty:
-                self._placement_csv_writer.writerow(["pod_id", "node_id", "start_slot", "duration"])
+                self._placement_csv_writer.writerow(["pod_id", "node_id", "start_slot", "duration", "cpu_request", "ram_request"])
                 self._placement_csv_file_handle.flush()
             logging.info(f"Heuristic placements will be logged to: {self._placement_csv_path}")
 
@@ -79,10 +79,10 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             except Exception as e:
                 logging.error(f"Error closing placement CSV file in __del__: {e}")
 
-    def _write_placement_to_csv(self, pod_id: str, node_id: str, start_slot: int, duration: float):
+    def _write_placement_to_csv(self, pod_id: str, node_id: str, start_slot: int, duration: float, cpu_request: float = 0.0, ram_request: float = 0.0):
         if self._placement_csv_writer and self._placement_csv_file_handle:
             try:
-                self._placement_csv_writer.writerow([pod_id, node_id, start_slot, duration])
+                self._placement_csv_writer.writerow([pod_id, node_id, start_slot, duration, cpu_request, ram_request])
                 self._placement_csv_file_handle.flush()
             except Exception as e:
                 logging.error(f"Error writing to placement CSV for heuristic: {e}")
@@ -91,57 +91,66 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
     
     def _set_pod_earliest_timeslot(self, pod: CarbonAwarePod):
         """
-        Set the earliest_timeslot attribute for a pod based on its ID.
+        Ensure the pod has earliest_timeslot set and calculate deadline_slot.
         
-        The pod ID format (mXXX) determines which timeslot_X.yaml file it came from:
-        - m000-m004: from timeslot_0.yaml (earliest_timeslot = 0)
-        - m005-m009: from timeslot_1.yaml (earliest_timeslot = 1)
-        - m010-m014: from timeslot_2.yaml (earliest_timeslot = 2)
-        - m015-m018: from timeslot_3.yaml (earliest_timeslot = 3)
-        - m019-m023: from timeslot_5.yaml (earliest_timeslot = 5)
-        - m024-m025: from timeslot_6.yaml (earliest_timeslot = 6) 
-        - m026-m030: from timeslot_7.yaml (earliest_timeslot = 7)
-        - m031-m033: from timeslot_8.yaml (earliest_timeslot = 8)
-        - m034-m038: from timeslot_9.yaml (earliest_timeslot = 9)
-        - m039-m043: from timeslot_10.yaml (earliest_timeslot = 10)
-        - m044-m046: from timeslot_11.yaml (earliest_timeslot = 11)
+        This method validates that the pod has its earliest_timeslot properly set
+        (usually done during pod creation from YAML files) and calculates the
+        deadline_slot relative to that earliest_timeslot.
+        
+        If earliest_timeslot is not set, it extracts it from the timeslot YAML file
+        that contains this pod's definition.
         """
+        # 🔧 FORCE re-extraction from YAML files to get correct earliest_timeslot
+        # Don't trust the default value of 0 - always check the actual YAML source
+        pod.earliest_timeslot = self._extract_earliest_timeslot_from_yaml_files(pod.id)
+        logging.info(f"🔒 Pod {pod.id} earliest_timeslot extracted from YAML file: {pod.earliest_timeslot}")
+        
+        logging.info(f"🔒 Pod {pod.id} has earliest_timeslot={pod.earliest_timeslot}")
+        
+        # Calculate deadline_slot relative to earliest_timeslot
+        pod.calculate_deadline_slot()
+        if pod.deadline_slot is not None:
+            logging.info(f"📅 Pod {pod.id} has deadline_slot={pod.deadline_slot} (earliest_timeslot + {pod.deadline_hours}h)")
+    
+    def _extract_earliest_timeslot_from_yaml_files(self, pod_id: str) -> int:
+        """
+        Extract the earliest timeslot by finding which timeslot_X.yaml file contains this pod.
+        
+        This is the CORRECT way to determine earliest timeslot - by looking at which 
+        timeslot file the pod came from. If pod is in timeslot_4.yaml, then earliest_timeslot=4.
+        """
+        import os
         import re
         
-        # Extract the pod number from the ID (e.g., 019 from m019-duration-3h-deadline-9h)
-        match = re.match(r'([a-zA-Z]+)(\d+)[-_]?', pod.id)
-        if match:
-            pod_num = int(match.group(2))
-            # Map pods to their source file's timeslot number
-            if 0 <= pod_num <= 4:
-                earliest_ts = 0  # timeslot_0.yaml
-            elif 5 <= pod_num <= 9:
-                earliest_ts = 1  # timeslot_1.yaml
-            elif 10 <= pod_num <= 14:
-                earliest_ts = 2  # timeslot_2.yaml
-            elif 15 <= pod_num <= 18:
-                earliest_ts = 3  # timeslot_3.yaml
-            elif 19 <= pod_num <= 23:
-                earliest_ts = 5  # timeslot_5.yaml
-            elif 24 <= pod_num <= 25:
-                earliest_ts = 6  # timeslot_6.yaml
-            elif 26 <= pod_num <= 30:
-                earliest_ts = 7  # timeslot_7.yaml
-            elif 31 <= pod_num <= 33:
-                earliest_ts = 8  # timeslot_8.yaml
-            elif 34 <= pod_num <= 38:
-                earliest_ts = 9  # timeslot_9.yaml
-            elif 39 <= pod_num <= 43:
-                earliest_ts = 10  # timeslot_10.yaml
-            elif 44 <= pod_num <= 46:
-                earliest_ts = 11  # timeslot_11.yaml
-            else:
-                # If we can't determine, ensure it's within the valid range (0-23)
-                earliest_ts = min(pod_num, 23)
-            
-            # Set the earliest_timeslot and log it
-            pod.earliest_timeslot = earliest_ts
-            logging.info(f"🔒 Pod {pod.id} has earliest_timeslot={pod.earliest_timeslot} (from timeslot_{earliest_ts}.yaml)")
+        # Look in the workloads directory for timeslot_*.yaml files
+        workloads_dir = "/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads"
+        
+        try:
+            for filename in os.listdir(workloads_dir):
+                if re.match(r'timeslot_(\d+)\.yaml$', filename):
+                    filepath = os.path.join(workloads_dir, filename)
+                    
+                    # Extract timeslot number from filename
+                    match = re.match(r'timeslot_(\d+)\.yaml$', filename)
+                    timeslot_num = int(match.group(1))
+                    
+                    # Check if this pod is defined in this file
+                    try:
+                        with open(filepath, 'r') as f:
+                            content = f.read()
+                            # Look for the pod name in deployment metadata
+                            if f"name: {pod_id}" in content:
+                                logging.info(f"Found pod {pod_id} in {filename} → earliest_timeslot={timeslot_num}")
+                                return timeslot_num
+                    except Exception as e:
+                        logging.warning(f"⚠️ Error reading {filepath}: {e}")
+                        continue
+        except Exception as e:
+            logging.warning(f"⚠️ Error scanning workloads directory {workloads_dir}: {e}")
+        
+        # Fallback: if not found in any timeslot file, default to 0
+        logging.warning(f"⚠️ Pod {pod_id} not found in any timeslot_X.yaml file, defaulting to earliest_timeslot=0")
+        return 0
     
     @property
     def name(self) -> str:
@@ -186,7 +195,9 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                 pod_id=pod.id,
                 node_id=best_node.id,
                 start_slot=best_slot.id,
-                duration=pod.duration
+                duration=pod.duration,
+                cpu_request=pod.cpuRequest,
+                ram_request=pod.ramRequest
             )
         
         return best_node, best_slot, emissions
@@ -215,61 +226,108 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         Returns:
             Tuple of (best_node, best_timeslot, emissions) or (None, None, inf) if no placement found
         """
+        # CRITICAL FIX: Set earliest_timeslot based on pod ID before scheduling
+        self._set_pod_earliest_timeslot(pod)
+        
+        logging.info(f"[find_placement_atomic] Starting placement search for pod={pod.id}")
+        logging.info(f"    Pod constraints: earliest_timeslot={pod.earliest_timeslot}, duration={pod.duration}h")
+        logging.info(f"    Resource requirements: CPU={pod.cpuRequest:.3f}, RAM={pod.ramRequest:.0f}MB")
+        logging.info(f"    Search space: {len(flavours)} nodes × {len(timeslots)} timeslots = {len(flavours) * len(timeslots)} combinations")
+        
         candidates = []  # List of (node, timeslot, emissions) tuples
         
         # First pass: find all feasible placements and calculate their emissions
+        valid_timeslots = 0
         for ts in timeslots:
             if not is_timeslot_valid(ts, pod):
-                logging.debug(f"[find_placement_atomic] Skipping timeslot={ts.id}, not valid for pod={pod.id}")
+                logging.debug(f"[find_placement_atomic] Timeslot {ts.id} invalid for pod={pod.id} (earliest_timeslot={pod.earliest_timeslot})")
                 continue
+            
+            valid_timeslots += 1
+            logging.debug(f"[find_placement_atomic] Timeslot {ts.id} valid for pod={pod.id}")
 
             for flv in flavours:
-                # Check if this placement would be feasible (without actually allocating)
+                # Check if this placement would be feasible for the entire duration
                 duration_feasible = True
+                resource_feasible = True
+                failure_reason = ""
+                
                 for slot_offset in range(int(pod.duration)):
                     current_slot = ts.id + slot_offset
                     if current_slot >= max_time_slots:
                         duration_feasible = False
-                        logging.debug(f"[find_placement_atomic] Slot {ts.id}+{slot_offset}={current_slot} exceeds tracking window for pod={pod.id}")
+                        failure_reason = f"slot_{current_slot}_exceeds_window_{max_time_slots}"
+                        logging.debug(f"[find_placement_atomic] ❌ Pod {pod.id} on {flv.id}: {failure_reason}")
                         break
                 
                 if duration_feasible:
-                    # Calculate emissions for this candidate
-                    total_emi = compute_emissions(flv, ts.id, pod)
-                    candidates.append((flv, ts, total_emi))
-                    logging.debug(
-                        f"[find_placement_atomic] Candidate for pod={pod.id}: "
-                        f"node={flv.id}, timeslot={ts.id}, emissions={total_emi:.3f}"
+                    # Check if resources would be available (without actually allocating yet)
+                    resource_check = persistent_state.check_resources_available(
+                        flv.id, ts.id, int(pod.duration), pod.cpuRequest, pod.ramRequest
                     )
+                    
+                    if resource_check:
+                        # Calculate emissions for this candidate
+                        total_emi = compute_emissions(flv, ts.id, pod)
+                        candidates.append((flv, ts, total_emi))
+                        logging.debug(f"[find_placement_atomic] Valid candidate: pod={pod.id}, node={flv.id}, timeslot={ts.id}, emissions={total_emi:.3f}")
+                    else:
+                        failure_reason = "insufficient_resources"
+                        logging.debug(f"[find_placement_atomic] Pod {pod.id} on {flv.id} at slot {ts.id}: {failure_reason}")
+        
+        logging.info(f"    Valid timeslots: {valid_timeslots}/{len(timeslots)}")
+        logging.info(f"    Feasible candidates found: {len(candidates)}")
         
         if not candidates:
-            logging.debug(f"[find_placement_atomic] No feasible candidates found for pod={pod.id}")
+            logging.warning(f"[find_placement_atomic] No feasible candidates found for pod={pod.id}")
+            logging.warning(f"    Diagnosis for pod={pod.id}:")
+            logging.warning(f"        - Earliest timeslot constraint: {pod.earliest_timeslot}")
+            logging.warning(f"        - Duration: {pod.duration}h")
+            logging.warning(f"        - Resources needed: CPU={pod.cpuRequest:.3f}, RAM={pod.ramRequest:.0f}MB")
+            logging.warning(f"        - Available timeslots: {[ts.id for ts in timeslots]}")
+            logging.warning(f"        - Valid timeslots after constraint: {valid_timeslots}")
+            
+            # Check each node's current resource availability
+            for flv in flavours:
+                max_cpu_available = max(persistent_state.leftover_cpu[flv.id].values())
+                max_ram_available = max(persistent_state.leftover_ram[flv.id].values())
+                logging.warning(f"        - Node {flv.id}: max_cpu={max_cpu_available:.3f}, max_ram={max_ram_available:.0f}MB")
+            
             return None, None, float('inf')
         
         # Sort candidates by emissions (best first)
         candidates.sort(key=lambda x: x[2])
+        logging.info(f"    Best candidate: node={candidates[0][0].id}, timeslot={candidates[0][1].id}, emissions={candidates[0][2]:.3f}")
         
         # Second pass: try to atomically allocate the best candidate
+        allocation_attempts = 0
         for flv, ts, emissions in candidates:
+            allocation_attempts += 1
             success = persistent_state.atomic_check_and_allocate(
                 flv.id, ts.id, int(pod.duration), 
                 pod.cpuRequest, pod.ramRequest
             )
             
             if success:
-                logging.debug(
-                    f"[find_placement_atomic] Successfully allocated pod={pod.id}: "
-                    f"node={flv.id}, timeslot={ts.id}, emissions={emissions:.3f}"
+                logging.info(f"[find_placement_atomic] Successfully allocated pod={pod.id} on attempt {allocation_attempts}")
+                logging.info(f"    Final placement: node={flv.id}, timeslot={ts.id}, emissions={emissions:.3f}")
+                
+                # Write placement to CSV (same as in find_placement method)
+                self._write_placement_to_csv(
+                    pod_id=pod.id,
+                    node_id=flv.id,
+                    start_slot=ts.id,
+                    duration=pod.duration,
+                    cpu_request=pod.cpuRequest,
+                    ram_request=pod.ramRequest
                 )
+                
                 return flv, ts, emissions
             else:
-                logging.debug(
-                    f"[find_placement_atomic] Failed to allocate pod={pod.id} on "
-                    f"node={flv.id}, timeslot={ts.id} (resources no longer available)"
-                )
+                logging.debug(f"[find_placement_atomic] Allocation failed for pod={pod.id} on node={flv.id}, timeslot={ts.id} (resources taken)")
         
         # No candidate could be allocated (all resources were taken by other threads)
-        logging.debug(f"[find_placement_atomic] All candidates exhausted for pod={pod.id}")
+        logging.warning(f"[find_placement_atomic] All {allocation_attempts} candidates exhausted for pod={pod.id} - resources taken by other processes")
         return None, None, float('inf')
 
 

@@ -323,7 +323,7 @@ def is_timeslot_valid(ts: CarbonAwareTimeslot, pod: CarbonAwarePod) -> bool:
     Valid if:
       - The current time hasn't passed the timeslot's end.
       - The current time hasn't passed the start of the timeslot (no scheduling in the past).
-      - The timeslot starts before the pod's deadline.
+      - The timeslot starts before the pod's deadline (or deadline_slot constraint).
       - The timeslot ID is greater than or equal to the pod's earliest_timeslot 🔒
     """
     now = datetime.now()
@@ -331,7 +331,13 @@ def is_timeslot_valid(ts: CarbonAwareTimeslot, pod: CarbonAwarePod) -> bool:
     ts_date_hour = ts.getStart().replace(minute=0, second=0, microsecond=0)
     not_past_end = now <= ts.getEnd()
     not_in_past = ts_date_hour >= now_date_hour
-    before_deadline = ts.getStart() <= pod.deadline
+    
+    # Check deadline constraint - use deadline_slot if available, otherwise use deadline datetime
+    if hasattr(pod, 'deadline_slot') and pod.deadline_slot is not None:
+        before_deadline = ts.id + pod.duration <= pod.deadline_slot  # Must finish before deadline_slot
+    else:
+        before_deadline = ts.getStart() <= pod.deadline
+    
     meets_earliest_constraint = ts.id >= pod.earliest_timeslot  # 🔒 Check earliest_timeslot constraint
     valid = not_past_end and not_in_past and before_deadline and meets_earliest_constraint
     

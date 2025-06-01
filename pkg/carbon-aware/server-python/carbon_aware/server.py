@@ -277,37 +277,58 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                 hours_until_deadline = (pod.deadline - current_time).total_seconds() / 3600
                 scheduling_window = max(0, hours_until_deadline - pod.duration)
                 
+                # DETAILED POD ANALYSIS LOGGING
+                logging.info(f"    POD ANALYSIS for {ms.name}:")
+                logging.info(f"       Basic Info: duration={pod.duration}h, deadline in {hours_until_deadline:.1f}h")
+                logging.info(f"       Resources: CPU={pod.cpuRequest:.3f}, RAM={pod.ramRequest:.0f}MB")
+                logging.info(f"       Scheduling window: {scheduling_window:.1f}h ({max(0, int(scheduling_window))} potential timeslots)")
+                
                 if hours_until_deadline <= 0:
-                    logging.warning(f"    ⚠️  Expired deadline for {ms.name}")
+                    logging.warning(f"    DEADLINE_EXPIRED for {ms.name}: deadline was {abs(hours_until_deadline):.1f}h ago")
                     placement = self._build_fallback_placement(ms.name, "EXPIRED_DEADLINE")
                     out_placements.placements.append(placement)
                     placements_failed += 1
                     continue
 
-                timeslots = build_timeslots(hours_until_deadline)
+                # DYNAMIC TIMESLOT RANGE FIX: Consider both deadline and earliest_timeslot constraints
+                # Pre-calculate pod's earliest_timeslot to understand its constraint
+                from carbon_aware.algorithms.heuristic import HeuristicAlgorithm
+                temp_heuristic = HeuristicAlgorithm()
+                pod_earliest_timeslot = temp_heuristic._extract_earliest_timeslot_from_yaml_files(pod.id)
                 
-                logging.info(f"    ⏰ Pod {pod.id}: duration={pod.duration}h, deadline in {hours_until_deadline:.1f}h")
-                logging.info(f"    🔄 Scheduling window: {scheduling_window:.1f}h ({len(timeslots)} potential timeslots)")
+                # Calculate required timeslot range: max(deadline_range, earliest_timeslot + buffer)
+                deadline_range = int(hours_until_deadline)
+                earliest_constraint_range = pod_earliest_timeslot + int(pod.duration) + 2  # Add buffer for scheduling
+                required_timeslot_range = max(deadline_range, earliest_constraint_range)
+                
+                logging.info(f"       TIMESLOT RANGE CALCULATION:")
+                logging.info(f"          Pod earliest_timeslot: {pod_earliest_timeslot}")
+                logging.info(f"          Deadline-based range: {deadline_range} timeslots")
+                logging.info(f"          Earliest-constraint range: {earliest_constraint_range} timeslots")
+                logging.info(f"          Required range: {required_timeslot_range} timeslots")
+                
+                timeslots = build_timeslots(required_timeslot_range)
+                logging.info(f"       Generated {len(timeslots)} timeslots (expanded for earliest_timeslot constraint)")
                 
                 if scheduling_window <= 0:
-                    logging.warning(f"    ⚠️  No scheduling flexibility for {ms.name} - immediate start required")
+                    logging.warning(f"    ZERO_SCHEDULING_WINDOW for {ms.name} - immediate start required (duration={pod.duration}h = deadline)")
                 elif scheduling_window < 2:
-                    logging.info(f"    ℹ️  Limited scheduling window for {ms.name}")
+                    logging.info(f"    LIMITED_SCHEDULING_WINDOW for {ms.name} ({scheduling_window:.1f}h window)")
                 else:
-                    logging.info(f"    ✨ Good scheduling flexibility for {ms.name} - can optimize for carbon")
+                    logging.info(f"    GOOD_SCHEDULING_FLEXIBILITY for {ms.name} ({scheduling_window:.1f}h window)")
 
-                logging.info(f"    🧮 Executing {self.algo.name} algorithm...")
+                logging.info(f"    Executing {self.algo.name} algorithm...")
                 algorithm_start_time = time.time()
                 
                 # Use atomic placement method to prevent race conditions
                 if hasattr(algorithm_instance, 'find_placement_atomic'):
-                    logging.debug(f"    🔒 Using atomic placement method for {self.algo.name}")
+                    logging.debug(f"    Using atomic placement method for {self.algo.name}")
                     best_node, best_slot, minimal_emissions = algorithm_instance.find_placement_atomic(
                         pod, flavours, timeslots, self.persistent_state, max_time_slots
                     )
                 else:
                     # Fallback to non-atomic method for algorithms that don't support it
-                    logging.debug(f"    ⚠️  Using non-atomic placement method for {self.algo.name}")
+                    logging.debug(f"    Using non-atomic placement method for {self.algo.name}")
                     best_node, best_slot, minimal_emissions = algorithm_instance.find_placement(
                         pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots
                     )
@@ -324,13 +345,49 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                         )
                         
                         if not allocation_success:
-                            logging.warning(f"    ⚠️  Resource allocation failed for {ms.name} - resources taken by another thread")
+                            logging.warning(f"    RESOURCE_ALLOCATION_FAILED for {ms.name} - resources taken by another thread")
                             best_node = None
                             best_slot = None
                             minimal_emissions = float('inf')
                 
                 algorithm_execution_time = time.time() - algorithm_start_time
-                logging.info(f"    ⏱️ Algorithm execution time: {algorithm_execution_time:.3f}s")
+                logging.info(f"    Algorithm execution time: {algorithm_execution_time:.3f}s")
+                
+                # DETAILED PLACEMENT RESULT LOGGING
+                if best_node and best_slot:
+                    logging.info(f"    PLACEMENT_SUCCESS for {ms.name}:")
+                    logging.info(f"       Selected: node={best_node.id}, timeslot={best_slot.id}")
+                    logging.info(f"       Emissions: {minimal_emissions:.3f}kgCO2e")
+                    logging.info(f"       Resources used: CPU={pod.cpuRequest:.3f}/{best_node.totalCpu:.2f}, RAM={pod.ramRequest:.0f}/{best_node.totalRam:.0f}MB")
+                else:
+                    logging.warning(f"    PLACEMENT_FAILED for {ms.name}:")
+                    if minimal_emissions == float('inf'):
+                        logging.warning(f"       Failure reason: NO_FEASIBLE_PLACEMENT_FOUND")
+                    else:
+                        logging.warning(f"       Failure reason: RESOURCE_ALLOCATION_FAILED")
+                    
+                    # DETAILED FAILURE ANALYSIS
+                    logging.warning(f"       FAILURE_ANALYSIS for {ms.name}:")
+                    logging.warning(f"           Available nodes: {len(flavours)}")
+                    logging.warning(f"           Available timeslots: {len(timeslots)}")
+                    logging.warning(f"           Total combinations checked: {len(flavours) * len(timeslots)}")
+                    
+                    # Check resource availability on each node
+                    leftover_cpu, leftover_ram = self.persistent_state.get_resources()
+                    for node in flavours:
+                        node_has_cpu = any(leftover_cpu[node.id][slot] >= pod.cpuRequest for slot in range(max_time_slots))
+                        node_has_ram = any(leftover_ram[node.id][slot] >= pod.ramRequest for slot in range(max_time_slots))
+                        logging.warning(f"           Node {node.id}: sufficient_cpu={node_has_cpu}, sufficient_ram={node_has_ram}")
+                        
+                        # Check specific timeslots
+                        feasible_slots = []
+                        for ts in timeslots:
+                            if ts.id < max_time_slots:
+                                cpu_ok = leftover_cpu[node.id][ts.id] >= pod.cpuRequest
+                                ram_ok = leftover_ram[node.id][ts.id] >= pod.ramRequest
+                                if cpu_ok and ram_ok:
+                                    feasible_slots.append(ts.id)
+                        logging.warning(f"           Node {node.id}: feasible_timeslots={feasible_slots}")
                 
                 if self.experiment_logger:
                     success = best_node is not None and best_slot is not None
@@ -362,17 +419,17 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     total_emissions += minimal_emissions
                     placements_success += 1
                     
-                    logging.info(f"    ✅ Placed on {best_node.id} at {workload_start_time.strftime('%Y-%m-%d %H:%M')}")
+                    logging.info(f"    Final placement: {best_node.id} at {workload_start_time.strftime('%Y-%m-%d %H:%M')}")
                     logging.info(f"       Duration: {pod.duration}h, Finishes: {end_time.strftime('%Y-%m-%d %H:%M')}")
                     logging.info(f"       Emissions: {minimal_emissions:.2f}kgCO2e, Resources: CPU={pod.cpuRequest:.2f}/{best_node.totalCpu:.2f}, " +
                                 f"RAM={pod.ramRequest:.0f}/{best_node.totalRam:.0f}MB")
                 else:
                     placement = self._build_fallback_placement(ms.name, "NONE_FOUND")
                     placements_failed += 1
-                    logging.warning(f"    ❌ No feasible placement found for {ms.name}")
+                    logging.warning(f"    Final result: No feasible placement found for {ms.name}")
 
                 out_placements.placements.append(placement)
-                logging.info(f"    🕒 Processing time: {(time.time() - ms_start_time):.3f}s")
+                logging.info(f"    Processing time: {(time.time() - ms_start_time):.3f}s")
 
             logging.info("=" * 60)
             logging.info(f"📋 PLACEMENT SUMMARY")
@@ -540,9 +597,13 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         
         try:
             from carbon_aware.algorithms.global_optimal import GlobalOptimalAlgorithm
+            from carbon_aware.algorithms import set_precomputed_global_optimal
             
             # Create algorithm instance for precomputation
             precompute_algorithm = GlobalOptimalAlgorithm()
+            
+            # Register it so the factory can reuse it
+            set_precomputed_global_optimal(precompute_algorithm)
             
             # Set up session log directory if available
             if session_log_dir:

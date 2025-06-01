@@ -1,6 +1,7 @@
 """
 Carbon-aware scheduling algorithm factory.
 """
+import logging
 from typing import Optional
 
 from carbon_aware.algorithms.base import SchedulingAlgorithm
@@ -8,6 +9,14 @@ from carbon_aware.algorithms.heuristic import HeuristicAlgorithm
 from carbon_aware.algorithms.optimal import OptimalAlgorithm 
 from carbon_aware.algorithms.global_optimal import GlobalOptimalAlgorithm
 
+# Store reference to precomputed global optimal instance
+_precomputed_global_optimal = None
+
+def set_precomputed_global_optimal(instance: GlobalOptimalAlgorithm):
+    """Set the precomputed global optimal algorithm instance to be reused."""
+    global _precomputed_global_optimal
+    _precomputed_global_optimal = instance
+    logging.info("✅ Precomputed global optimal algorithm instance registered for reuse")
 
 def get_algorithm(name: str) -> SchedulingAlgorithm:
     """
@@ -22,11 +31,19 @@ def get_algorithm(name: str) -> SchedulingAlgorithm:
     Raises:
         ValueError: If algorithm name is unknown
     """
+    global _precomputed_global_optimal
+    
     if name == "heuristic":
         return HeuristicAlgorithm()
     elif name == "optimal":
         return OptimalAlgorithm()
     elif name == "global-optimal":  # Updated name
-        return GlobalOptimalAlgorithm()
+        # Return the precomputed instance if available, otherwise create new
+        if _precomputed_global_optimal is not None:
+            logging.info("♻️ Reusing precomputed global optimal algorithm instance")
+            return _precomputed_global_optimal
+        else:
+            logging.info("🔧 Creating new global optimal algorithm instance (no precomputed available)")
+            return GlobalOptimalAlgorithm()
     else:
         raise ValueError(f"Unknown algorithm: {name}")
