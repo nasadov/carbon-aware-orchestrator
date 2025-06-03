@@ -488,8 +488,13 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     # Increase base width to accommodate legend on the right side
     plot_width = max(16, plot_time_slots * 0.7)  # Increased from 14 and 0.6
     
-    # Create figure with improved size parameters
-    fig, ax = plt.subplots(figsize=(plot_width, total_height))
+    # FIXED ASPECT RATIO: Use consistent figure size for all algorithms
+    # This ensures vanilla, heuristic, and global-optimal plots have the same aspect ratio
+    standard_width = 20   # Standard width for all plots
+    standard_height = 12  # Standard height for all plots
+    
+    # Create figure with consistent size parameters across all algorithms
+    fig, ax = plt.subplots(figsize=(standard_width, standard_height))
     
     # Add a bit more margin on both sides of the time axis
     ax.set_xlim(-0.7, plot_time_slots - 0.3)
@@ -514,7 +519,7 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     ax.set_ylim(max_y, min_y)  # Reverse y-axis to put node-0 at top
     
     logging.info(f"Plot ylim: {max_y}, {min_y} (reversed for top-to-bottom node order)")
-    logging.info(f"Plot size: {plot_width} x {total_height}")
+    logging.info(f"Plot size: {standard_width} x {standard_height} (standardized across all algorithms)")
 
     unique_pods = df['pod_id'].unique() if df is not None and not df.empty else []
     num_unique_pods = len(unique_pods)

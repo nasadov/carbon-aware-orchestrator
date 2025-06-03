@@ -72,6 +72,10 @@ figures/*.png
 figures/*.pdf
 figures/*/
 
+# Carbon emissions analysis outputs
+figures/Carbon_Emissions_Analysis_Latest/
+figures/Algorithm_Comparison_Latest/
+
 # Keep example visualization used in documentation
 !figures/example_*.png
 !figures/example_*.pdf
@@ -80,9 +84,17 @@ figures/*/
 analysis/__pycache__/
 analysis/*.pyc
 
+# Carbon emissions analysis cache and temporary files  
+analysis/*.pkl
+analysis/*.cache
+
 # Generated workloads
 workloads/
 workloads-vanilla/
+
+# Carbon emissions analysis data files
+**/carbon_emissions_results/
+**/carbon_analysis_output/
 
 # But track the configuration files
 !infra-workload-config.yaml

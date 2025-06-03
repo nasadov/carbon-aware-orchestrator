@@ -27,6 +27,7 @@ This work builds upon the original scheduler plugin developed by Fondazione Brun
     - [MILP Global Optimizer](#running-milp-global-optimizer)
     - [Verify Constraint Enforcement](#verify-constraint-enforcement)
     - [Performance Metrics](#performance-metrics)
+    - [Carbon Emissions Analysis](#carbon-emissions-analysis)
     - [Visualizing Results](#visualizing-results)
 
 ## Overview
@@ -61,7 +62,12 @@ The interface definition is in the `./pkg/idl/idl.proto` file. It models a snaps
     - `schedule_visualization.py`: Enhanced script for visualizing pod placement schedules
     - `visualization.py`: Script for generating performance visualizations
     - `simple_carbon_heatmap.py`: Carbon emissions visualization tools
+    - `carbon_emissions_comparison.py`: Comprehensive analysis comparing carbon emissions across algorithms
+    - `fix_start_slots.py`: Tool for fixing timeslot inconsistencies in placement data for vanilla algorithm
 - `figures/`: Generated visualization outputs organized by experiment
+    - `Carbon_Emissions_Analysis_Latest/`: Carbon emissions comparison results
+    - `Algorithm_Comparison_Latest/`: Multi-algorithm performance comparisons
+    - `Heuristic_Latest/`, `Global_Optimal_Latest/`: Algorithm-specific visualizations
 - `docs/`: Documentation including research papers and guides
     - `schedule_visualization.py`: Script for visualizing pod placement schedules
     - `run_schedule_visualization.sh`: Helper script for running schedule visualizations
@@ -325,6 +331,40 @@ The automatic performance tracking helps with:
 
 Each log file is named with the algorithm and timestamp (e.g., `heuristic_20250512_121534.csv`).
 
+### Carbon Emissions Analysis
+
+The repository includes comprehensive tools for analyzing and comparing carbon emissions across different scheduling algorithms. The main analysis tool is `analysis/carbon_emissions_comparison.py`, which provides detailed carbon footprint comparisons between heuristic, global-optimal, and vanilla scheduling approaches.
+
+**Key Features:**
+- **Unified Carbon Calculation**: All algorithms now use the same carbon emissions calculation methodology for fair comparison
+- **Detailed Breakdown**: Analysis of operational vs. embodied carbon emissions
+- **Per-Pod Analysis**: Individual pod carbon footprint calculations
+- **Algorithm Comparison**: Direct comparison of carbon efficiency across scheduling approaches
+- **Real Data Integration**: Uses actual node specifications and carbon intensity forecasts
+
+**Running Carbon Emissions Analysis:**
+
+```bash
+# Navigate to the analysis directory
+cd analysis
+
+# Run comprehensive carbon emissions comparison
+python carbon_emissions_comparison.py
+
+# Results are saved to figures/Carbon_Emissions_Analysis_Latest/
+```
+
+**Analysis Outputs:**
+- Carbon emissions summary tables comparing all algorithms
+- Per-pod carbon footprint breakdown showing placement decisions
+- Detailed analysis of why different algorithms produce different emissions
+- Integration with real node hardware specifications and carbon intensity forecasts
+
+**Important Notes:**
+- The vanilla algorithm previously used simplified carbon calculations, but has been updated to use the same methodology as heuristic and global-optimal algorithms
+- Results now reflect true algorithmic differences in placement decisions rather than calculation inconsistencies
+- The analysis validates that carbon differences are due to different node selection strategies, not methodological errors
+
 ### Visualizing Results
 
 The repository includes visualization tools for analyzing performance data and pod placement schedules.
@@ -412,7 +452,11 @@ flowchart TB
 
 The diagram shows how performance tracking (pink) creates CSV logs (blue) that visualization tools (green) can analyze to help improve the orchestrator.
 
-The architecture includes performance tracking and visualization tools to help analyze how the orchestrator works.
+The architecture includes:
+- **Performance tracking** for detailed algorithm metrics
+- **Carbon emissions analysis** for comparing algorithmic carbon efficiency
+- **Visualization tools** for analyzing placement decisions and performance characteristics
+- **Multi-algorithm support** enabling comparison between heuristic, global-optimal, and vanilla approaches
 
 ## Contributing
 
