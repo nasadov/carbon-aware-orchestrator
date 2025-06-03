@@ -357,7 +357,7 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                 if best_node and best_slot:
                     logging.info(f"    PLACEMENT_SUCCESS for {ms.name}:")
                     logging.info(f"       Selected: node={best_node.id}, timeslot={best_slot.id}")
-                    logging.info(f"       Emissions: {minimal_emissions:.3f}kgCO2e")
+                    logging.info(f"       Emissions: {minimal_emissions/1000.0:.6f}kgCO2e ({minimal_emissions:.2f}gCO2e)")
                     logging.info(f"       Resources used: CPU={pod.cpuRequest:.3f}/{best_node.totalCpu:.2f}, RAM={pod.ramRequest:.0f}/{best_node.totalRam:.0f}MB")
                 else:
                     logging.warning(f"    PLACEMENT_FAILED for {ms.name}:")
@@ -416,12 +416,12 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     end_time = workload_start_time + datetime.timedelta(hours=pod.duration)
                     
                     placement = self._build_success_placement(ms.name, best_node, best_slot, minimal_emissions, flavours)
-                    total_emissions += minimal_emissions
+                    total_emissions += minimal_emissions / 1000.0  # Convert from g CO₂e to kg CO₂e
                     placements_success += 1
                     
                     logging.info(f"    Final placement: {best_node.id} at {workload_start_time.strftime('%Y-%m-%d %H:%M')}")
                     logging.info(f"       Duration: {pod.duration}h, Finishes: {end_time.strftime('%Y-%m-%d %H:%M')}")
-                    logging.info(f"       Emissions: {minimal_emissions:.2f}kgCO2e, Resources: CPU={pod.cpuRequest:.2f}/{best_node.totalCpu:.2f}, " +
+                    logging.info(f"       Emissions: {minimal_emissions/1000.0:.6f}kgCO2e ({minimal_emissions:.2f}gCO2e), Resources: CPU={pod.cpuRequest:.2f}/{best_node.totalCpu:.2f}, " +
                                 f"RAM={pod.ramRequest:.0f}/{best_node.totalRam:.0f}MB")
                 else:
                     placement = self._build_fallback_placement(ms.name, "NONE_FOUND")
@@ -437,7 +437,7 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             logging.info(f"  ▶ Successfully placed: {placements_success}")
             logging.info(f"  ▶ Failed to place: {placements_failed}")
             logging.info(f"  ▶ Skipped (non-TO_DEPLOY): {placements_skipped}") 
-            logging.info(f"  ▶ Total carbon footprint: {total_emissions:.2f}kgCO2e")
+            logging.info(f"  ▶ Total carbon footprint: {total_emissions:.6f}kgCO2e ({total_emissions*1000:.2f}gCO2e)")
             logging.info(f"  ▶ Total execution time: {(time.time() - start_time):.3f}s")
             logging.info("=" * 80)
 

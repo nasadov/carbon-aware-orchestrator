@@ -51,8 +51,8 @@ def analyze_carbon_emissions(df, algorithm_name, placement_csv_path=None):
         logging.warning(f"No data available for {algorithm_name}")
         return {}
     
-    # Calculate total emissions across all runs
-    total_emissions = df['total_emissions_kg'].sum()
+    # Calculate total emissions across all runs (convert from g to kg)
+    total_emissions = df['total_emissions_kg'].sum() / 1000.0  # Convert from g to kg
     
     # Get actual final pod count from placement CSV if available
     actual_pods_placed = df['pods_placed'].sum()  # Default from performance data
@@ -194,10 +194,11 @@ def analyze_vanilla_carbon_emissions(placement_csv_path, algorithm_name="Vanilla
             # Calculate emissions using the same function as heuristic/global-optimal
             try:
                 pod_emissions = compute_emissions(node, start_slot, pod)
-                total_emissions += pod_emissions
+                pod_emissions_kg = pod_emissions / 1000.0  # Convert from g to kg
+                total_emissions += pod_emissions_kg
                 valid_placements += 1
                 
-                logging.debug(f"Pod {pod_id} on {node_id} at slot {start_slot}: {pod_emissions:.6f} kg CO2")
+                logging.debug(f"Pod {pod_id} on {node_id} at slot {start_slot}: {pod_emissions_kg:.6f} kg CO2")
                 
             except Exception as e:
                 logging.error(f"Error calculating emissions for pod {pod_id}: {e}")
@@ -362,34 +363,34 @@ def create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats
     # 1. Total Emissions Comparison
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
     
-    # Total emissions
-    total_emissions = [heuristic_stats['total_emissions_kg'], 
-                      global_optimal_stats['total_emissions_kg'],
-                      vanilla_stats['total_emissions_kg']]
-    bars1 = ax1.bar(algorithms, total_emissions, color=colors)
+    # Total emissions - convert kg to g for display
+    total_emissions_g = [heuristic_stats['total_emissions_kg'] * 1000.0, 
+                        global_optimal_stats['total_emissions_kg'] * 1000.0,
+                        vanilla_stats['total_emissions_kg'] * 1000.0]
+    bars1 = ax1.bar(algorithms, total_emissions_g, color=colors)
     ax1.set_title('Total Carbon Emissions', fontsize=14, fontweight='bold')
-    ax1.set_ylabel('Total Emissions (kg CO₂)', fontweight='bold')
+    ax1.set_ylabel('Total Emissions (g CO₂)', fontweight='bold')
     ax1.grid(True, alpha=0.3)
     
     # Add value labels on bars
-    for bar, value in zip(bars1, total_emissions):
+    for bar, value in zip(bars1, total_emissions_g):
         height = bar.get_height()
         ax1.text(bar.get_x() + bar.get_width()/2., height,
-                f'{value:.6f} kg', ha='center', va='bottom', fontweight='bold', fontsize=9)
+                f'{value:.2f} g', ha='center', va='bottom', fontweight='bold', fontsize=9)
     
-    # Emissions per pod
-    emissions_per_pod = [heuristic_stats['emissions_per_pod_kg'], 
-                        global_optimal_stats['emissions_per_pod_kg'],
-                        vanilla_stats['emissions_per_pod_kg']]
-    bars2 = ax2.bar(algorithms, emissions_per_pod, color=colors)
+    # Emissions per pod - convert kg to g for display
+    emissions_per_pod_g = [heuristic_stats['emissions_per_pod_kg'] * 1000.0, 
+                          global_optimal_stats['emissions_per_pod_kg'] * 1000.0,
+                          vanilla_stats['emissions_per_pod_kg'] * 1000.0]
+    bars2 = ax2.bar(algorithms, emissions_per_pod_g, color=colors)
     ax2.set_title('Carbon Emissions per Pod', fontsize=14, fontweight='bold')
-    ax2.set_ylabel('Emissions per Pod (kg CO₂)', fontweight='bold')
+    ax2.set_ylabel('Emissions per Pod (g CO₂)', fontweight='bold')
     ax2.grid(True, alpha=0.3)
     
-    for bar, value in zip(bars2, emissions_per_pod):
+    for bar, value in zip(bars2, emissions_per_pod_g):
         height = bar.get_height()
         ax2.text(bar.get_x() + bar.get_width()/2., height,
-                f'{value:.6f} kg', ha='center', va='bottom', fontweight='bold', fontsize=9)
+                f'{value:.2f} g', ha='center', va='bottom', fontweight='bold', fontsize=9)
     
     # Pods placed comparison
     total_pods = [heuristic_stats['total_pods_placed'], 
@@ -438,19 +439,19 @@ def create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats
     # 2. Efficiency Analysis (updated for three algorithms)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     
-    # Carbon efficiency (emissions per pod) - all three algorithms
-    efficiency_data = [heuristic_stats['emissions_per_pod_kg'], 
-                      global_optimal_stats['emissions_per_pod_kg'],
-                      vanilla_stats['emissions_per_pod_kg']]
-    bars1 = ax1.bar(algorithms, efficiency_data, color=colors)
+    # Carbon efficiency (emissions per pod) - all three algorithms - convert kg to g for display
+    efficiency_data_g = [heuristic_stats['emissions_per_pod_kg'] * 1000.0, 
+                        global_optimal_stats['emissions_per_pod_kg'] * 1000.0,
+                        vanilla_stats['emissions_per_pod_kg'] * 1000.0]
+    bars1 = ax1.bar(algorithms, efficiency_data_g, color=colors)
     ax1.set_title('Carbon Efficiency\n(Lower is Better)', fontsize=14, fontweight='bold')
-    ax1.set_ylabel('kg CO₂ per Pod Placed', fontweight='bold')
+    ax1.set_ylabel('g CO₂ per Pod Placed', fontweight='bold')
     ax1.grid(True, alpha=0.3)
     
-    for bar, value in zip(bars1, efficiency_data):
+    for bar, value in zip(bars1, efficiency_data_g):
         height = bar.get_height()
         ax1.text(bar.get_x() + bar.get_width()/2., height,
-                f'{value:.6f}', ha='center', va='bottom', fontweight='bold')
+                f'{value:.2f}', ha='center', va='bottom', fontweight='bold')
     
     # Calculate percentage improvements compared to vanilla (baseline)
     vanilla_efficiency = vanilla_stats['emissions_per_pod_kg']
@@ -490,6 +491,58 @@ def create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats
     plt.close()
     
     logging.info(f"Efficiency analysis plot saved to {efficiency_path}")
+
+def create_simple_comparison(heuristic_stats, global_optimal_stats, vanilla_stats, output_dir):
+    """Create a simple bar chart comparing emissions per pod across algorithms"""
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Set up the figure and axis
+    plt.figure(figsize=(10, 6))
+    
+    # Prepare data
+    algorithms = ['Heuristic', 'Global-Optimal', 'Vanilla']
+    emissions_per_pod_g = [
+        heuristic_stats['emissions_per_pod_kg'] * 1000.0,
+        global_optimal_stats['emissions_per_pod_kg'] * 1000.0,
+        vanilla_stats['emissions_per_pod_kg'] * 1000.0
+    ]
+    colors = ['#FF6B6B', '#4ECDC4', '#FFD93D']  # Red, Teal, Yellow
+    
+    # Create the bar chart
+    bars = plt.bar(algorithms, emissions_per_pod_g, color=colors)
+    
+    # Add labels and title
+    plt.title('Carbon Emissions per Pod Across Algorithms', fontsize=16, fontweight='bold')
+    plt.ylabel('Emissions per Pod (g CO₂)', fontsize=14, fontweight='bold')
+    plt.grid(axis='y', alpha=0.3)
+    
+    # Add value labels on bars
+    for bar, value in zip(bars, emissions_per_pod_g):
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height,
+                f'{value:.2f} g', ha='center', va='bottom', fontweight='bold')
+    
+    # Calculate percentage improvements compared to vanilla (baseline)
+    vanilla_efficiency = vanilla_stats['emissions_per_pod_kg']
+    if vanilla_efficiency > 0:
+        h_improvement = ((vanilla_efficiency - heuristic_stats['emissions_per_pod_kg']) / vanilla_efficiency) * 100
+        g_improvement = ((vanilla_efficiency - global_optimal_stats['emissions_per_pod_kg']) / vanilla_efficiency) * 100
+        
+        plt.figtext(0.5, 0.01, 
+                   f"Improvements vs Vanilla: Heuristic {h_improvement:.1f}%, Global-Optimal {g_improvement:.1f}%",
+                   ha='center', fontsize=12, fontweight='bold',
+                   bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7))
+    
+    plt.tight_layout()
+    
+    # Save the figure
+    simple_comparison_path = os.path.join(output_dir, 'simple_comparison.png')
+    plt.savefig(simple_comparison_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    logging.info(f"Simple comparison plot saved to {simple_comparison_path}")
 
 def generate_summary_report(heuristic_stats, global_optimal_stats, vanilla_stats, output_dir):
     """Generate a comprehensive summary report"""
@@ -636,7 +689,7 @@ def main():
     global_optimal_placement_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/global-optimal_perf_log_session_20250601_193357/global_optimal_placements_session.csv"
     
     # Vanilla placement path (uses fixed data)
-    vanilla_placement_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/vanilla_placement_session_fixed.csv"
+    vanilla_placement_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/vanilla_20250602/vanilla_placement_session_fixed.csv"
     
     output_dir = "/root/carbon-aware-orchestrator/figures/Carbon_Emissions_Analysis_Latest"
     
@@ -666,9 +719,17 @@ def main():
     logging.info("Creating three-algorithm comparison visualizations...")
     create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats, output_dir)
     
+    # Create simple comparison with vanilla included
+    logging.info("Creating simple comparison chart with all three algorithms...")
+    create_simple_comparison(heuristic_stats, global_optimal_stats, vanilla_stats, output_dir)
+    
     # Generate summary report
     logging.info("Generating comprehensive summary report...")
     generate_summary_report(heuristic_stats, global_optimal_stats, vanilla_stats, output_dir)
+    
+    # Create a simple comparison chart that includes vanilla algorithm
+    logging.info("Creating simple comparison chart (emissions per pod)...")
+    create_simple_comparison(heuristic_stats, global_optimal_stats, vanilla_stats, output_dir)
     
     logging.info("=" * 60)
     logging.info("Carbon Emissions Analysis Complete!")

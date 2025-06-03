@@ -245,7 +245,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 logging.info(f"📝 Writing CSV row for pod {pod_id}:")
                 logging.info(f"   - Placement: Node={node_id}, Start={start_slot}, Duration={duration}h")
                 logging.info(f"   - Resources: CPU={cpu_request:.2f}, RAM={ram_request:.0f}MB")
-                logging.info(f"   - Emissions: {total_carbon_emissions:.4f}kg CO2e")
+                logging.info(f"   - Emissions: {total_carbon_emissions:.6f}kgCO2e ({total_carbon_emissions*1000.0:.2f}gCO2e)")
                 
                 # Write to CSV
                 self._csv_writer.writerow(row)
@@ -413,7 +413,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             if self.global_solution:
                 sample = list(self.global_solution.items())[:3]  # Show first 3
                 for pod_id, (node, ts, emissions) in sample:
-                    logging.info(f"Sample placement: Pod {pod_id} -> Node {node}, Timeslot {ts}, Emissions {emissions:.2f}")
+                    logging.info(f"Sample placement: Pod {pod_id} -> Node {node}, Timeslot {ts}, Emissions {emissions/1000.0:.6f}kgCO2e ({emissions:.2f}gCO2e)")
         else:
             logging.error("Precomputation failed!")
 
@@ -562,7 +562,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             # Calculate emissions for this placement
                             try:
                                 emissions = compute_emissions(flv, ts.id, pod)
-                                logging.debug(f"     - Valid placement: pod={pod.id}, node={flv.id}, ts={ts.id}, emissions={emissions:.2f}kgCO2e")
+                                logging.debug(f"     - Valid placement: pod={pod.id}, node={flv.id}, ts={ts.id}, emissions={emissions/1000.0:.6f}kgCO2e ({emissions:.2f}gCO2e)")
                                 
                                 placement_key = (pod.id, flv.id, ts.id)
                                 # Store emissions for optimization and reporting
@@ -888,7 +888,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         logging.error(f"  - ERROR: Pod {pod_id_sol} not found in pending_pods_dict. Skipping CSV write for this placement.")
                         continue
 
-                    logging.info(f"  - Selected placement: Pod {pod_id_sol} -> Node {flv_id_sol}, Timeslot {ts_id_sol}, Emissions {emissions_sol:.2f}kg CO2e")
+                    logging.info(f"  - Selected placement: Pod {pod_id_sol} -> Node {flv_id_sol}, Timeslot {ts_id_sol}, Emissions {emissions_sol/1000.0:.6f}kgCO2e ({emissions_sol:.2f}gCO2e)")
                     
                     # Check for duplicate placement (prevent writing the same pod placement twice)
                     if pod_id_sol in self.global_solution:
@@ -906,7 +906,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             duration=current_pod.duration,
                             cpu_request=current_pod.cpuRequest,
                             ram_request=current_pod.ramRequest,
-                            total_carbon_emissions=emissions_sol,  # This is per-pod carbon for this placement
+                            total_carbon_emissions=emissions_sol / 1000.0,  # Convert grams to kg for CSV
                             solver_status=str(self.status),  # self.status is set after prob.solve()
                             solver_iterations=self.iterations,  # self.iterations is set after prob.solve()
                             solution_time_seconds=solution_time  # solution_time is calculated before this loop
@@ -920,7 +920,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     solution[pod_id_sol] = (flv_id_sol, ts_id_sol, emissions_sol)
                     total_emissions_objective += emissions_sol
 
-                logging.info(f"✅ Found optimal global solution with total objective emissions: {total_emissions_objective:.2f}")
+                logging.info(f"✅ Found optimal global solution with total objective emissions: {total_emissions_objective/1000.0:.6f}kgCO2e ({total_emissions_objective:.2f}gCO2e)")
                 logging.info(f"✅ Placed {len(solution)}/{len(self.pending_pods)} pods")
                 logging.info(f"📊 Wrote {placements_saved_to_csv} placements to CSV")
 
@@ -2001,7 +2001,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     sample = list(self.global_solution.items())[:5]  # Show first 5
                     logging.info("📊 Sample placements:")
                     for pod_id, (node_id, ts_id, emissions) in sample:
-                        logging.info(f"  - Pod {pod_id} -> Node {node_id}, Timeslot {ts_id}, Emissions {emissions:.2f}kg CO2e")
+                        logging.info(f"  - Pod {pod_id} -> Node {node_id}, Timeslot {ts_id}, Emissions {emissions/1000.0:.6f}kgCO2e ({emissions:.2f}gCO2e)")
                         
                 return True
             else:
