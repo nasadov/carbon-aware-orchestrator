@@ -65,7 +65,7 @@ The interface definition is in the `./pkg/idl/idl.proto` file. It models a snaps
     - `carbon_emissions_comparison.py`: Comprehensive analysis comparing carbon emissions across algorithms
     - `fix_start_slots.py`: Tool for fixing timeslot inconsistencies in placement data for vanilla algorithm
 - `figures/`: Generated visualization outputs organized by experiment
-    - `Carbon_Emissions_Analysis_Latest/`: Carbon emissions comparison results
+    - `Comparison/Carbon_Emissions_Analysis_TIMESTAMP/`: Carbon emissions comparison results with automatic timestamping
     - `Algorithm_Comparison_Latest/`: Multi-algorithm performance comparisons
     - `Heuristic_Latest/`, `Global_Optimal_Latest/`: Algorithm-specific visualizations
 - `docs/`: Documentation including research papers and guides
@@ -348,22 +348,35 @@ The repository includes comprehensive tools for analyzing and comparing carbon e
 # Navigate to the analysis directory
 cd analysis
 
-# Run comprehensive carbon emissions comparison
+# Basic usage - automatically finds latest experiments
 python carbon_emissions_comparison.py
 
-# Results are saved to figures/Carbon_Emissions_Analysis_Latest/
+# Specify custom experiment directories
+python carbon_emissions_comparison.py --heuristic-dir experiments/heuristic_perf_log_session_20250617_154028 --vanilla-dir experiments/vanilla_20250620_101010
+
+# Specify individual files for fine-grained control
+python carbon_emissions_comparison.py --heuristic-perf experiments/heuristic_session.csv --global-optimal-placement experiments/global_optimal_placements.csv
+
+# Custom output directory
+python carbon_emissions_comparison.py --output-dir custom_analysis_results
+
+# Results are saved to figures/Comparison/Carbon_Emissions_Analysis_TIMESTAMP/
 ```
 
-**Analysis Outputs:**
-- Carbon emissions summary tables comparing all algorithms
-- Per-pod carbon footprint breakdown showing placement decisions
-- Detailed analysis of why different algorithms produce different emissions
-- Integration with real node hardware specifications and carbon intensity forecasts
+**Command-Line Options:**
+- `--heuristic-dir`, `--global-optimal-dir`, `--vanilla-dir`: Specify experiment directories
+- `--heuristic-perf`, `--heuristic-placement`: Specify individual performance and placement files
+- `--output-dir`: Custom output directory for results
+- `--experiments-dir`: Base directory for experiment auto-discovery
 
-**Important Notes:**
-- The vanilla algorithm previously used simplified carbon calculations, but has been updated to use the same methodology as heuristic and global-optimal algorithms
-- Results now reflect true algorithmic differences in placement decisions rather than calculation inconsistencies
-- The analysis validates that carbon differences are due to different node selection strategies, not methodological errors
+**Analysis Outputs:**
+- **Carbon Emissions Comparison Chart**: Visual comparison of total emissions across algorithms
+- **Algorithm Efficiency Analysis**: Performance vs. carbon emissions trade-offs
+- **Simple Comparison Plot**: Clean emissions per pod comparison
+- **Comprehensive Summary Report**: Detailed text report with statistics and insights
+- **Per-Pod Carbon Footprint**: Individual pod placement decisions and their carbon impact
+
+
 
 ### Visualizing Results
 
@@ -389,6 +402,12 @@ python3 analysis/schedule_visualization.py /path/to/your/placements_session.csv
 
 # Example: Visualize the latest heuristic experiment
 python3 analysis/schedule_visualization.py pkg/carbon-aware/server-python/experiments/heuristic_perf_log_session_YYYYMMDD_HHMMSS/heuristic_placements_session.csv
+
+# Generate both individual and density plots
+python3 analysis/schedule_visualization.py /path/to/placements.csv --mode all
+
+# Custom output directory and run name
+python3 analysis/schedule_visualization.py /path/to/placements.csv --output-dir custom_figures --run-name my_experiment
 ```
 
 The visualization script creates:

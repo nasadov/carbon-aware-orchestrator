@@ -5,6 +5,7 @@
 \usepackage{amsmath}
 \usepackage{hyperref}
 \usepackage{graphicx}  % Add graphicx package for including figures
+\usepackage{subcaption}  % Add subcaption package for subfigures
 
 \title{Experimental Design for Carbon-Aware Orchestrator Publication}
 \author{}
@@ -211,5 +212,8 @@ However, the presence of outliers in execution time suggests that certain combin
 From a carbon efficiency perspective, we observe that the algorithm makes effective placement decisions that consider both operational and embodied carbon emissions. However, carbon efficiency decreases as system utilization increases, highlighting the fundamental trade-off between resource efficiency and carbon optimization.
 
 Future work will compare these results against a global optimal algorithm based on mixed-integer linear programming (MILP) to quantify how close our heuristic comes to optimal solutions across different scenarios.
+
+% Include the experimental results and algorithm comparison
+\input{results}
 
 \end{document}

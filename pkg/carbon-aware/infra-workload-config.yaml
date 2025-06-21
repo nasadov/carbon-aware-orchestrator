@@ -4,21 +4,27 @@ nodes:
   # Filename for the generated nodes
   filename: nodes.yaml
   
-  # Number of nodes to generate
-  num_nodes: 4
+  # Regions configuration with exact counts
+  regions:
+    region_counts:
+      DE: 1
+      FR: 1
+      ES: 1
+      IT-NO: 1
   
-  # Base name for nodes
-  base_node_name: kwok-node-0
+  # Method to assign regions to nodes
+  assignment_method: exact_counts
   
-  # Regions to assign to nodes (should match carbon intensity forecast regions)
-  regions: 
-    - DE
-    - FR
-    - ES
-    - IT-NO
+  # Hardware assignment configuration with exact counts
+  hardware_assignment:
+    hardware_counts:
+      IoT: 1
+      Smartphone: 2
+      Laptop: 1
+      Server: 0
   
-  # Method to assign regions to nodes ("cycle" or "random")
-  assignment_method: cycle
+  # Method to assign hardware types to nodes
+  hardware_assignment_method: exact_counts
   
   # Hardware subcategories configuration
   hardware_subcategories:
@@ -59,16 +65,6 @@ nodes:
         active: 200.0# Watts
         max: 400.0   # Watts
   
-  # Method to assign hardware types to nodes
-  # "cycle" - cycle through hardware types in order
-  # "random" - randomly assign hardware types
-  # "shifted_cycle" - cycle through but with an offset to avoid same region-hardware mapping
-  hardware_assignment_method: shifted_cycle
-  
-  # Offset to use when doing shifted_cycle assignment (default: 1)
-  # This determines how many positions to shift the hardware cycle for each new cycle
-  hardware_cycle_offset: 1
-  
   # Random seed for reproducibility
   random_seed: 42
 
@@ -76,11 +72,14 @@ workload:
   # Directory to output workload files
   output_dir: workloads
   
+  # Directory for vanilla scheduler workload files
+  vanilla_output_dir: workloads-vanilla
+  
   # Number of timeslots to generate
   num_timeslots: 12
   
   # Lambda parameter for Poisson distribution (average services per timeslot)
-  poisson_lambda: 4
+  poisson_lambda: 12
   
   # Minimum number of services per timeslot, regardless of Poisson distribution
   min_services: 1
@@ -88,7 +87,7 @@ workload:
   # Base name for microservices
   base_name: m
   
-  # Available duration labels for pods
+  # Available duration labels for pods (in hours)
   durations:
     - 1  # short duration (1 hour)
     - 3  # medium duration (3 hours) 
@@ -103,12 +102,13 @@ workload:
   
   # Hours to add to duration for flexible deadlines
   deadline_flexibility_hours:
-    - 1   # Low flexibility: duration + 1h
-    - 3   # Medium flexibility: duration + 3h
-    - 6   # High flexibility: duration + 6h
+    - 2   # Low flexibility: duration + 2h
+    - 6   # Medium flexibility: duration + 6h
+    - 24  # High flexibility: duration + 24h
   
   # Available CPU request options
   cpu_options:
+    - 2000m  # 2 full cores
     - 1000m  # 1 full core
     - 500m   # half core
     - 250m   # quarter core
@@ -116,10 +116,11 @@ workload:
   
   # Available memory request options
   mem_options:
+    - 2Gi
     - 1Gi
     - 512Mi
     - 256Mi
     - 128Mi
   
   # Random seed for reproducibility
-  random_seed: 42
+  random_seed: 42 

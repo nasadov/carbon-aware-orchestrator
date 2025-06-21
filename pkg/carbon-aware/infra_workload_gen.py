@@ -243,58 +243,160 @@ def generate_nodes_file(config: Dict[str, Any]):
         config: Dictionary with node generation configuration
     """
     filename = config.get("filename", "nodes.yaml")
-    num_nodes = config.get("num_nodes", 4)
     base_node_name = config.get("base_node_name", "kwok-node-0")
-    regions = config.get("regions", ["DE", "FR", "ES", "IT-NO"])
-    assignment_method = config.get("assignment_method", "cycle")
     random_seed = config.get("random_seed", 42)
+    
+    # Handle regions configuration (new and legacy formats)
+    regions_config = config.get("regions", {})
+    if isinstance(regions_config, dict):
+        # New format with region_counts or region_list
+        assignment_method = config.get("assignment_method", "cycle")
+        
+        if assignment_method == "exact_counts" and "region_counts" in regions_config:
+            # Use exact counts method
+            region_counts = regions_config["region_counts"]
+            regions_list = list(region_counts.keys())
+            print(f"Using exact_counts region assignment: {region_counts}")
+        else:
+            # Use legacy method with region_list
+            regions_list = regions_config.get("region_list", ["DE", "FR", "ES", "IT-NO"])
+            region_counts = None
+            print(f"Using {assignment_method} region assignment with regions: {regions_list}")
+    else:
+        # Legacy format: regions is directly a list
+        regions_list = regions_config
+        assignment_method = config.get("assignment_method", "cycle")
+        region_counts = None
+        print(f"Using legacy region format with {assignment_method} assignment")
+    
+    # Handle hardware assignment configuration (new and legacy formats)
+    hardware_assignment = config.get("hardware_assignment", {})
+    if isinstance(hardware_assignment, dict) and "method" in hardware_assignment:
+        # New format
+        hardware_assignment_method = hardware_assignment.get("method", "cycle")
+        hardware_cycle_offset = hardware_assignment.get("cycle_offset", 1)
+        
+        if hardware_assignment_method == "exact_counts" and "hardware_counts" in hardware_assignment:
+            # Use exact counts method
+            hardware_counts = hardware_assignment["hardware_counts"]
+            hardware_types = list(hardware_counts.keys())
+            print(f"Using exact_counts hardware assignment: {hardware_counts}")
+        else:
+            # Use legacy method
+            hardware_counts = None
+    else:
+        # Legacy format
+        hardware_assignment_method = config.get("hardware_assignment_method", "cycle")
+        hardware_cycle_offset = config.get("hardware_cycle_offset", 1)
+        hardware_counts = None
     
     # Get hardware subcategories configuration
     hardware_subcategories = config.get("hardware_subcategories", {
         "Server": {"cpu": "8", "memory": "16Gi", "embodied_carbon": 1230.656, "lifetime": 3.87}
     })
-    hardware_assignment_method = config.get("hardware_assignment_method", "cycle")
-    hardware_cycle_offset = config.get("hardware_cycle_offset", 1)
     
     # Convert hardware subcategories to a list for easier cycling/random selection
-    hardware_types = list(hardware_subcategories.keys())
+    if hardware_counts is None:
+        hardware_types = list(hardware_subcategories.keys())
+    
+    # Calculate total number of nodes based on assignment method
+    if assignment_method == "exact_counts" and region_counts:
+        if hardware_assignment_method == "exact_counts" and hardware_counts:
+            # Both exact counts - they must match
+            total_regions = sum(region_counts.values())
+            total_hardware = sum(hardware_counts.values())
+            if total_regions != total_hardware:
+                print(f"Warning: Region count total ({total_regions}) doesn't match hardware count total ({total_hardware})")
+                print("Using the larger of the two totals")
+                num_nodes = max(total_regions, total_hardware)
+            else:
+                num_nodes = total_regions
+        else:
+            # Only regions exact count
+            num_nodes = sum(region_counts.values())
+    elif hardware_assignment_method == "exact_counts" and hardware_counts:
+        # Only hardware exact count
+        num_nodes = sum(hardware_counts.values())
+    else:
+        # Legacy: use num_nodes from config
+        num_nodes = config.get("num_nodes", 4)
+    
+    print(f"Generating {num_nodes} total nodes")
     
     # Set random seed for reproducibility
     random.seed(random_seed)
     
+    # Generate node assignments
+    node_assignments = []
+    
+    if assignment_method == "exact_counts" and region_counts:
+        # Create exact assignments for regions
+        for region, count in region_counts.items():
+            for _ in range(count):
+                node_assignments.append({"region": region})
+    else:
+        # Legacy region assignment
+        for i in range(num_nodes):
+            if assignment_method == "cycle":
+                region = regions_list[i % len(regions_list)]
+            else:  # random
+                region = random.choice(regions_list)
+            node_assignments.append({"region": region})
+    
+    # Assign hardware to nodes
+    if hardware_assignment_method == "exact_counts" and hardware_counts:
+        # Create exact assignments for hardware
+        hardware_assignments = []
+        for hw_type, count in hardware_counts.items():
+            for _ in range(count):
+                hardware_assignments.append(hw_type)
+        
+        # If we have fewer hardware assignments than nodes, cycle through them
+        while len(hardware_assignments) < len(node_assignments):
+            for hw_type in hardware_types:
+                if len(hardware_assignments) >= len(node_assignments):
+                    break
+                hardware_assignments.append(hw_type)
+        
+        # Assign hardware to each node
+        for i, assignment in enumerate(node_assignments):
+            if i < len(hardware_assignments):
+                assignment["hardware"] = hardware_assignments[i]
+            else:
+                # Fallback to cycling if we somehow don't have enough
+                assignment["hardware"] = hardware_types[i % len(hardware_types)]
+    else:
+        # Legacy hardware assignment
+        for i, assignment in enumerate(node_assignments):
+            if hardware_assignment_method == "cycle":
+                subcategory = hardware_types[i % len(hardware_types)]
+            elif hardware_assignment_method == "shifted_cycle":
+                # Calculate the region cycle and region position within the cycle
+                region_cycle = i // len(regions_list)
+                region_position = i % len(regions_list)
+                
+                # Calculate the hardware position with an offset that increases with each cycle
+                hardware_position = (region_position + (region_cycle * hardware_cycle_offset)) % len(hardware_types)
+                subcategory = hardware_types[hardware_position]
+            else:  # random
+                subcategory = random.choice(hardware_types)
+            
+            assignment["hardware"] = subcategory
+    
     # Log assignment methods
     print(f"Using {assignment_method} region assignment with seed: {random_seed}")
-    print(f"Using {hardware_assignment_method} hardware subcategory assignment")
+    print(f"Using {hardware_assignment_method} hardware assignment")
     if hardware_assignment_method == "shifted_cycle":
         print(f"Using hardware cycle offset: {hardware_cycle_offset}")
     
     all_docs = []
-    for i in range(num_nodes):
+    for i, assignment in enumerate(node_assignments):
         # deep-copy to avoid changing the template in place
         import copy
         node_doc = copy.deepcopy(NODE_TEMPLATE)
 
-        node_name = f"{base_node_name}{i}"
-        
-        # Determine region based on assignment method
-        if assignment_method == "cycle":
-            region = regions[i % len(regions)]
-        else:  # random
-            region = random.choice(regions)
-        
-        # Determine hardware subcategory based on assignment method
-        if hardware_assignment_method == "cycle":
-            subcategory = hardware_types[i % len(hardware_types)]
-        elif hardware_assignment_method == "shifted_cycle":
-            # Calculate the region cycle and region position within the cycle
-            region_cycle = i // len(regions)
-            region_position = i % len(regions)
-            
-            # Calculate the hardware position with an offset that increases with each cycle
-            hardware_position = (region_position + (region_cycle * hardware_cycle_offset)) % len(hardware_types)
-            subcategory = hardware_types[hardware_position]
-        else:  # random
-            subcategory = random.choice(hardware_types)
+        region = assignment["region"]
+        subcategory = assignment["hardware"]
         
         # Get hardware specs for the selected subcategory
         hw_specs = hardware_subcategories[subcategory]
@@ -332,14 +434,14 @@ def generate_nodes_file(config: Dict[str, Any]):
         all_docs.append(node_doc)
 
     # Track and report distribution
-    region_counts = {}
-    hardware_counts = {}
+    region_counts_actual = {}
+    hardware_counts_actual = {}
     for doc in all_docs:
         region = doc["metadata"]["labels"]["topology.kubernetes.io/region"]
-        region_counts[region] = region_counts.get(region, 0) + 1
+        region_counts_actual[region] = region_counts_actual.get(region, 0) + 1
         
         subcategory = doc["metadata"]["labels"]["hardware.carbon/subcategory"]
-        hardware_counts[subcategory] = hardware_counts.get(subcategory, 0) + 1
+        hardware_counts_actual[subcategory] = hardware_counts_actual.get(subcategory, 0) + 1
     
     # write them as one multi-document yaml
     with open(filename, "w") as f:
@@ -348,8 +450,8 @@ def generate_nodes_file(config: Dict[str, Any]):
             f.write("---\n")
 
     print(f"Generated {filename} with {num_nodes} nodes")
-    print(f"Region distribution: {region_counts}")
-    print(f"Hardware subcategory distribution: {hardware_counts}")
+    print(f"Region distribution: {region_counts_actual}")
+    print(f"Hardware subcategory distribution: {hardware_counts_actual}")
 
 # ---------------------------------------------------------------------
 # 2. Generate Time Slot Files with Poisson Distribution

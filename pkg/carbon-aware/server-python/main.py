@@ -36,8 +36,8 @@ def main() -> None:
     )
     parser.add_argument(
         '--workloads-dir',
-        default='./workloads',
-        help='Directory containing timeslot_*.yaml workload files (required for global-optimal algorithm)'
+        default='../workloads',
+        help='Directory containing timeslot_*.yaml workload files. Default is "../workloads" relative to server-python.'
     )
     parser.add_argument(
         '--nodes-file',

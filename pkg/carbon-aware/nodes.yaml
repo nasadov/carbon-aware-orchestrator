@@ -1,14 +1,10 @@
-# Unit definitions:
-# hardware.carbon/embodied_emissions: whole grams of CO2e (g CO2e), not kg
-# hardware.carbon/lifetime_years: years
-# hardware.power/*_watts: watts (W)
 apiVersion: v1
 kind: Node
 metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '27471'
+    hardware.carbon/embodied_emissions: '27.471'
     hardware.carbon/lifetime_years: '5.2'
     hardware.power/idle_watts: '0.5'
     hardware.power/active_watts: '2.0'
@@ -54,7 +50,7 @@ metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '52729'
+    hardware.carbon/embodied_emissions: '52.729'
     hardware.carbon/lifetime_years: '3.03'
     hardware.power/idle_watts: '1.0'
     hardware.power/active_watts: '3.0'
@@ -100,7 +96,7 @@ metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '231855'
+    hardware.carbon/embodied_emissions: '231.855'
     hardware.carbon/lifetime_years: '4.13'
     hardware.power/idle_watts: '10.0'
     hardware.power/active_watts: '40.0'
@@ -146,7 +142,7 @@ metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '52729'
+    hardware.carbon/embodied_emissions: '52.729'
     hardware.carbon/lifetime_years: '3.03'
     hardware.power/idle_watts: '1.0'
     hardware.power/active_watts: '3.0'
@@ -185,3 +181,4 @@ status:
     osImage: ''
     systemUUID: ''
   phase: Running
+---

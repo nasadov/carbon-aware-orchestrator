@@ -10,6 +10,7 @@ import yaml
 import re
 import logging
 from collections import defaultdict  # Add defaultdict
+from matplotlib.patches import Patch
 
 CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "pkg", "carbon-aware", "infra-workload-config.yaml")
 
@@ -249,135 +250,18 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     are proportionally to their CPU capacities.
     """
     DEFAULT_TIMESLOTS = 24
-
+    
     logging.info(f"Plotting individual pods. Infra config provided: {bool(total_timeslots_from_config)}")
     logging.info(f"Value of 'total_timeslots_from_config': {total_timeslots_from_config} (type: {type(total_timeslots_from_config)})")
     logging.info(f"Node CPU capacities provided: {bool(node_cpu_capacities)}")
     
     # Debug: Check if we have CPU data
-    if df is not None and not df.empty and 'cpuRequest' in df.columns:
-        cpu_values = df['cpuRequest'].unique()
-        logging.info(f"Found CPU request values in data: {sorted(cpu_values)}")
-    elif df is not None and not df.empty and 'cpu_request' in df.columns:
-        cpu_values = df['cpu_request'].unique()
-        logging.info(f"Found cpu_request values in data: {sorted(cpu_values)}")
-    else:
-        logging.warning("No CPU request data found in DataFrame")
-
-    # Data type conversion should happen early if df is not None
-    if df is not None and not df.empty:
-        try:
-            if 'start_slot' in df.columns:
-                df['start_slot'] = pd.to_numeric(df['start_slot'], errors='raise').astype(int)
-            if 'duration' in df.columns:
-                df['duration'] = pd.to_numeric(df['duration'], errors='raise').astype(int)
-            if 'pod_id' in df.columns:
-                df['pod_id'] = df['pod_id'].astype(str)
-            if 'node_id' in df.columns:
-                df['node_id'] = df['node_id'].astype(str)
-            if 'cpuRequest' in df.columns:
-                df['cpuRequest'] = pd.to_numeric(df['cpuRequest'], errors='coerce').fillna(0.2)
-            elif 'cpu_request' in df.columns:
-                # Handle different column name convention
-                df['cpuRequest'] = pd.to_numeric(df['cpu_request'], errors='coerce').fillna(0.2)
-            else:
-                # Default CPU request if not provided
-                logging.info(f"cpuRequest column not found in DataFrame. Using default of 0.2.")
-                df['cpuRequest'] = 0.2
-        except Exception as e:
-            print(f"Warning: Error converting essential columns to required types for '{title_prefix}': {e}. Plot may be affected.")
-
-    all_nodes_from_config = all_node_names_from_config if all_node_names_from_config else []
-    logging.info(f"Nodes from config for plot_individual_pods: {all_nodes_from_config}")
-
-    if df is None or df.empty:
-        print(f"No data or empty DataFrame for individual pods: {title_prefix}.")
-        plot_nodes = all_nodes_from_config if all_nodes_from_config else []
-        plot_time_slots = total_timeslots_from_config if total_timeslots_from_config is not None else DEFAULT_TIMESLOTS
-        if not plot_nodes:
-            print(f"Cannot create empty plot '{title_prefix}': No node data from CSV or config.")
-            return
-            
-        # Create node_y_positions and node_heights for empty visualization
-        node_y_positions = {}
-        node_heights = {}
-        
-        # If we have CPU capacities, use them to determine node heights
-        if node_cpu_capacities:
-            total_cpu = sum(node_cpu_capacities.get(node, 1.0) for node in plot_nodes)
-            current_y = 0
-            for node in plot_nodes:
-                cpu_capacity = node_cpu_capacities.get(node, 1.0)
-                node_height = cpu_capacity / total_cpu * len(plot_nodes)
-                node_heights[node] = node_height
-                node_y_positions[node] = current_y + node_height / 2
-                current_y += node_height
-        else:
-            for i, node in enumerate(plot_nodes):
-                node_y_positions[node] = i
-                node_heights[node] = 1.0
-        
-        # Determine appropriate figure height
-        total_height = max(8, sum(node_heights.values()) * 1.2)
-        
-        fig, ax = plt.subplots(figsize=(max(12, plot_time_slots * 0.5), total_height))
-        ax.set_xlim(-0.5, plot_time_slots - 0.5)
-        
-        # Set ylim based on node positions
-        min_y = min(list(node_y_positions.values()) + [0]) - max(node_heights.values(), default=1) / 2 - 0.5
-        max_y = max(list(node_y_positions.values()) + [0]) + max(node_heights.values(), default=1) / 2 + 0.5
-        ax.set_ylim(min_y, max_y)
-        
-        # Draw empty node capacity indicators
-        for node in plot_nodes:
-            node_y_center = node_y_positions[node]
-            node_height = node_heights[node]
-            
-            for slot in range(plot_time_slots):
-                node_rect = plt.Rectangle(
-                    (slot - 0.5, node_y_center - node_height / 2),
-                    1.0,
-                    node_height,
-                    facecolor='lightgray',
-                    edgecolor='gray',
-                    alpha=0.3
-                )
-                ax.add_patch(node_rect)
-        
-        # Set ticks
-        ax.set_xticks(np.arange(plot_time_slots))
-        ax.set_xticklabels(np.arange(plot_time_slots))
-        
-        # Set custom y-ticks at node centers
-        y_ticks = [node_y_positions[node] for node in plot_nodes]
-        ax.set_yticks(y_ticks)
-        ax.set_yticklabels([f"{node} ({node_cpu_capacities.get(node, 1.0)}CPU)" if node_cpu_capacities else node for node in plot_nodes])
-        
-        # Create grid lines
-        ax.set_xticks(np.arange(plot_time_slots + 1) - 0.5, minor=True)
-        
-        node_boundaries = []
-        for node in plot_nodes:
-            y_center = node_y_positions[node]
-            height = node_heights[node]
-            node_boundaries.append(y_center - height/2)
-            node_boundaries.append(y_center + height/2)
-        
-        ax.set_yticks(sorted(set(node_boundaries)), minor=True)
-        ax.grid(which='minor', color='grey', linestyle='-', linewidth=0.5)
-        
-        plt.xlabel("Time Slot")
-        plt.ylabel("Node ID")
-        plt.title(f"{title_prefix} - Individual Pods (CPU Proportional, No Data)")
-        fig.subplots_adjust(bottom=0.2)
-        plt.savefig(output_path, bbox_inches='tight')
-        plt.close(fig)
-        print(f"Empty individual pod placement plot with CPU proportional layout saved to {output_path}")
-        return
-
-    plot_nodes_data_driven = []
-    if df is not None and not df.empty and 'node_id' in df.columns:
-        plot_nodes_data_driven = sorted(df['node_id'].unique())
+    if not df.empty:
+        cpu_requests = df['cpuRequest'].unique()
+        logging.info(f"Found CPU request values in data: {sorted(cpu_requests)}")
+    
+    # Get list of nodes to plot
+    plot_nodes_data_driven = sorted(df['node_id'].unique())
     
     plot_nodes = all_node_names_from_config if all_node_names_from_config else plot_nodes_data_driven
     
@@ -385,218 +269,44 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     node_y_positions = {}
     node_heights = {}
     
-    # Default CPU capacity if not provided
-    default_cpu = 1.0
-    
-    # If node_cpu_capacities is provided, calculate y-positions based on CPU
+    # Calculate node heights and positions based on CPU capacity
     if node_cpu_capacities:
-        # Get CPU capacities for all nodes
-        capacities = [node_cpu_capacities.get(node, default_cpu) for node in plot_nodes]
+        # Make node heights proportional to CPU capacity
+        # Use a base unit that makes the smallest node readable while maintaining proper proportions
+        min_cpu_capacity = min(node_cpu_capacities.get(node, 1.0) for node in plot_nodes)
+        base_height_unit = 0.4  # Height for the smallest node (in plot units)
         
-        # Apply a square root scaling to prevent extreme differences while preserving relative sizes better
-        # This makes small capacity nodes still visible while maintaining proportionality better than log
-        sqrt_capacities = [max(1.0, np.sqrt(cap)) for cap in capacities]
+        # Calculate heights proportionally to CPU capacity
+        for node in plot_nodes:
+            if node in node_cpu_capacities:
+                cpu = node_cpu_capacities[node]
+                # Scale relative to minimum CPU capacity to maintain proportions
+                node_heights[node] = (cpu / min_cpu_capacity) * base_height_unit
+                logging.info(f"Node {node}: {cpu} CPU cores -> height {node_heights[node]:.2f}")
+            else:
+                node_heights[node] = base_height_unit  # Default for unknown nodes
         
-        # Calculate total height based on sqrt-scaled capacities
-        total_sqrt_cpu = sum(sqrt_capacities)
-        
-        # Initialize the current y position at 0 (top of the plot)
+        # Calculate y-positions (centers of nodes, with spacing)
         current_y = 0
-        
-        # Minimum height for a node (ensures small nodes are still visible)
-        min_height = 1.0  # Increased from 0.5 for better visibility
-        
-        # Add spacing between nodes (each node has some margin)
-        node_spacing = 0.3  # Spacing between nodes
-        
-        # Assign positions and heights to each node based on their CPU capacity
-        for i, node in enumerate(plot_nodes):
-            cpu_capacity = node_cpu_capacities.get(node, default_cpu)
-            sqrt_capacity = sqrt_capacities[i]
-            
-            # Node height is proportional to its sqrt-scaled CPU capacity
-            # Multiply by len(plot_nodes) to maintain a reasonable total plot height
-            # Scale factor increased from 1.5 to 2.0 for better visibility
-            node_height = max(min_height, sqrt_capacity / total_sqrt_cpu * len(plot_nodes) * 2.0)
-            node_heights[node] = node_height
-            
-            # Store the position (center) of the node
-            node_y_positions[node] = current_y + node_height / 2
-            
-            # Move to the next position with added spacing
-            current_y += node_height + node_spacing
-            
-            logging.info(f"Node {node} with {cpu_capacity} CPU has scaled height {node_height} at position {node_y_positions[node]}")
+        node_spacing = 0.2  # Fixed spacing between nodes
+        for node in plot_nodes:
+            node_y_positions[node] = current_y + node_heights[node] / 2
+            current_y += node_heights[node] + node_spacing
+            logging.info(f"Node {node} positioned at y={node_y_positions[node]:.2f}")
     else:
-        # If no CPU capacities, use equal heights for all nodes with spacing
-        node_spacing = 0.3
-        for i, node in enumerate(plot_nodes):
-            node_y_positions[node] = i * (1 + node_spacing)
+        # Default equal heights if no CPU capacities provided
+        current_y = 0
+        for node in plot_nodes:
             node_heights[node] = 1.0
+            node_y_positions[node] = current_y + 0.5  # Center of the node
+            current_y += 1.3  # Node height (1.0) + spacing (0.3)
     
-    if total_timeslots_from_config is not None:
-        try:
-            plot_time_slots = int(total_timeslots_from_config)
-            logging.info(f"Source of plot_time_slots: infra config. Value: {plot_time_slots}")
-        except (ValueError, TypeError) as e:
-            logging.warning(f"Could not convert total_timeslots_from_config ('{total_timeslots_from_config}') to int: {e}. Falling back.")
-            plot_time_slots = DEFAULT_TIMESLOTS
-    elif df is not None and not df.empty and 'start_slot' in df.columns and 'duration' in df.columns:
-        max_data_slot = 0
-        try:
-            max_data_slot = (df['start_slot'] + df['duration']).max()
-            if pd.isna(max_data_slot): max_data_slot = 0
-        except TypeError:
-            max_data_slot = 0
-            print(f"Warning: Could not calculate max_data_slot due to non-numeric types for '{title_prefix}'.")
-        plot_time_slots = max(int(max_data_slot), DEFAULT_TIMESLOTS)
-    else:
-        plot_time_slots = DEFAULT_TIMESLOTS
-
-    if not plot_nodes:
-        print(f"Cannot create plot '{title_prefix}': No nodes found in data or config.")
-        return
-
-    if plot_time_slots <= 0:
-        print(f"Warning: plot_time_slots is {plot_time_slots} for '{title_prefix}'. Using 1 as minimum.")
-        plot_time_slots = 1
-
-    logging.info(f"Final plot_time_slots for plot_individual_pods: {plot_time_slots}")
-
-    text_matrix = pd.DataFrame(index=plot_nodes, columns=range(plot_time_slots), data="")
-    if not df.empty:
-        for _, row in df.iterrows():
-            if row['node_id'] not in plot_nodes:
-                continue
-            node_idx = plot_nodes.index(row['node_id'])
-            for t_slot in range(row['start_slot'], row['start_slot'] + row['duration']):
-                if 0 <= t_slot < plot_time_slots:
-                    current_text = text_matrix.iloc[node_idx, t_slot]
-                    pod_short_id = row['pod_id']
-                    if current_text == "":
-                        text_matrix.iloc[node_idx, t_slot] = pod_short_id
-                    else:
-                        if pod_short_id not in current_text.split(','):
-                            text_matrix.iloc[node_idx, t_slot] += "," + pod_short_id
-
-    # Determine plot height based on the number of nodes and their relative CPU capacities
-    # For CPU-proportional visualization, we want the overall height to be reasonable
-    # Increased scaling factor from 1.2 to 1.5 for better readability
-    total_height = max(10, sum(node_heights.values()) * 1.5 + (len(plot_nodes) - 1) * 0.3)
-    
-    # Calculate width based on time slots with more space per slot for better legibility
-    # Increase base width to accommodate legend on the right side
-    plot_width = max(16, plot_time_slots * 0.7)  # Increased from 14 and 0.6
-    
-    # FIXED ASPECT RATIO: Use consistent figure size for all algorithms
-    # This ensures vanilla, heuristic, and global-optimal plots have the same aspect ratio
-    standard_width = 20   # Standard width for all plots
-    standard_height = 12  # Standard height for all plots
-    
-    # Create figure with consistent size parameters across all algorithms
-    fig, ax = plt.subplots(figsize=(standard_width, standard_height))
-    
-    # Add a bit more margin on both sides of the time axis
-    ax.set_xlim(-0.7, plot_time_slots - 0.3)
-    
-    # Calculate tight ylim based on actual node boundaries
-    # Find the actual top and bottom edges of all nodes
-    if plot_nodes and node_y_positions and node_heights:
-        # Top edge of the topmost node (smallest y-coordinate)
-        top_edge = min(node_y_positions[node] - node_heights[node]/2 for node in plot_nodes)
-        # Bottom edge of the bottommost node (largest y-coordinate)  
-        bottom_edge = max(node_y_positions[node] + node_heights[node]/2 for node in plot_nodes)
-        
-        # Add minimal margins (0.1 instead of large values)
-        margin = 0.1
-        min_y = top_edge - margin    # Visual top (smallest y-value)
-        max_y = bottom_edge + margin # Visual bottom (largest y-value)
-    else:
-        # Fallback for empty data
-        min_y = -1.0
-        max_y = 1.0
-    
-    ax.set_ylim(max_y, min_y)  # Reverse y-axis to put node-0 at top
-    
-    logging.info(f"Plot ylim: {max_y}, {min_y} (reversed for top-to-bottom node order)")
-    logging.info(f"Plot size: {standard_width} x {standard_height} (standardized across all algorithms)")
-
-    unique_pods = df['pod_id'].unique() if df is not None and not df.empty else []
-    num_unique_pods = len(unique_pods)
-    
-    pod_to_color = {}
-    pod_to_hatch = {}  # Initialize hatching patterns mapping
-    if num_unique_pods > 0:
-        # Use a combination of colorful colormaps for better distinction
-        if num_unique_pods <= 10:
-            cmap_name = 'tab10'  # For 10 or fewer pods, use tab10 which has very distinct colors
-        elif num_unique_pods <= 20:
-            cmap_name = 'tab20'  # For up to 20 pods, use tab20
-        else:
-            # For more pods, use hsv which provides better color separation for many items
-            cmap_name = 'hsv'
-        
-        logging.info(f"Using colormap '{cmap_name}' for {num_unique_pods} pods")
-        actual_cmap = plt.colormaps[cmap_name]
-        
-        # Generate colors from colormap
-        if cmap_name == 'hsv':
-            # For HSV, generate evenly spaced points for better visual separation
-            colors = [actual_cmap(i/num_unique_pods) for i in range(num_unique_pods)]
-        else:
-            # For tab10/tab20, use resampled method
-            colors = actual_cmap.resampled(num_unique_pods if num_unique_pods > 1 else 2).colors[:num_unique_pods] if num_unique_pods > 0 else []
-        
-        # Create mapping from pod ID to color
-        pod_to_color = {pod: colors[i] for i, pod in enumerate(unique_pods)}
-        
-        # Add hatching patterns for similar colored pods
-        def color_distance(c1, c2):
-            """Calculate Euclidean distance between two RGB colors."""
-            return np.sqrt(sum((a - b) ** 2 for a, b in zip(c1[:3], c2[:3])))
-        
-        def assign_hatching_patterns(pod_colors):
-            """Assign hatching patterns to pods with similar colors."""
-            hatch_patterns = ['', '///', '\\\\\\', '|||', '---', '+++', 'xxx', 'ooo', '...', '***']
-            pod_to_hatch = {}
-            color_threshold = 0.2  # Threshold for color similarity
-            
-            used_patterns = []
-            for pod_id, color in pod_colors.items():
-                # Check if this color is similar to any previous colors
-                similar_found = False
-                for prev_pod, prev_color in pod_colors.items():
-                    if prev_pod != pod_id and prev_pod in pod_to_hatch:
-                        if color_distance(color, prev_color) < color_threshold:
-                            # Find a pattern not used by similar colors
-                            for pattern in hatch_patterns:
-                                if pattern not in [pod_to_hatch[p] for p in pod_colors.keys() 
-                                                 if p in pod_to_hatch and color_distance(pod_colors[p], color) < color_threshold]:
-                                    pod_to_hatch[pod_id] = pattern
-                                    similar_found = True
-                                    break
-                            if similar_found:
-                                break
-                
-                if not similar_found:
-                    pod_to_hatch[pod_id] = ''  # No hatching for distinct colors
-            
-            return pod_to_hatch
-        
-        pod_to_hatch = assign_hatching_patterns(pod_to_color)
-        
-        logging.info(f"Assigned {len(pod_to_color)} colors to pods")
-        logging.info(f"Assigned hatching patterns: {sum(1 for h in pod_to_hatch.values() if h)} pods have hatching")
-
-    # Initialize a dictionary to keep track of pod positioning within each node
-    # This will track all overlapping time slots for better space distribution
+    # Initialize node_pod_layout at the start
     node_pod_layout = defaultdict(list)  # node -> [(start, end, pod_id, cpu_request)]
     
     # First pass: collect all pods for each node to plan layout
     if not df.empty:
         for _, row in df.iterrows():
-            if row['node_id'] not in plot_nodes:
-                continue
             node = row['node_id']
             start_slot = int(row['start_slot'])
             duration = int(row['duration'])
@@ -609,6 +319,37 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     # Sort pods by start time for each node
     for node in node_pod_layout:
         node_pod_layout[node].sort(key=lambda x: x[0])  # Sort by start_slot
+    
+    # Force plot time slots to be exactly 24 hours (override any dynamic calculation)
+    plot_time_slots = 24
+    logging.info(f"Fixed plot_time_slots to 24 hours (was going to be dynamic)")
+    
+    # Create figure with consistent size parameters across all algorithms
+    standard_width = 20   # Standard width for all plots
+    standard_height = 12  # Standard height for all plots
+    
+    fig, ax = plt.subplots(figsize=(standard_width, standard_height))
+    
+    # Add a bit more margin on both sides of the time axis
+    ax.set_xlim(-0.7, plot_time_slots - 0.3)
+    
+    # Calculate tight ylim based on actual node boundaries
+    if plot_nodes and node_y_positions and node_heights:
+        # Top edge of the topmost node (smallest y-coordinate)
+        top_edge = min(node_y_positions[node] - node_heights[node]/2 for node in plot_nodes)
+        # Bottom edge of the bottommost node (largest y-coordinate)  
+        bottom_edge = max(node_y_positions[node] + node_heights[node]/2 for node in plot_nodes)
+        
+        # Add minimal margins
+        margin = 0.1
+        min_y = top_edge - margin    # Visual top (smallest y-value)
+        max_y = bottom_edge + margin # Visual bottom (largest y-value)
+    else:
+        # Fallback for empty data
+        min_y = -1.0
+        max_y = 1.0
+    
+    ax.set_ylim(max_y, min_y)  # Reverse y-axis to put node-0 at top
     
     # Draw node capacity indicators (light gray rectangles)
     for node in plot_nodes:
@@ -627,7 +368,63 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
                 zorder=1  # Put this behind pods
             )
             ax.add_patch(node_rect)
-
+    
+    # Create a color map for pods
+    unique_pods = sorted(list(set(pod_id for node_pods in node_pod_layout.values() for _, _, pod_id, _ in node_pods)))
+    num_pods = len(unique_pods)
+    
+    # Use HSV colormap for better color distribution
+    pod_to_color = {}
+    pod_to_hatch = {}
+    
+    # Create color map with strategic hatching patterns for adjacent similar colors
+    hsv_colors = plt.cm.hsv(np.linspace(0, 1, num_pods))
+    for i, pod_id in enumerate(unique_pods):
+        pod_to_color[pod_id] = hsv_colors[i]
+    
+    # Apply hatching patterns strategically to help distinguish adjacent similar colors
+    # Define different hatch patterns to cycle through
+    hatch_patterns = ['', '///', '\\\\\\', '|||', '---', '+++', 'xxx', '...']
+    
+    # Check each pod against its neighbors in the sorted sequence and apply hatching
+    # when colors are too similar to adjacent pods
+    for i, pod_id in enumerate(unique_pods):
+        current_color = hsv_colors[i]
+        needs_hatching = False
+        
+        # Check similarity with adjacent pods (previous and next in sequence)
+        adjacent_indices = []
+        if i > 0:  # Check previous pod
+            adjacent_indices.append(i - 1)
+        if i < len(unique_pods) - 1:  # Check next pod
+            adjacent_indices.append(i + 1)
+        
+        # Also check a few more neighbors to handle clusters of similar colors
+        for offset in [-2, -1, 1, 2]:
+            neighbor_idx = i + offset
+            if 0 <= neighbor_idx < len(unique_pods) and neighbor_idx != i:
+                adjacent_indices.append(neighbor_idx)
+        
+        # Remove duplicates and sort
+        adjacent_indices = sorted(set(adjacent_indices))
+        
+        # Check if current color is too similar to any adjacent colors
+        for adj_idx in adjacent_indices:
+            adj_color = hsv_colors[adj_idx]
+            # Calculate perceptual color difference in RGB space
+            color_diff = np.sqrt(np.sum((current_color[:3] - adj_color[:3])**2))
+            if color_diff < 0.2:  # Threshold for "similar" colors (increased from 0.15)
+                needs_hatching = True
+                break
+        
+        # Apply hatching pattern if needed
+        if needs_hatching:
+            # Use a pattern based on the pod's position to ensure variety
+            pattern_idx = i % len(hatch_patterns)
+            if pattern_idx == 0:  # Skip empty pattern for pods that need hatching
+                pattern_idx = 1
+            pod_to_hatch[pod_id] = hatch_patterns[pattern_idx]
+    
     # Second pass: draw pods with better space distribution
     if not df.empty:
         for _, row in df.iterrows():
@@ -637,249 +434,118 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
             node = row['node_id']
             node_y_center = node_y_positions[node]
             node_height = node_heights[node]
-            
             start_slot = int(row['start_slot'])
             duration = int(row['duration'])
             pod_id = row['pod_id']
             cpu_request = float(row['cpuRequest'])
             
-            # Calculate pod height as a proportion of the node's height based on CPU request
-            node_cpu_capacity = node_cpu_capacities.get(node, 1.0) if node_cpu_capacities else 1.0
+            # Calculate pod height proportional to its CPU request relative to node capacity
+            if node_cpu_capacities and node in node_cpu_capacities:
+                node_cpu_capacity = node_cpu_capacities[node]
+                # Pod height should be proportional to its CPU request relative to the node's capacity
+                # This ensures proper visual representation of resource utilization
+                pod_height_ratio = cpu_request / node_cpu_capacity
+                visible_pod_height = pod_height_ratio * node_height
+                logging.debug(f"Pod {pod_id} on {node}: {cpu_request}/{node_cpu_capacity} CPU = {pod_height_ratio:.2f} ratio -> height {visible_pod_height:.3f}")
+            else:
+                # Fallback if no capacity info available
+                visible_pod_height = cpu_request * 0.1  # Use simple scaling
             
-            # Pod height proportional to its CPU request relative to node capacity
-            pod_height_proportion = min(cpu_request / node_cpu_capacity, 1.0)
-            pod_height = node_height * pod_height_proportion
+            # Ensure minimum visibility for very small pods
+            min_visible_height = 0.02
+            visible_pod_height = max(visible_pod_height, min_visible_height)
             
-            # Calculate pod positioning based on actual time overlaps and CPU capacity
-            pods_in_node = node_pod_layout[node]
+            # Find overlapping pods at this time
+            overlapping_pods = []
+            for s, e, p, c in node_pod_layout[node]:
+                if not (e <= start_slot or s >= start_slot + duration):  # Check for overlap
+                    overlapping_pods.append((s, e, p, c))
             
-            # Find all pods that overlap in time with this pod at this specific time slot
-            overlapping_pods_at_time = []
-            for time_slot in range(start_slot, start_slot + duration):
-                for s, e, p, c in pods_in_node:
-                    if s <= time_slot < e and not any(pod[2] == p for pod in overlapping_pods_at_time):
-                        overlapping_pods_at_time.append((s, e, p, c))
+            # Sort overlapping pods by start time
+            overlapping_pods.sort(key=lambda x: x[0])
             
-            # Sort overlapping pods by start time, then by pod_id for consistent ordering
-            overlapping_pods_at_time.sort(key=lambda x: (x[0], x[2]))
+            # Find position in the stack of overlapping pods
+            try:
+                pod_index = next(i for i, (s, e, p, c) in enumerate(overlapping_pods) if p == pod_id)
+            except StopIteration:
+                pod_index = 0  # Fallback if pod not found in overlapping pods
             
-            # Find this pod's position among the overlapping pods
-            pod_index = next(i for i, (s, e, p, c) in enumerate(overlapping_pods_at_time) if p == pod_id)
-            total_overlapping = len(overlapping_pods_at_time)
-            
-            # Calculate the total CPU demand from overlapping pods
-            total_cpu_demand = sum(c for s, e, p, c in overlapping_pods_at_time)
-            node_cpu_capacity = node_cpu_capacities.get(node, 1.0) if node_cpu_capacities else 1.0
-            
-            # If total CPU demand exceeds capacity, we have a capacity violation
-            capacity_violation = total_cpu_demand > node_cpu_capacity
-            
+            # Calculate vertical position for this pod
+            total_overlapping = len(overlapping_pods)
             if total_overlapping > 1:
-                # Stack overlapping pods vertically to show capacity violations
-                available_height = node_height * 0.9  # Use 90% of node height
-                margin_top = node_height * 0.05
-                
-                # If there's a capacity violation, extend beyond the node bounds to show the problem
-                if capacity_violation:
-                    # Allow pods to extend beyond node capacity area to show violation
-                    stack_height = available_height * 1.3  # 30% extra space to show violations
-                    pod_slot_height = stack_height / total_overlapping
-                else:
-                    # Normal stacking within node bounds
-                    pod_slot_height = available_height / total_overlapping
-                    
-                pod_y_offset = margin_top + (pod_index * pod_slot_height) + (pod_slot_height - pod_height) / 2
-                
+                # Distribute overlapping pods within the full node height
+                available_height = node_height  # Use 100% of node height for pods
+                vertical_spacing = available_height / total_overlapping
+                pod_y_offset = (pod_index - (total_overlapping - 1) / 2) * vertical_spacing
             else:
-                # Single pod, center it in the node
-                pod_y_offset = (node_height - pod_height) / 2
+                pod_y_offset = 0
             
-            pod_y_bottom = node_y_center - node_height/2 + pod_y_offset
+            # Calculate final y position
+            pod_y_bottom = node_y_center + pod_y_offset - visible_pod_height / 2
             
-            # Center position for the label
-            text_y_center = pod_y_bottom + pod_height / 2
+            # Check for capacity violation
+            capacity_violation = False
+            if node_cpu_capacities:
+                overlapping_cpu_sum = sum(c for s, e, p, c in overlapping_pods if s <= start_slot < e)
+                capacity_violation = overlapping_cpu_sum > node_cpu_capacities[node]
             
-            # Enforce minimum pod height for better visibility
-            MIN_VISIBLE_HEIGHT = 0.1  # Minimum height for any pod to ensure visibility
-            visible_pod_height = max(pod_height, MIN_VISIBLE_HEIGHT)
-            
-            # If we've increased the height for visibility, adjust the y position
-            height_adjustment = (visible_pod_height - pod_height) / 2
-            adjusted_pod_y_bottom = pod_y_bottom - height_adjustment
-            
-            # Choose edge color and style based on capacity violation
-            if capacity_violation:
-                edge_color = 'red'
-                line_width = 1.2
-                edge_alpha = 1.0
-            else:
-                edge_color = 'black'
-                line_width = 0.8
-                edge_alpha = 0.8
-            
-            # Draw the pod rectangle with capacity violation indicators
+            # Draw the pod rectangle
             rect = plt.Rectangle(
-                (start_slot - 0.5, adjusted_pod_y_bottom),  # bottom left (x, y)
+                (start_slot - 0.5, pod_y_bottom),  # bottom left (x, y)
                 duration,  # width (number of time slots)
                 visible_pod_height,  # height with minimum visibility
                 facecolor=pod_to_color.get(pod_id, 'gray'),
-                edgecolor=edge_color,
-                alpha=0.8,  # Increased from 0.7 for better visibility
-                linewidth=line_width,  # Thicker red border for capacity violations
+                edgecolor='red' if capacity_violation else 'black',
+                alpha=0.8,
+                linewidth=1.2 if capacity_violation else 0.8,  # Thicker red border for capacity violations
                 hatch=pod_to_hatch.get(pod_id, ''),  # Add hatching for similar colored pods
                 zorder=2  # Above node backgrounds
             )
             ax.add_patch(rect)
-            
-            # Pod labels have been removed for cleaner visualization
-
-    # Set x-ticks for time slots - limit to a reasonable number if there are many
-    max_xticks = min(plot_time_slots, 30)  # Don't show more than 30 ticks for readability
-    if plot_time_slots > max_xticks:
-        # Show regular intervals
-        step = max(1, plot_time_slots // max_xticks)
-        xticks = np.arange(0, plot_time_slots, step)
-        ax.set_xticks(xticks)
-        ax.set_xticklabels(xticks)
-    else:
-        # Show all slots
-        ax.set_xticks(np.arange(plot_time_slots))
-        ax.set_xticklabels(np.arange(plot_time_slots))
     
-    # Make x-axis labels bigger and rotated if there are many time slots
-    if plot_time_slots > 15:
-        plt.xticks(fontsize=9, rotation=45)
-    else:
-        plt.xticks(fontsize=10)
-        
-    # Set custom y-ticks at the center of each node with enhanced formatting
-    y_ticks = [node_y_positions[node] for node in plot_nodes]
-    ax.set_yticks(y_ticks)
+    # Set x-ticks for time slots - always show all 24 hours (1-24)
+    x_ticks = range(24)
+    x_labels = range(1, 25)  # Labels from 1 to 24
+    plt.xticks(x_ticks, x_labels)
     
-    # Format y-tick labels to include node name and CPU capacity with better formatting
-    if node_cpu_capacities:
-        node_labels = []
-        for node in plot_nodes:
-            cpu = node_cpu_capacities.get(node, 1.0)
-            # Format CPU value to 1 decimal place if it's not an integer
-            if cpu == int(cpu):
-                cpu_str = f"{int(cpu)}CPU"
-            else:
-                cpu_str = f"{cpu:.1f}CPU"
-            node_labels.append(f"{node} ({cpu_str})")
-    else:
-        node_labels = plot_nodes
-        
-    ax.set_yticklabels(node_labels, fontsize=10, fontweight='bold')
+    # Set y-ticks to show node names
+    plt.yticks([node_y_positions[node] for node in plot_nodes], plot_nodes)
     
-    # Set vertical grid lines - thinner and lighter for better visibility of pods
-    ax.set_xticks(np.arange(plot_time_slots + 1) - 0.5, minor=True)
+    # Add grid for better readability
+    plt.grid(True, alpha=0.3, linestyle='--')
     
-    # Create horizontal grid lines at node boundaries
-    # We'll add horizontal lines at the top and bottom of each node
-    node_boundaries = []
-    for node in plot_nodes:
-        y_center = node_y_positions[node]
-        height = node_heights[node]
-        node_boundaries.append(y_center - height/2)  # bottom
-        node_boundaries.append(y_center + height/2)  # top
+    # Add descriptive title with pod and node counts
+    num_pods = len(df) if not df.empty else 0
+    num_nodes = len(plot_nodes)
+    plt.title(f"{title_prefix} Schedule: {num_pods} Pods placed across {num_nodes} Nodes")
+    plt.xlabel("Time Slot (Hours)")
+    plt.ylabel("Node")
     
-    # Sort and deduplicate boundaries
-    node_boundaries = sorted(set(node_boundaries))
-    ax.set_yticks(node_boundaries, minor=True)
-    
-    # Draw the grid with improved styling
-    ax.grid(which='minor', color='lightgrey', linestyle='-', linewidth=0.5, alpha=0.7)
-    ax.tick_params(which='major', bottom=True, left=True, length=4, width=1.0)
-
-    plt.xlabel("Time Slot", fontsize=11, fontweight='bold')
-    plt.ylabel("Node ID", fontsize=11, fontweight='bold')
-    
-    # Improved title with more informative details
-    title_text = f"{title_prefix} - Individual Pods (CPU Proportional)"
+    # Add legend for pods
     if not df.empty:
-        total_pods = len(unique_pods)
-        title_text += f"\n{total_pods} Pods across {len(plot_nodes)} Nodes"
-    plt.title(title_text, fontsize=14, fontweight='bold', pad=10)
+        legend_elements = []
+        for pod_id in sorted(pod_to_color.keys()):
+            color = pod_to_color[pod_id]
+            hatch = pod_to_hatch.get(pod_id, '')  # Use .get() to safely access hatch
+            legend_elements.append(Patch(facecolor=color, 
+                                      label=pod_id,
+                                      hatch=hatch,
+                                      alpha=0.8))
+        
+        # Place legend outside the plot on the right
+        plt.legend(handles=legend_elements,
+                  title="Pods",
+                  bbox_to_anchor=(1.05, 1),
+                  loc='upper left',
+                  borderaxespad=0.,
+                  ncol=max(1, len(legend_elements) // 30))  # Split into columns if many pods
     
-    patches = []
-    patch_labels = []
-    
-    # Add visual explanation elements for the legend
-    node_capacity_legend = plt.Rectangle((0, 0), 1, 1, facecolor='lightgray', edgecolor='gray', alpha=0.3)
-    patches.append(node_capacity_legend)
-    patch_labels.append("Node capacity area")
-    
-    # Add capacity violation indicator to legend
-    violation_legend = plt.Rectangle((0, 0), 1, 1, facecolor='lightblue', edgecolor='red', linewidth=1.2, alpha=0.8)
-    patches.append(violation_legend)
-    patch_labels.append("Capacity violation (red border)")
-    
-    if node_cpu_capacities:
-        # Create a rectangle example showing CPU usage
-        cpu_legend = plt.Rectangle((0, 0), 1, 1, facecolor='lightblue', edgecolor='black', alpha=0.8)
-        patches.append(cpu_legend)
-        patch_labels.append("Pod height ∝ CPU request")
-    
-    # Sort pods for consistent legend order
-    sorted_legend_pods = sorted(list(unique_pods))
-    
-    # Show all pods in legend - remove artificial limit for better visibility
-    legend_pods = sorted_legend_pods  # Show all pods
-    note_text = None  # No truncation message needed
-    
-    # Add pods to legend
-    for pod_id_leg in legend_pods:
-        if pod_id_leg in pod_to_color:
-            patches.append(plt.Rectangle((0,0),1,1, 
-                                       facecolor=pod_to_color[pod_id_leg], 
-                                       edgecolor='black', 
-                                       alpha=0.8,
-                                       hatch=pod_to_hatch.get(pod_id_leg, '')))  # Include hatching in legend
-            # Show only short ID for cleaner legend (no double labeling)
-            short_id = shorten_pod_label(pod_id_leg)
-            patch_labels.append(short_id)
-    
-    # Add the "more pods" note if necessary
-    if note_text:
-        patches.append(plt.Rectangle((0,0),1,1, fill=False, edgecolor='none'))
-        patch_labels.append(note_text)
-    
-    if patches:
-        # Calculate optimal number of columns for legend - use more columns for horizontal layout
-        num_patches = len(patches)
-        if num_patches <= 10:
-            num_legend_cols = min(num_patches, 5)  # 1-5 columns for small numbers
-        elif num_patches <= 25:
-            num_legend_cols = 6  # 6 columns for medium numbers
-        elif num_patches <= 50:
-            num_legend_cols = 8  # 8 columns for larger numbers
-        else:
-            num_legend_cols = 10  # Maximum 10 columns for very large numbers
-            
-        # Position legend below the plot for better use of horizontal space
-        fig.legend(patches, patch_labels, 
-                  loc='upper center',
-                  bbox_to_anchor=(0.5, -0.02),  # Position below the plot
-                  ncol=num_legend_cols,
-                  title='Legend',
-                  fontsize=8,  # Slightly larger font for readability
-                  frameon=True, 
-                  fancybox=True,
-                  framealpha=0.9,
-                  title_fontsize=10,
-                  columnspacing=0.8,  # Increase spacing between columns for clarity
-                  handletextpad=0.3,  # Spacing between legend markers and text
-                  handlelength=1.2,   # Legend marker length
-                  markerscale=0.9)    # Legend marker size
-
-    # Use tight layout with padding for the legend below
+    # Adjust layout to prevent legend from being cut off
     plt.tight_layout()
-    if patches:
-        # Adjust the plot to make room for the legend below
-        plt.subplots_adjust(bottom=0.15)  # Leave space at the bottom for legend
-    plt.savefig(output_path, bbox_inches='tight')
-    plt.close(fig)
+    
+    # Save the plot
+    plt.savefig(output_path, bbox_inches='tight', dpi=300)
+    plt.close()
     print(f"Individual pod placement plot saved to {output_path}")
 
 def plot_density_heatmap(df, output_path, title_prefix="Pod Density", all_node_names_from_config=None, total_timeslots_from_config=None):
@@ -977,7 +643,7 @@ def plot_density_heatmap(df, output_path, title_prefix="Pod Density", all_node_n
 
     ax.set_xticks(np.arange(plot_time_slots))
     ax.set_yticks(np.arange(len(plot_nodes)))
-    ax.set_xticklabels(np.arange(plot_time_slots))
+    ax.set_xticklabels(np.arange(1, plot_time_slots + 1))  # Labels from 1 to plot_time_slots
     ax.set_yticklabels(plot_nodes)
     ax.set_xticks(np.arange(plot_time_slots + 1) - 0.5, minor=True)
     ax.set_yticks(np.arange(len(plot_nodes) + 1) - 0.5, minor=True)
@@ -986,7 +652,10 @@ def plot_density_heatmap(df, output_path, title_prefix="Pod Density", all_node_n
 
     plt.xlabel("Time Slot")
     plt.ylabel("Node ID")
-    plt.title(f"{title_prefix} - Density Heatmap")
+    # Add descriptive title with pod and node counts for density heatmap
+    num_pods = len(df_for_plotting) if not df_for_plotting.empty else 0
+    num_nodes = len(plot_nodes)
+    plt.title(f"{title_prefix} - Density Heatmap: {num_pods} Pods across {num_nodes} Nodes")
     plt.colorbar(heatmap, label="Number of Pods")
     plt.tight_layout()
     plt.savefig(output_path)
@@ -1105,13 +774,29 @@ def main():
     if args.name:
         plot_output_subdir_name = args.name.replace(" ", "_")
     elif len(args.input_csvs) == 1 and os.path.isfile(args.input_csvs[0]):
-        parent_dir_name = os.path.basename(os.path.dirname(args.input_csvs[0]))
-        if "placements" in parent_dir_name.lower():
-             plot_output_subdir_name = os.path.splitext(os.path.basename(args.input_csvs[0]))[0]
+        csv_filename = os.path.basename(args.input_csvs[0])
+        
+        # Detect algorithm type from CSV filename and create appropriate directory structure
+        if "global_optimal" in csv_filename.lower() or "global-optimal" in csv_filename.lower():
+            algorithm_base_dir = "Global-Optimal"
+            algorithm_subdir = f"Global-Optimal_{timestamp}"
+            plot_output_subdir_name = os.path.join(algorithm_base_dir, algorithm_subdir)
+        elif "heuristic" in csv_filename.lower():
+            algorithm_base_dir = "Heuristic"
+            algorithm_subdir = f"Heuristic_{timestamp}"
+            plot_output_subdir_name = os.path.join(algorithm_base_dir, algorithm_subdir)
+        elif "vanilla" in csv_filename.lower():
+            algorithm_base_dir = "Vanilla"
+            algorithm_subdir = f"Vanilla_{timestamp}"
+            plot_output_subdir_name = os.path.join(algorithm_base_dir, algorithm_subdir)
         else:
-            plot_output_subdir_name = parent_dir_name if parent_dir_name else "visualization_run"
+            # Fallback to original logic for unknown algorithm types
+            parent_dir_name = os.path.basename(os.path.dirname(args.input_csvs[0]))
+            if "placements" in parent_dir_name.lower():
+                plot_output_subdir_name = os.path.splitext(os.path.basename(args.input_csvs[0]))[0]
+            else:
+                plot_output_subdir_name = parent_dir_name if parent_dir_name else "visualization_run"
     else:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         plot_output_subdir_name = f"visualization_{timestamp}"
 
     final_plot_output_dir = os.path.join(args.output_dir_base, plot_output_subdir_name)

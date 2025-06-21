@@ -14,6 +14,9 @@ import logging
 import sys
 import yaml
 import json
+import argparse
+import glob
+import re
 from datetime import datetime
 
 # Add carbon-aware modules to path
@@ -35,8 +38,84 @@ logging.basicConfig(level=logging.INFO,
                   format='%(asctime)s - %(levelname)s - %(message)s',
                   datefmt='%Y-%m-%d %H:%M:%S')
 
+def find_latest_experiment(algorithm_name, experiments_dir="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments"):
+    """Find the latest experiment directory for a given algorithm"""
+    if algorithm_name.lower() == "heuristic":
+        pattern = "heuristic_perf_log_session_*"
+    elif algorithm_name.lower() == "global-optimal":
+        pattern = "global-optimal_perf_log_session_*"
+    elif algorithm_name.lower() == "vanilla":
+        pattern = "vanilla_*"
+    else:
+        logging.error(f"Unknown algorithm: {algorithm_name}")
+        return None
+    
+    # Find all matching directories
+    search_pattern = os.path.join(experiments_dir, pattern)
+    matching_dirs = glob.glob(search_pattern)
+    
+    if not matching_dirs:
+        logging.error(f"No experiment directories found for {algorithm_name} with pattern: {search_pattern}")
+        return None
+    
+    # Sort by directory name (which includes timestamp) and get the latest
+    latest_dir = max(matching_dirs, key=lambda x: os.path.basename(x))
+    logging.info(f"Found latest {algorithm_name} experiment: {os.path.basename(latest_dir)}")
+    
+    return latest_dir
+
+def get_experiment_files(algorithm_name, experiment_dir=None):
+    """Get the performance and placement file paths for an algorithm"""
+    if experiment_dir is None:
+        experiment_dir = find_latest_experiment(algorithm_name)
+        if experiment_dir is None:
+            return None, None
+    
+    if algorithm_name.lower() == "heuristic":
+        perf_file = os.path.join(experiment_dir, "heuristic_perf_session.csv")
+        placement_file = os.path.join(experiment_dir, "heuristic_placements_session.csv")
+    elif algorithm_name.lower() == "global-optimal":
+        perf_file = os.path.join(experiment_dir, "global-optimal_perf_session.csv")
+        placement_file = os.path.join(experiment_dir, "global_optimal_placements_session.csv")
+    elif algorithm_name.lower() == "vanilla":
+        perf_file = None  # Vanilla doesn't have performance data
+        # Look for vanilla placement file (try different naming patterns)
+        possible_names = [
+            "vanilla_placement_session_fixed.csv",
+            "vanilla_placement_session.csv", 
+            "vanilla_placements.csv"
+        ]
+        placement_file = None
+        for name in possible_names:
+            candidate = os.path.join(experiment_dir, name)
+            if os.path.exists(candidate):
+                placement_file = candidate
+                break
+        
+        if placement_file is None:
+            logging.error(f"No vanilla placement file found in {experiment_dir}")
+            return None, None
+    else:
+        logging.error(f"Unknown algorithm: {algorithm_name}")
+        return None, None
+    
+    # Check if files exist
+    if perf_file and not os.path.exists(perf_file):
+        logging.warning(f"Performance file not found: {perf_file}")
+        perf_file = None
+    
+    if placement_file and not os.path.exists(placement_file):
+        logging.warning(f"Placement file not found: {placement_file}")
+        placement_file = None
+    
+    return perf_file, placement_file
+
 def load_performance_data(csv_path):
     """Load performance data from CSV file"""
+    if csv_path is None:
+        logging.warning("No performance data file provided")
+        return None
+        
     try:
         df = pd.read_csv(csv_path)
         logging.info(f"Loaded {len(df)} rows from {csv_path}")
@@ -51,8 +130,8 @@ def analyze_carbon_emissions(df, algorithm_name, placement_csv_path=None):
         logging.warning(f"No data available for {algorithm_name}")
         return {}
     
-    # Calculate total emissions across all runs (convert from g to kg)
-    total_emissions = df['total_emissions_kg'].sum() / 1000.0  # Convert from g to kg
+    # Calculate total emissions across all runs (already in kg)
+    total_emissions = df['total_emissions_kg'].sum()  # Already in kg, no conversion needed
     
     # Get actual final pod count from placement CSV if available
     actual_pods_placed = df['pods_placed'].sum()  # Default from performance data
@@ -269,11 +348,15 @@ def load_nodes_from_yaml(nodes_file):
             node_id = metadata.get('name', 'unknown')
             
             # Extract region from node ID (assuming format like node-X-region-type)
-            region = 'de'  # default
+            region = 'DE'  # default (uppercase to match forecast keys)
             if '-' in node_id:
                 parts = node_id.split('-')
                 if len(parts) >= 3:
-                    region = parts[2]
+                    # Handle special case for IT-NO region
+                    if len(parts) >= 5 and parts[2] == 'it' and parts[3] == 'no':
+                        region = 'IT-NO'
+                    else:
+                        region = parts[2].upper()  # Convert to uppercase to match forecast keys
             
             # Parse CPU
             cpu_str = allocatable.get("cpu", "0")
@@ -678,50 +761,124 @@ def generate_summary_report(heuristic_stats, global_optimal_stats, vanilla_stats
     logging.info(f"Summary report saved to {report_path}")
 
 def main():
-    """Main analysis function"""
+    """Main analysis function with dynamic experiment discovery and command-line options"""
     
-    # File paths
-    heuristic_perf_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/heuristic_perf_log_session_20250601_191920/heuristic_perf_session.csv"
-    global_optimal_perf_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/global-optimal_perf_log_session_20250601_193357/global-optimal_perf_session.csv"
+    parser = argparse.ArgumentParser(description="Compare carbon emissions between scheduling algorithms")
+    parser.add_argument("--heuristic-dir", help="Specific heuristic experiment directory (default: auto-detect latest)")
+    parser.add_argument("--global-optimal-dir", help="Specific global-optimal experiment directory (default: auto-detect latest)")
+    parser.add_argument("--vanilla-dir", help="Specific vanilla experiment directory (default: auto-detect latest)")
+    parser.add_argument("--heuristic-perf", help="Specific heuristic performance CSV file")
+    parser.add_argument("--heuristic-placement", help="Specific heuristic placement CSV file")
+    parser.add_argument("--global-optimal-perf", help="Specific global-optimal performance CSV file")
+    parser.add_argument("--global-optimal-placement", help="Specific global-optimal placement CSV file")
+    parser.add_argument("--vanilla-placement", help="Specific vanilla placement CSV file")
+    parser.add_argument("--output-dir", help="Output directory for results (default: auto-generated)")
+    parser.add_argument("--experiments-dir", 
+                       default="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments",
+                       help="Base experiments directory")
     
-    # Placement CSV paths for accurate pod counts
-    heuristic_placement_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/heuristic_perf_log_session_20250601_191920/heuristic_placements_session.csv"
-    global_optimal_placement_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/global-optimal_perf_log_session_20250601_193357/global_optimal_placements_session.csv"
+    args = parser.parse_args()
     
-    # Vanilla placement path (uses fixed data)
-    vanilla_placement_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/vanilla_20250602/vanilla_placement_session_fixed.csv"
+    # Create timestamp for this analysis
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    output_dir = "/root/carbon-aware-orchestrator/figures/Carbon_Emissions_Analysis_Latest"
+    # Set output directory
+    if args.output_dir:
+        output_dir = args.output_dir
+    else:
+        output_dir = f"/root/carbon-aware-orchestrator/figures/Comparison/Carbon_Emissions_Analysis_{timestamp}"
+    os.makedirs(output_dir, exist_ok=True)
     
     logging.info("Starting Carbon Emissions Analysis (Three Algorithms)")
     logging.info("=" * 60)
     
-    # Load performance data for heuristic and global-optimal
-    heuristic_df = load_performance_data(heuristic_perf_path)
-    global_optimal_df = load_performance_data(global_optimal_perf_path)
+    # Get file paths for each algorithm
+    algorithms = ["heuristic", "global-optimal", "vanilla"]
+    file_paths = {}
     
-    if heuristic_df is None or global_optimal_df is None:
-        logging.error("Failed to load required performance data files")
+    for algorithm in algorithms:
+        if algorithm == "heuristic":
+            if args.heuristic_perf and args.heuristic_placement:
+                perf_path = args.heuristic_perf
+                placement_path = args.heuristic_placement
+                logging.info(f"Using specified heuristic files:")
+                logging.info(f"  Performance: {perf_path}")
+                logging.info(f"  Placement: {placement_path}")
+            else:
+                experiment_dir = args.heuristic_dir
+                perf_path, placement_path = get_experiment_files(algorithm, experiment_dir)
+                if perf_path is None or placement_path is None:
+                    logging.error(f"Failed to find {algorithm} experiment files")
+                    return
+        
+        elif algorithm == "global-optimal":
+            if args.global_optimal_perf and args.global_optimal_placement:
+                perf_path = args.global_optimal_perf
+                placement_path = args.global_optimal_placement
+                logging.info(f"Using specified global-optimal files:")
+                logging.info(f"  Performance: {perf_path}")
+                logging.info(f"  Placement: {placement_path}")
+            else:
+                experiment_dir = args.global_optimal_dir
+                perf_path, placement_path = get_experiment_files(algorithm, experiment_dir)
+                if perf_path is None or placement_path is None:
+                    logging.error(f"Failed to find {algorithm} experiment files")
+                    return
+        
+        elif algorithm == "vanilla":
+            if args.vanilla_placement:
+                perf_path = None
+                placement_path = args.vanilla_placement
+                logging.info(f"Using specified vanilla placement file: {placement_path}")
+            else:
+                experiment_dir = args.vanilla_dir
+                perf_path, placement_path = get_experiment_files(algorithm, experiment_dir)
+                if placement_path is None:
+                    logging.error(f"Failed to find {algorithm} experiment files")
+                    return
+        
+        file_paths[algorithm] = {
+            'perf': perf_path,
+            'placement': placement_path
+        }
+    
+    # Load and analyze data for each algorithm
+    logging.info("Loading experiment data...")
+    
+    # Load heuristic data
+    heuristic_df = load_performance_data(file_paths["heuristic"]["perf"])
+    if heuristic_df is None:
+        logging.error("Failed to load heuristic performance data")
+        return
+    
+    # Load global-optimal data
+    global_optimal_df = load_performance_data(file_paths["global-optimal"]["perf"])
+    if global_optimal_df is None:
+        logging.error("Failed to load global-optimal performance data")
         return
     
     # Analyze emissions with placement CSV data for accurate pod counts
-    heuristic_stats = analyze_carbon_emissions(heuristic_df, "Heuristic", heuristic_placement_path)
-    global_optimal_stats = analyze_carbon_emissions(global_optimal_df, "Global-Optimal", global_optimal_placement_path)
+    heuristic_stats = analyze_carbon_emissions(heuristic_df, "Heuristic", file_paths["heuristic"]["placement"])
+    global_optimal_stats = analyze_carbon_emissions(global_optimal_df, "Global-Optimal", file_paths["global-optimal"]["placement"])
     
     # Analyze vanilla emissions from placement data only
-    vanilla_stats = analyze_vanilla_carbon_emissions(vanilla_placement_path, "Vanilla")
+    vanilla_stats = analyze_vanilla_carbon_emissions(file_paths["vanilla"]["placement"], "Vanilla")
     
     if not vanilla_stats:
         logging.error("Failed to analyze vanilla placement data")
         return
     
+    # Log which experiments were used
+    logging.info("Experiment files used:")
+    for algorithm in algorithms:
+        logging.info(f"  {algorithm.title()}:")
+        if file_paths[algorithm]["perf"]:
+            logging.info(f"    Performance: {file_paths[algorithm]['perf']}")
+        logging.info(f"    Placement: {file_paths[algorithm]['placement']}")
+    
     # Create visualizations with all three algorithms
     logging.info("Creating three-algorithm comparison visualizations...")
     create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats, output_dir)
-    
-    # Create simple comparison with vanilla included
-    logging.info("Creating simple comparison chart with all three algorithms...")
-    create_simple_comparison(heuristic_stats, global_optimal_stats, vanilla_stats, output_dir)
     
     # Generate summary report
     logging.info("Generating comprehensive summary report...")
@@ -734,7 +891,7 @@ def main():
     logging.info("=" * 60)
     logging.info("Carbon Emissions Analysis Complete!")
     logging.info(f"Results saved to: {output_dir}")
-    logging.info("Comparison now includes Heuristic, Global-Optimal, and Vanilla algorithms")
+    logging.info("Comparison includes Heuristic, Global-Optimal, and Vanilla algorithms")
 
 if __name__ == "__main__":
     main()

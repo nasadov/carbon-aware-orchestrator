@@ -1,21 +1,77 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m017-duration-6h-deadline-7h
+  name: m026-duration-6h-deadline-9h
   namespace: default
   labels:
-    app: m017-duration-6h-deadline-7h
+    app: m026-duration-6h-deadline-9h
     duration: duration-6h
-    deadline: deadline-7h
+    deadline: deadline-9h
 spec:
   replicas: 1
   selector:
     matchLabels:
-      name: m017
+      name: m026
   template:
     metadata:
       labels:
-        name: m017
+        name: m026
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m027-duration-1h-deadline-2h
+  namespace: default
+  labels:
+    app: m027-duration-1h-deadline-2h
+    duration: duration-1h
+    deadline: deadline-2h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m027
+  template:
+    metadata:
+      labels:
+        name: m027
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m028-duration-3h-deadline-4h
+  namespace: default
+  labels:
+    app: m028-duration-3h-deadline-4h
+    duration: duration-3h
+    deadline: deadline-4h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m028
+  template:
+    metadata:
+      labels:
+        name: m028
     spec:
       schedulerName: fogatlas
       containers:
@@ -29,21 +85,21 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m018-duration-1h-deadline-4h
+  name: m029-duration-6h-deadline-12h
   namespace: default
   labels:
-    app: m018-duration-1h-deadline-4h
-    duration: duration-1h
-    deadline: deadline-4h
+    app: m029-duration-6h-deadline-12h
+    duration: duration-6h
+    deadline: deadline-12h
 spec:
   replicas: 1
   selector:
     matchLabels:
-      name: m018
+      name: m029
   template:
     metadata:
       labels:
-        name: m018
+        name: m029
     spec:
       schedulerName: fogatlas
       containers:
@@ -51,6 +107,90 @@ spec:
         image: fake-image
         resources:
           requests:
-            memory: 1Gi
+            memory: 128Mi
+            cpu: 100m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m030-duration-1h-deadline-4h
+  namespace: default
+  labels:
+    app: m030-duration-1h-deadline-4h
+    duration: duration-1h
+    deadline: deadline-4h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m030
+  template:
+    metadata:
+      labels:
+        name: m030
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 100m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m031-duration-3h-deadline-9h
+  namespace: default
+  labels:
+    app: m031-duration-3h-deadline-9h
+    duration: duration-3h
+    deadline: deadline-9h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m031
+  template:
+    metadata:
+      labels:
+        name: m031
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
             cpu: 500m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m032-duration-6h-deadline-12h
+  namespace: default
+  labels:
+    app: m032-duration-6h-deadline-12h
+    duration: duration-6h
+    deadline: deadline-12h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m032
+  template:
+    metadata:
+      labels:
+        name: m032
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 250m
 ---
