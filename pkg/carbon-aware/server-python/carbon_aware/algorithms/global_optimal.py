@@ -38,40 +38,63 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         # Configure logging for the algorithm
         logging.info("🔧 Initializing Global Optimal Algorithm")
         
+        # Load configuration
+        self.config = self._load_config()
+        use_lexicographic = self.config.get('optimization', {}).get('use_lexicographic', True)
+        logging.info(f"🔧 Configuration loaded: use_lexicographic={use_lexicographic}")
+        
         # Add experiment logger and tracking properties
         self.experiment_logger = None
         self.iterations = 0
         self.status = None
-        self.global_solution = {}  # Will store the global solution
-        self.pending_pods = []     # Pods waiting for placement
-        self.has_solved = False
-        self.last_solve_time = 0
-        self.solve_interval = 5  # Default: 5 seconds or 5 pods
-
-        # New attributes for pre-computed optimization
-        self.timeslot_data = {}    # Stores loaded timeslot YAML data
-        self.optimization_done = False  # Flag to indicate if pre-computation is done
-        self.timeslots_dir = None  # Directory containing timeslot YAML files
-        self.all_flavours = []     # All available node flavours
-        self.all_timeslots = []    # All available timeslots
-        self.resource_state = {    # Current resource state
-            "cpu": {},             # CPU availability per node and timeslot
-            "ram": {}              # RAM availability per node and timeslot
-        }
-
-        # CSV Logging attributes for session-wide logging
-        self._session_log_dir: Optional[str] = None
-        self._session_csv_path: Optional[str] = None  # Path to the session-wide CSV
-        self._csv_writer = None
-        self._csv_file_handle = None
+        self.global_solution = {}  # Dictionary: pod_id -> (flv_id, ts_id, emissions)
         
-        # Track processed pods to prevent duplicate processing and CSV writing
-        self._processed_pods = set()  # Set of pod IDs that have been successfully processed
-        self._is_solving = False  # Flag to prevent concurrent solver calls
-        self._solving_lock = threading.Lock()  # 🚨 CRITICAL: Proper thread-safe lock for solver protection
+        # State tracking for incremental vs precomputation
+        self.is_precomputation_mode = False  # Flag to distinguish precomputation from incremental calls
+        self.optimization_done = False       # Marks if comprehensive optimization is complete
+        self.has_solved = False              # Marks if any solution has been found
+        
+        # Solver state and resource tracking
+        self.pending_pods: List[CarbonAwarePod] = []
+        self._processed_pods = set()  # Track pods that have been processed to avoid duplicates
+        self.timeslot_data = {}
+        self.all_flavours = []
+        self.all_timeslots = []
+        self.resource_state = {"cpu": {}, "ram": {}}  # For precomputation mode
+        
+        # CSV logging setup
+        self._csv_file_handle = None
+        self._csv_writer = None
+        self._session_csv_path = None
+        
+        # Solver control and timing
+        self.solve_interval = 10  # Solve every N pods or every N seconds
+        self.last_solve_time = 0
+        self._solving_lock = threading.Lock()  # Thread-safe solving
         
         logging.info(f"✅ Global Optimal Algorithm instance created with CSV headers: {self.CSV_HEADERS}")
         logging.info(f"📋 This algorithm will track placements in a CSV file once set_base_log_dir is called")
+
+    def _load_config(self) -> Dict:
+        """Load configuration from the infra-workload-config.yaml file."""
+        config_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/infra-workload-config.yaml"
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                logging.info(f"✅ Configuration loaded from {config_path}")
+                return config or {}
+        except Exception as e:
+            logging.warning(f"⚠️ Failed to load configuration from {config_path}: {e}")
+            # Return default configuration
+            return {
+                'optimization': {
+                    'use_lexicographic': True,
+                    'solver': {
+                        'time_limit': 20,
+                        'gap_tolerance': 0.0
+                    }
+                }
+            }
 
     def _set_pod_earliest_timeslot(self, pod: CarbonAwarePod):
         """
@@ -389,6 +412,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             return
 
         try:
+            # Set precomputation mode flag - CSV should be written only during precomputation
+            self.is_precomputation_mode = True
+            logging.info(f"🔧 Entering precomputation mode - CSV will be written for all placements")
+            
             # Run the global optimization with our prepared data
             max_timeslots = max(ts.id for ts in self.all_timeslots) + 1
             self.solve_global_optimization(
@@ -399,8 +426,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 max_timeslots
             )
 
-            # Mark as done
+            # Mark as done and exit precomputation mode
             self.optimization_done = self.has_solved
+            self.is_precomputation_mode = False
+            logging.info(f"🔧 Exiting precomputation mode")
         finally:
             # 🚨 CRITICAL: Always release the lock
             self._solving_lock.release()
@@ -670,141 +699,15 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
 
             # Solve the problem
             logging.info(f"🔍 STEP 4: Solving global optimization problem")
-            logging.info(f"  - Starting CBC solver with constraint-enforcing settings:")
-            logging.info(f"    • Time limit: 20 seconds")
-            logging.info(f"    • Gap tolerance: 0% (STRICT constraint enforcement - no violations allowed)")
-            logging.info(f"    • Enhanced heuristics and preprocessing enabled")
-            logging.info(f"    • PRIORITY: Constraint satisfaction over solution speed")
+            logging.info(f"  - Setting up MILP solver with time limit of 20 seconds")
+            
             solver_start_time = time.time()
-
-            # Use CBC solver with detailed logging to a temporary file
-            import tempfile
-            import os
-            import sys
-            from contextlib import redirect_stdout, redirect_stderr
-            import io
-            
-            # Create temporary file for CBC log output
-            with tempfile.NamedTemporaryFile(mode='w+', suffix='.cbc_log', delete=False) as temp_log:
-                cbc_log_file = temp_log.name
-            
-            # Also capture stdout/stderr as backup
-            stdout_buffer = io.StringIO()
-            stderr_buffer = io.StringIO()
-            
-            try:
-                logging.info(f"  - CBC detailed logs will be captured to: {cbc_log_file}")
-                
-                # Try multiple approaches to capture CBC output
-                cbc_output_captured = False
-                
-                # Approach 1: Use PuLP's built-in logPath parameter (most reliable)
-                try:
-                    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                        solver = pulp.PULP_CBC_CMD(
-                            msg=True,
-                            timeLimit=20,                   # Time limit to prevent excessive computation
-                            logPath=cbc_log_file,          # Use PuLP's built-in log file parameter
-                            keepFiles=True,                 # Keep temporary files to help with debugging
-                            gapRel=0.0,                     # CRITICAL FIX: No gap tolerance - enforce strict feasibility
-                            options=['preprocess', 'on', 'heuristicsOnOff', 'on']  # Enhanced constraint checking
-                        )
-                        prob.solve(solver)
-                        cbc_output_captured = True
-                        logging.info("CBC solver completed with logPath approach")
-                        
-                except Exception as e:
-                    logging.warning(f"CBC logPath approach failed: {e}")
-                
-                # Approach 2: Fallback - try with explicit options for log verbosity
-                if not cbc_output_captured:
-                    try:
-                        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                            solver = pulp.PULP_CBC_CMD(
-                                msg=True, 
-                                timeLimit=20,                   # Consistent with primary approach
-                                gapRel=0.0,                     # CRITICAL FIX: No gap tolerance - enforce strict feasibility
-                                options=['log', '2', 'printingOptions', 'all', 'preprocess', 'on']  # Maximum verbosity + strict checking
-                            )
-                            prob.solve(solver)
-                            cbc_output_captured = True
-                            logging.info("CBC solver completed with verbose options approach")
-                    except Exception as e:
-                        logging.error(f"CBC verbose options approach failed: {e}")
-                
-                # Approach 3: Final fallback - basic solve with msg=True
-                if not cbc_output_captured:
-                    logging.warning("Using basic CBC solver without output capture")
-                    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                        prob.solve(pulp.PULP_CBC_CMD(
-                            msg=True, 
-                            timeLimit=20,
-                            gapRel=0.0                      # CRITICAL FIX: No gap tolerance - enforce strict feasibility
-                        ))
-                
-                # Process captured output from log file
-                if os.path.exists(cbc_log_file) and os.path.getsize(cbc_log_file) > 0:
-                    try:
-                        with open(cbc_log_file, 'r') as f:
-                            cbc_log_content = f.read().strip()
-                            
-                        if cbc_log_content:
-                            logging.info("=== DETAILED CBC SOLVER LOG FILE OUTPUT ===")
-                            for line in cbc_log_content.split('\n'):
-                                line = line.strip()
-                                if line:
-                                    logging.info(f"CBC: {line}")
-                            logging.info("=== END DETAILED CBC SOLVER LOG FILE OUTPUT ===")
-                            
-                    except Exception as e:
-                        logging.error(f"Failed to read CBC log file: {e}")
-                
-                # Process captured stdout/stderr
-                captured_stdout = stdout_buffer.getvalue().strip()
-                captured_stderr = stderr_buffer.getvalue().strip()
-                
-                if captured_stdout:
-                    logging.info("=== CBC SOLVER STDOUT CAPTURE ===")
-                    for line in captured_stdout.split('\n'):
-                        line = line.strip()
-                        if line:
-                            logging.info(f"CBC: {line}")
-                    logging.info("=== END CBC SOLVER STDOUT CAPTURE ===")
-                    
-                if captured_stderr:
-                    logging.info("=== CBC SOLVER STDERR CAPTURE ===")
-                    for line in captured_stderr.split('\n'):
-                        line = line.strip()
-                        if line:
-                            logging.warning(f"CBC: {line}")
-                    logging.info("=== END CBC SOLVER STDERR CAPTURE ===")
-                
-                # If no output was captured, note this
-                if (not os.path.exists(cbc_log_file) or os.path.getsize(cbc_log_file) == 0) and \
-                   not captured_stdout and not captured_stderr:
-                    logging.warning("No CBC solver detailed output was captured - this may indicate CBC is running silently or output is going elsewhere")
-                    
-            except Exception as e:
-                logging.error(f"Error in CBC solver output capture: {e}")
-                # Final fallback - ensure strict constraint satisfaction even in error case
-                prob.solve(pulp.PULP_CBC_CMD(
-                    msg=True, 
-                    timeLimit=60,
-                    gapRel=0.0                           # CRITICAL FIX: No gap tolerance - enforce strict feasibility
-                ))
-                
-            finally:
-                # Clean up temporary log file
-                try:
-                    if os.path.exists(cbc_log_file):
-                        os.unlink(cbc_log_file)
-                except Exception as e:
-                    logging.debug(f"Could not remove temporary CBC log file: {e}")
-
+            prob.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20))
             solution_time = time.time() - solver_start_time
+            
             self.status = pulp.LpStatus[prob.status]
             self.iterations = prob.solverModel.Iterations if hasattr(prob.solverModel, 'Iterations') else 0
-
+            
             logging.info(f"  - Global optimization completed in {solution_time:.3f}s")
             logging.info(f"  - Solver status: {self.status}")
             logging.info(f"  - Solver iterations: {self.iterations}")
@@ -824,7 +727,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 # CRITICAL FIX: Pre-validate solution before accepting it
                 logging.info(f"🔍 STEP 5a: Validating solution constraints BEFORE processing")
                 
-                # Extract decision variables first for validation
+                # Extract solution from decision variables
                 solution_dict = {}
                 for var_name, var in x.items():
                     if var.value() and var.value() > 0.5:  # Binary variable is active
@@ -861,23 +764,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
 
                 
                 # Extract only the SELECTED placements from the solution
-                # First, identify which placements were actually selected by the solver
-                selected_placements = {}  # pod_id -> (flv_id, ts_id, emissions)
-                
-                # Iterate through all decision variables to find selected ones
-                for placement_key, decision_var in x.items():
-                    if decision_var.value() is not None and decision_var.value() > 0.5:  # Binary variable is selected
-                        pod_id_sol, flv_id_sol, ts_id_sol = placement_key
-                        
-                        # Find the emissions for this specific placement
-                        pod_placements_list = placements.get(pod_id_sol, [])
-                        emissions_sol = next(
-                            (emissions for flv_id, ts_id, emissions in pod_placements_list 
-                             if flv_id == flv_id_sol and ts_id == ts_id_sol), 
-                            0.0  # Default to 0 if not found
-                        )
-                        
-                        selected_placements[pod_id_sol] = (flv_id_sol, ts_id_sol, emissions_sol)
+                selected_placements = solution_dict.copy()
                 
                 logging.info(f"  - Solver selected {len(selected_placements)} unique pod placements")
                 
@@ -897,25 +784,28 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             logging.debug(f"  - Pod {pod_id_sol} placement already exists in global solution, skipping CSV write")
                             continue
                     
-                    # Log this placement to CSV (only write each pod placement once)
-                    try:
-                        self._write_placement_to_csv(
-                            pod_id=current_pod.id,
-                            node_id=flv_id_sol,
-                            start_slot=ts_id_sol,
-                            duration=current_pod.duration,
-                            cpu_request=current_pod.cpuRequest,
-                            ram_request=current_pod.ramRequest,
-                            total_carbon_emissions=emissions_sol / 1000.0,  # Convert grams to kg for CSV
-                            solver_status=str(self.status),  # self.status is set after prob.solve()
-                            solver_iterations=self.iterations,  # self.iterations is set after prob.solve()
-                            solution_time_seconds=solution_time  # solution_time is calculated before this loop
-                        )
-                        placements_saved_to_csv += 1
-                        logging.debug(f"  - Wrote placement for pod {current_pod.id} to CSV")
-                    except Exception as e:
-                        logging.error(f"  - ERROR: Failed to write placement for pod {current_pod.id} to CSV: {e}")
-                        logging.error(traceback.format_exc())
+                    # Log this placement to CSV (only write during precomputation mode)
+                    if self.is_precomputation_mode:
+                        try:
+                            self._write_placement_to_csv(
+                                pod_id=current_pod.id,
+                                node_id=flv_id_sol,
+                                start_slot=ts_id_sol,
+                                duration=current_pod.duration,
+                                cpu_request=current_pod.cpuRequest,
+                                ram_request=current_pod.ramRequest,
+                                total_carbon_emissions=emissions_sol / 1000.0,  # Convert grams to kg for CSV
+                                solver_status=str(self.status),  # self.status is set after prob.solve()
+                                solver_iterations=self.iterations,  # self.iterations is set after prob.solve()
+                                solution_time_seconds=solution_time  # solution_time is calculated before this loop
+                            )
+                            placements_saved_to_csv += 1
+                            logging.debug(f"  - Wrote placement for pod {current_pod.id} to CSV (precomputation mode)")
+                        except Exception as e:
+                            logging.error(f"  - ERROR: Failed to write placement for pod {current_pod.id} to CSV: {e}")
+                            logging.error(traceback.format_exc())
+                    else:
+                        logging.debug(f"  - Skipping CSV write for pod {current_pod.id} (incremental mode)")
 
                     solution[pod_id_sol] = (flv_id_sol, ts_id_sol, emissions_sol)
                     total_emissions_objective += emissions_sol
@@ -1933,6 +1823,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 return False
             
             try:
+                # Set precomputation mode flag - CSV should be written only during precomputation
+                self.is_precomputation_mode = True
+                logging.info(f"🔧 Entering precomputation mode - CSV will be written for all placements")
+                
                 self.solve_global_optimization(
                     self.all_flavours,
                     self.all_timeslots,
@@ -1940,6 +1834,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     self.resource_state["ram"],
                     len(self.all_timeslots)
                 )
+                
+                # Exit precomputation mode
+                self.is_precomputation_mode = False
+                logging.info(f"🔧 Exiting precomputation mode")
             finally:
                 # 🚨 CRITICAL: Always release the lock
                 self._solving_lock.release()
@@ -2013,3 +1911,4 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             logging.error(f"❌ FAILED: Error during global optimization: {e}")
             logging.error(traceback.format_exc())
             return False
+

@@ -52,6 +52,8 @@ htmlcov/
 
 # Ignore paper-two directory
 docs/paper-two/
+# But track the MILP formulation document
+!docs/paper-two/milp.tex
 
 # Generated experiment results
 **/experiment_results/

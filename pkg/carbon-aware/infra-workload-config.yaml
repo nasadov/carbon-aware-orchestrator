@@ -1,5 +1,16 @@
 # Configuration for infrastructure and workload generation
 
+# Global optimization algorithm configuration
+optimization:
+  # Use lexicographic optimization: first maximize placements, then minimize emissions
+  # This ensures all feasible pods are placed while optimizing carbon footprint
+  use_lexicographic: true
+  
+  # Solver configuration
+  solver:
+    time_limit: 60  # seconds per phase for lexicographic, total for standard
+    gap_tolerance: 0.0  # No gap tolerance - enforce strict feasibility
+
 nodes:
   # Filename for the generated nodes
   filename: nodes.yaml
@@ -102,9 +113,9 @@ workload:
   
   # Hours to add to duration for flexible deadlines
   deadline_flexibility_hours:
-    - 2   # Low flexibility: duration + 2h
-    - 6   # Medium flexibility: duration + 6h
-    - 24  # High flexibility: duration + 24h
+    - 1   # Low flexibility: duration + 1h
+    - 3   # Medium flexibility: duration + 3h
+    - 6  # High flexibility: duration + 6h
   
   # Available CPU request options
   cpu_options:

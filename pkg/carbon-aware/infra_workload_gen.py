@@ -519,8 +519,6 @@ def generate_timeslot_files(config: Dict[str, Any]):
     print(f" - Custom scheduler (fogatlas): {output_dir}")
     print(f" - Default scheduler (vanilla): {vanilla_output_dir}")
 
-    # Use predefined names that match the test client for the first few pods
-    predefined_names = ["one", "two", "three", "four"]
     ms_counter = 0
     duration_counter = 0  # For cycling through durations if needed
 
@@ -532,7 +530,7 @@ def generate_timeslot_files(config: Dict[str, Any]):
     
     total_services = sum(service_counts)
     print(f"Will generate {total_services} total microservices across {num_timeslots} timeslots")
-    print(f"First {len(predefined_names)} pods will use names: {predefined_names}")
+    print(f"All pods will use normal naming pattern: {base_name}000, {base_name}001, etc.")
 
     for slot_id in range(num_timeslots):
         # Filenames for both custom and vanilla scheduler
@@ -554,11 +552,8 @@ def generate_timeslot_files(config: Dict[str, Any]):
             if "schedulerName" in vanilla_dep["spec"]["template"]["spec"]:
                 del vanilla_dep["spec"]["template"]["spec"]["schedulerName"]
 
-            # Generate the core microservice name - use predefined names for first few pods
-            if ms_counter < len(predefined_names):
-                ms_name = predefined_names[ms_counter]
-            else:
-                ms_name = f"{base_name}{ms_counter:03d}"  # e.g. "m004", "m005", etc.
+            # Generate the core microservice name using normal naming pattern
+            ms_name = f"{base_name}{ms_counter:03d}"  # e.g. "m000", "m001", etc.
             ms_counter += 1
 
             # Pick CPU/mem from our lists

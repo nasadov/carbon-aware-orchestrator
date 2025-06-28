@@ -1,21 +1,49 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m062-duration-6h-deadline-7h
+  name: m104-duration-6h-deadline-7h
   namespace: default
   labels:
-    app: m062-duration-6h-deadline-7h
+    app: m104-duration-6h-deadline-7h
     duration: duration-6h
     deadline: deadline-7h
 spec:
   replicas: 1
   selector:
     matchLabels:
-      name: m062
+      name: m104
   template:
     metadata:
       labels:
-        name: m062
+        name: m104
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 2000m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m105-duration-1h-deadline-2h
+  namespace: default
+  labels:
+    app: m105-duration-1h-deadline-2h
+    duration: duration-1h
+    deadline: deadline-2h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m105
+  template:
+    metadata:
+      labels:
+        name: m105
     spec:
       schedulerName: fogatlas
       containers:
@@ -29,133 +57,21 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: m063-duration-1h-deadline-7h
+  name: m106-duration-3h-deadline-9h
   namespace: default
   labels:
-    app: m063-duration-1h-deadline-7h
-    duration: duration-1h
-    deadline: deadline-7h
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      name: m063
-  template:
-    metadata:
-      labels:
-        name: m063
-    spec:
-      schedulerName: fogatlas
-      containers:
-      - name: fake-container
-        image: fake-image
-        resources:
-          requests:
-            memory: 256Mi
-            cpu: 500m
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: m064-duration-3h-deadline-9h
-  namespace: default
-  labels:
-    app: m064-duration-3h-deadline-9h
+    app: m106-duration-3h-deadline-9h
     duration: duration-3h
     deadline: deadline-9h
 spec:
   replicas: 1
   selector:
     matchLabels:
-      name: m064
+      name: m106
   template:
     metadata:
       labels:
-        name: m064
-    spec:
-      schedulerName: fogatlas
-      containers:
-      - name: fake-container
-        image: fake-image
-        resources:
-          requests:
-            memory: 512Mi
-            cpu: 100m
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: m065-duration-6h-deadline-7h
-  namespace: default
-  labels:
-    app: m065-duration-6h-deadline-7h
-    duration: duration-6h
-    deadline: deadline-7h
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      name: m065
-  template:
-    metadata:
-      labels:
-        name: m065
-    spec:
-      schedulerName: fogatlas
-      containers:
-      - name: fake-container
-        image: fake-image
-        resources:
-          requests:
-            memory: 128Mi
-            cpu: 500m
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: m066-duration-1h-deadline-2h
-  namespace: default
-  labels:
-    app: m066-duration-1h-deadline-2h
-    duration: duration-1h
-    deadline: deadline-2h
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      name: m066
-  template:
-    metadata:
-      labels:
-        name: m066
-    spec:
-      schedulerName: fogatlas
-      containers:
-      - name: fake-container
-        image: fake-image
-        resources:
-          requests:
-            memory: 128Mi
-            cpu: 100m
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: m067-duration-3h-deadline-9h
-  namespace: default
-  labels:
-    app: m067-duration-3h-deadline-9h
-    duration: duration-3h
-    deadline: deadline-9h
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      name: m067
-  template:
-    metadata:
-      labels:
-        name: m067
+        name: m106
     spec:
       schedulerName: fogatlas
       containers:
@@ -164,5 +80,201 @@ spec:
         resources:
           requests:
             memory: 1Gi
-            cpu: 1000m
+            cpu: 100m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m107-duration-6h-deadline-12h
+  namespace: default
+  labels:
+    app: m107-duration-6h-deadline-12h
+    duration: duration-6h
+    deadline: deadline-12h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m107
+  template:
+    metadata:
+      labels:
+        name: m107
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 2Gi
+            cpu: 100m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m108-duration-1h-deadline-7h
+  namespace: default
+  labels:
+    app: m108-duration-1h-deadline-7h
+    duration: duration-1h
+    deadline: deadline-7h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m108
+  template:
+    metadata:
+      labels:
+        name: m108
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 2000m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m109-duration-3h-deadline-9h
+  namespace: default
+  labels:
+    app: m109-duration-3h-deadline-9h
+    duration: duration-3h
+    deadline: deadline-9h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m109
+  template:
+    metadata:
+      labels:
+        name: m109
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 100m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m110-duration-6h-deadline-7h
+  namespace: default
+  labels:
+    app: m110-duration-6h-deadline-7h
+    duration: duration-6h
+    deadline: deadline-7h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m110
+  template:
+    metadata:
+      labels:
+        name: m110
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 500m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m111-duration-1h-deadline-4h
+  namespace: default
+  labels:
+    app: m111-duration-1h-deadline-4h
+    duration: duration-1h
+    deadline: deadline-4h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m111
+  template:
+    metadata:
+      labels:
+        name: m111
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m112-duration-3h-deadline-9h
+  namespace: default
+  labels:
+    app: m112-duration-3h-deadline-9h
+    duration: duration-3h
+    deadline: deadline-9h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m112
+  template:
+    metadata:
+      labels:
+        name: m112
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 250m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m113-duration-6h-deadline-9h
+  namespace: default
+  labels:
+    app: m113-duration-6h-deadline-9h
+    duration: duration-6h
+    deadline: deadline-9h
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: m113
+  template:
+    metadata:
+      labels:
+        name: m113
+    spec:
+      schedulerName: fogatlas
+      containers:
+      - name: fake-container
+        image: fake-image
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 500m
 ---

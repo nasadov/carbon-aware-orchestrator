@@ -18,21 +18,28 @@ We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Progr
 
 \begin{align}
 & i \in \mathcal{P} & \text{Set of pods} \\
-& j \in \mathcal{F} & \text{Set of flavours (nodes)} \\
-& t \in \mathcal{T} & \text{Set of timeslots} \\
+& j \in \mathcal{F} & \text{Set of nodes} \\
+& t \in \mathcal{T} & \text{Set of timeslots}
 \end{align}
 
 \subsection{Parameters}
 
 \begin{align}
-& d_i \in \mathbb{Z}^+ & \text{Duration of pod $i$ (in timeslots)} \\
+& D_i \in \mathbb{N}^+ & \text{Deadline timeslot for pod $i$} \\
+& s_{i} \in \mathbb{N}^+ & \text{Earliest timeslot for pod $i$} \\
+& d_i \in \mathbb{N}^+ & \text{Duration of pod $i$ (in timeslots)} \\
+& w_i \in \mathbb{N}^+ & \text{Temporal slack for pod $i$} \\
+& T_{max} \in \mathbb{N}^+ & \text{Maximum available timeslot index} \\
 & c_{i} \in \mathbb{R}^+ & \text{CPU request of pod $i$} \\
 & r_{i} \in \mathbb{R}^+ & \text{RAM request of pod $i$} \\
-& s_{i} \in \mathbb{Z}^+ & \text{Earliest timeslot for pod $i$} \\
 & C_{jt} \in \mathbb{R}^+ & \text{Available CPU of node $j$ in timeslot $t$} \\
 & R_{jt} \in \mathbb{R}^+ & \text{Available RAM of node $j$ in timeslot $t$} \\
-& e_{ijt} \in \mathbb{R}^+ & \text{Carbon emissions for running pod $i$ on node $j$ starting at timeslot $t$} \\
-& T_{max} \in \mathbb{Z}^+ & \text{Maximum available timeslot index} \\
+& p_{ij} \in \mathbb{R}^+ & \text{Power consumption of pod $i$ on node $j$} \\
+& \text{CI}_{j,t} \in \mathbb{R}^+ & \text{Carbon intensity of node $j$ in timeslot $t$} \\
+& \text{EC}_j \in \mathbb{R}^+ & \text{Embodied carbon of node $j$} \\
+& L_j \in \mathbb{R}^+ & \text{Expected lifetime of node $j$} \\
+& u_j \in \mathbb{R}^+ & \text{Utilization factor of node $j$} \\
+& e_{ijt} \in \mathbb{R}^+ & \text{Carbon emissions of pod $i$ on node $j$ at timeslot $t$}
 \end{align}
 
 The carbon emissions $e_{ijt}$ are calculated considering:
@@ -58,10 +65,16 @@ Let $\mathcal{V}_i \subset \mathcal{F} \times \mathcal{T}$ be the set of valid n
 \begin{align}
 \mathcal{V}_i = \{(j,t) \in \mathcal{F} \times \mathcal{T} \mid 
 & t \geq s_i \text{ and } \\
-& t + d_i \leq T_{max} \text{ and } \\
+& t + d_i \leq D_i \text{ and } \\
 & C_{j(t+k)} \geq c_i \text{ for all } k \in \{0,1,\ldots,d_i-1\} \text{ and } \\
 & R_{j(t+k)} \geq r_i \text{ for all } k \in \{0,1,\ldots,d_i-1\} \}
 \end{align}
+
+The deadline timeslot $D_i$ for pod $i$ is calculated as:
+\begin{align}
+D_i = s_i + d_i + w_i \leq T_{max}
+\end{align}
+where the deadline includes the pod's execution duration and temporal slack for scheduling flexibility.
 
 \subsection{Mathematical Model}
 
@@ -112,9 +125,9 @@ with $p_{ij}$ being the power consumption of pod $i$ on node $j$ and $\text{CI}_
 
 \item $emb_{ij}$ is the embodied carbon emissions attributed to pod $i$ on node $j$ for one timeslot:
 \begin{align}
-emb_{ij} = \frac{\text{EC}_j}{L_j \cdot \text{utilization factor}}
+emb_{ij} = \frac{\text{EC}_j}{L_j \cdot u_j}
 \end{align}
-with $\text{EC}_j$ being the total embodied carbon of node $j$, $L_j$ being the node's expected lifetime in hours, and the utilization factor representing the pod's resource usage as a fraction of the node's total capacity.
+with $\text{EC}_j$ being the total embodied carbon of node $j$, $L_j$ being the node's expected lifetime in hours, and $u_j$ representing the pod's resource usage as a fraction of the node's total capacity.
 \end{itemize}
 
 \subsection{Implementation Details}
@@ -130,9 +143,5 @@ In practice, the problem is solved using the PuLP library with the following app
 \item Solve the MILP problem using the CBC solver with a time limit
 \item Extract the solution from the decision variables
 \end{enumerate}
-
-\subsubsection{Earliest Timeslot Constraint}
-
-The earliest timeslot constraint ($t \geq s_i$) ensures that pods are only scheduled at or after their designated earliest timeslot. This constraint is derived from the pod's source file (timeslot\_X.yaml), where X indicates the earliest timeslot at which the pod can be scheduled. This approach prevents pods from being scheduled before they are available in the system, reflecting real-world operational requirements.
 
 \end{document}

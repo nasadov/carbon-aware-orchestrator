@@ -94,22 +94,60 @@ The Mixed Integer Linear Programming (MILP) optimizer attempts to find globally 
 1. **Mathematical Modeling**: Formulating the entire scheduling problem as a linear program
 2. **Global Optimization**: Finding the best solution across all pods and nodes simultaneously
 3. **Constraint Satisfaction**: Guaranteeing all resource and timing constraints are respected
-4. **Solver Integration**: Using CPLEX or Gurobi for optimization (if available)
+4. **Solver Integration**: Using CBC (Coin-OR), CPLEX, or Gurobi for optimization
 
-The MILP optimizer is available in `tests/milp_global_optimizer.py` and generates experiment results for comparison with heuristic approaches. Please note that this is an experimental feature and may require significant computational resources for larger problems.
+The MILP optimizer supports two optimization approaches:
+
+#### Lexicographic Optimization (Recommended)
+
+**New feature**: The global optimizer now uses **lexicographic optimization** by default, which solves the pod placement problem in two phases:
+
+1. **Phase 1**: Maximize the number of placed pods (ensuring feasibility first)
+2. **Phase 2**: Minimize carbon emissions while maintaining the optimal placement count
+
+This approach ensures that:
+- **All feasible pods are placed** (no pods are left unplaced due to solver optimization)
+- **Carbon footprint is minimized** among all optimal placement solutions
+- **Academic rigor** is maintained for research publications
+
+#### Standard Optimization
+
+The traditional single-phase optimization that directly minimizes carbon emissions with mandatory placement constraints (`== 1` for each pod).
+
+#### Configuration
+
+The optimization approach can be configured in `infra-workload-config.yaml`:
+
+```yaml
+# Global optimization algorithm configuration
+optimization:
+  # Use lexicographic optimization: first maximize placements, then minimize emissions
+  # This ensures all feasible pods are placed while optimizing carbon footprint
+  use_lexicographic: true
+  
+  # Solver configuration
+  solver:
+    time_limit: 20  # seconds per phase for lexicographic, total for standard
+    gap_tolerance: 0.0  # No gap tolerance - enforce strict feasibility
+```
 
 #### Running MILP Global Optimizer
 
 ```bash
-# Navigate to the tests directory
-cd tests
+# Run with lexicographic optimization (default)
+cd pkg/carbon-aware/server-python
+python main.py --algorithm global-optimal --workloads-dir ../workloads \
+    --nodes-file ../nodes.yaml --forecasts-file all_forecasts.json \
+    --experiment --experiment-dir experiments/lexicographic_test
 
-# Run MILP optimization with 4 nodes (example)
-python milp_global_optimizer.py
+# Or run standalone tests
+cd tests
+python test_lexicographic_optimization.py
 
 # Results are saved to experiments/ directory with timestamp
-# Example: experiments/milp_global_optimizer_4nodes_YYYYMMDD_HHMMSS/
 ```
+
+The MILP optimizer is also available in `tests/milp_global_optimizer.py` for standalone testing and generates experiment results for comparison with heuristic approaches. Please note that this is an experimental feature and may require significant computational resources for larger problems.
 
 ### Constraints Handling
 
