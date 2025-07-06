@@ -612,12 +612,6 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 placements[pod.id] = pod_placements
                 logging.info(f"     - Result: {valid_options} valid placements across {valid_timeslots} valid timeslots")
 
-                # Constraint: Each pod must be placed exactly once
-                if pod_placements:
-                    prob += pulp.lpSum([x[(pod.id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]) == 1
-                else:
-                    logging.warning(f"⚠️ No valid placements found for pod {pod.id}")
-
             # If no placements were found at all, exit early
             if not x:
                 logging.warning("🚫 No valid placements found for any pod! Exiting solver.")
@@ -625,13 +619,41 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
 
             logging.info(f"✅ Found {valid_placement_count} valid placement options for {len(self.pending_pods)} pods")
 
-            logging.info(f"🔍 STEP 3: Setting up objective function and constraints")
-            # Objective: Minimize total carbon emissions
-            logging.info(f"  - Setting objective: minimize total carbon emissions")
-            prob += pulp.lpSum([emissions * x[(pod_id, flv_id, ts_id)]
+            logging.info(f"🔍 STEP 3: Setting up multi-objective optimization (placement + emissions)")
+            
+            # Create slack variables for unplaced pods
+            logging.info(f"  - Creating slack variables for {len(placements)} pods (multi-objective)")
+            s = {}  # s[pod_id] = 1 if pod is NOT placed, 0 if placed
+            for pod_id in placements:
+                s[pod_id] = pulp.LpVariable(f"unplaced_{pod_id}", cat=pulp.LpBinary)
+            
+            # Multi-objective: Minimize (penalty for unplaced pods + total emissions)
+            # Get penalty weight from config, default to 10000 (prioritizes placement over emissions)
+            penalty_for_unplaced = self.config.get('optimization', {}).get('unplaced_penalty', 10000)
+            logging.info(f"  - Setting multi-objective: penalty for unplaced pods ({penalty_for_unplaced}) + minimize emissions")
+            logging.info(f"    * Higher penalty = prioritize placement over emissions")
+            logging.info(f"    * Lower penalty = allow more unplaced pods for better emissions")
+            
+            prob += pulp.lpSum([penalty_for_unplaced * s[pod_id] for pod_id in s]) + \
+                    pulp.lpSum([emissions * x[(pod_id, flv_id, ts_id)]
                                 for pod_id, pod_placements in placements.items()
                                 for flv_id, ts_id, emissions in pod_placements])
 
+            # Soft constraint: Each pod is either placed exactly once OR marked as unplaced
+            logging.info(f"  - Setting up soft constraints: each pod placed exactly once OR marked unplaced")
+            constraint_count_placement = 0
+            for pod_id, pod_placements in placements.items():
+                if pod_placements:
+                    # Pod is either placed in one location OR marked as unplaced
+                    prob += pulp.lpSum([x[(pod_id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]) + s[pod_id] == 1
+                    constraint_count_placement += 1
+                else:
+                    # Pod has no valid placements, so it must be marked as unplaced
+                    prob += s[pod_id] == 1
+                    constraint_count_placement += 1
+                    logging.debug(f"     - Pod {pod_id} has no valid placements, forced to unplaced")
+            
+            logging.info(f"  - Created {constraint_count_placement} placement constraints (soft)")
             logging.info(f"  - Setting up resource capacity constraints")
             # Resource constraints: Don't exceed capacity at any node/timeslot
             
@@ -698,12 +720,36 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             logging.info(f"  - Final problem size: {len(x)} variables, {len(prob.constraints)} constraints")
 
             # Solve the problem
-            logging.info(f"🔍 STEP 4: Solving global optimization problem")
-            logging.info(f"  - Setting up MILP solver with time limit of 20 seconds")
+            logging.info(f"🔍 STEP 4: Solving multi-objective optimization problem")
+            logging.info(f"  - Problem size: {len(x)} placement vars + {len(s)} slack vars = {len(x) + len(s)} total variables")
+            logging.info(f"  - Setting up MILP solver with time limit of 30 seconds")
             
             solver_start_time = time.time()
-            prob.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20))
-            solution_time = time.time() - solver_start_time
+            try:
+                # Try with more generous settings for multi-objective optimization
+                prob.solve(pulp.PULP_CBC_CMD(
+                    msg=False,  # Disable verbose output to avoid log spam
+                    timeLimit=30,  # Increased time limit
+                    gapRel=0.05,  # Allow 5% optimality gap for faster convergence
+                    threads=4  # Use multiple threads
+                ))
+                solution_time = time.time() - solver_start_time
+                logging.info(f"  - Solver completed in {solution_time:.3f}s")
+            except Exception as solver_error:
+                solution_time = time.time() - solver_start_time
+                logging.error(f"  - Solver failed after {solution_time:.3f}s: {solver_error}")
+                logging.info(f"  - Attempting fallback solver without time limit...")
+                try:
+                    # Fallback: try without time limit but with gap tolerance
+                    prob.solve(pulp.PULP_CBC_CMD(msg=False, gapRel=0.1))
+                    solution_time = time.time() - solver_start_time
+                    logging.info(f"  - Fallback solver completed in {solution_time:.3f}s")
+                except Exception as fallback_error:
+                    solution_time = time.time() - solver_start_time
+                    logging.error(f"  - Fallback solver also failed: {fallback_error}")
+                    self.status = "Solver_Error"
+                    self.iterations = 0
+                    return
             
             self.status = pulp.LpStatus[prob.status]
             self.iterations = prob.solverModel.Iterations if hasattr(prob.solverModel, 'Iterations') else 0
@@ -729,6 +775,14 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 
                 # Extract solution from decision variables
                 solution_dict = {}
+                unplaced_pods = []
+                
+                # Check slack variables to identify unplaced pods
+                for pod_id, slack_var in s.items():
+                    if slack_var.value() and slack_var.value() > 0.5:  # Pod is marked as unplaced
+                        unplaced_pods.append(pod_id)
+                
+                # Extract placed pods from placement variables
                 for var_name, var in x.items():
                     if var.value() and var.value() > 0.5:  # Binary variable is active
                         pod_id, flv_id, ts_id = var_name
@@ -737,7 +791,14 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         emissions = next((e for f, t, e in pod_placements if f == flv_id and t == ts_id), 0.0)
                         solution_dict[pod_id] = (flv_id, ts_id, emissions)
                 
-                logging.info(f"  - Found {len(solution_dict)} pod placements in solver solution")
+                logging.info(f"  - Multi-objective solution: {len(solution_dict)} pods placed, {len(unplaced_pods)} pods unplaced")
+                logging.info(f"  - Placement success rate: {len(solution_dict)}/{len(self.pending_pods)} ({100*len(solution_dict)/len(self.pending_pods):.1f}%)")
+                
+                # Log sample of unplaced pods (if any)
+                if unplaced_pods:
+                    logging.warning(f"  - Unplaced pods: {unplaced_pods[:5]}{'...' if len(unplaced_pods) > 5 else ''}")
+                else:
+                    logging.info(f"  - ✅ All pods successfully placed!")
                 
                 # Validate constraints on the extracted solution
                 is_valid, constraint_violations = self._validate_solution_constraints(
@@ -810,8 +871,15 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     solution[pod_id_sol] = (flv_id_sol, ts_id_sol, emissions_sol)
                     total_emissions_objective += emissions_sol
 
-                logging.info(f"✅ Found optimal global solution with total objective emissions: {total_emissions_objective/1000.0:.6f}kgCO2e ({total_emissions_objective:.2f}gCO2e)")
-                logging.info(f"✅ Placed {len(solution)}/{len(self.pending_pods)} pods")
+                # Calculate separated objectives  
+                placement_penalty = len(unplaced_pods) * penalty_for_unplaced
+                total_objective = prob.objective.value() if prob.objective.value() else 0.0
+                
+                logging.info(f"✅ Multi-objective solution found:")
+                logging.info(f"  - Total objective value: {total_objective:.2f}")
+                logging.info(f"  - Placement penalty: {placement_penalty:.2f} ({len(unplaced_pods)} unplaced * {penalty_for_unplaced})")
+                logging.info(f"  - Emissions objective: {total_emissions_objective/1000.0:.6f}kgCO2e ({total_emissions_objective:.2f}gCO2e)")
+                logging.info(f"✅ Placed {len(solution)}/{len(self.pending_pods)} pods (success rate: {100*len(solution)/len(self.pending_pods):.1f}%)")
                 logging.info(f"📊 Wrote {placements_saved_to_csv} placements to CSV")
 
                 # Update the solution and mark pods as processed
@@ -836,12 +904,14 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     logging.warning("  - WARNING: CSV file not found or not configured correctly")
                 
             else:
-                logging.warning(f"❌ No optimal global solution found, status: {self.status}")
-                logging.warning("  - This may happen due to infeasibility, time limit, or other solver issues")
+                logging.warning(f"❌ Multi-objective optimization failed, status: {self.status}")
                 
-                # RELAXATION STRATEGY for infeasible problems
+                # With slack variables, infeasibility should be very rare
                 if self.status == "Infeasible":
-                    logging.error("🚨 INFEASIBILITY DETECTED - Attempting relaxation strategy")
+                    logging.error("🚨 UNEXPECTED INFEASIBILITY - Multi-objective with slack variables should be feasible!")
+                    logging.error("   - This suggests a deeper problem with the formulation")
+                    logging.error("   - Attempting legacy relaxation strategy as emergency fallback")
+                    
                     self._handle_infeasibility(self.pending_pods, placements, leftover_cpu, leftover_ram, max_time_slots)
                     
                     success = self._solve_with_relaxation(
@@ -850,15 +920,14 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     )
                     
                     if success:
-                        placed_count = len(self.global_solution)
-                        total_count = len(self.pending_pods)
-                        placement_rate = (placed_count / total_count) * 100
-                        logging.info(f"✅ Relaxation strategy succeeded - placed {placed_count}/{total_count} pods ({placement_rate:.1f}%)")
+                        logging.info("✅ Emergency relaxation strategy succeeded - partial solution found!")
                     else:
-                        logging.error("❌ Relaxation strategy also failed")
-                
-                logging.warning("  - Check resource constraints and problem formulation")
-                logging.warning("  - Check CBC solver output for more details")
+                        logging.error("❌ Even emergency relaxation strategy failed")
+                elif self.status == "Time Limit":
+                    logging.warning("⏰ Solver reached time limit - try increasing timeLimit parameter")
+                else:
+                    logging.warning(f"  - Unexpected solver status: {self.status}")
+                    logging.warning("  - Check CBC solver output for more details")
 
         except Exception as e:
             logging.error(f"❌ ERROR in global optimization: {e}")
@@ -1226,8 +1295,15 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             if success:
                 logging.info(f"  ✅ Relaxation succeeded after {iteration} iterations!")
                 logging.info(f"    - Placed: {len(remaining_pods)} pods via MILP")
-                logging.info(f"    - Removed: {len(removed_pods)} constrained pods (omitted from placement)")
-                logging.info(f"    - Final placement: {len(self.global_solution)} / {len(self.pending_pods)} pods")
+                logging.info(f"    - Removed: {len(removed_pods)} constrained pods")
+                
+                # Try to place removed pods greedily
+                greedy_placed = self._try_greedy_placement_for_removed_pods(
+                    removed_pods, flavours, timeslots, leftover_cpu, leftover_ram
+                )
+                
+                logging.info(f"    - Greedy placement added: {greedy_placed} more pods")
+                logging.info(f"    - Total placed: {len(self.global_solution)} / {len(self.pending_pods)} pods")
                 return True
             
             if len(remaining_pods) <= 2:
@@ -1350,7 +1426,71 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         
         return False
 
-
+    def _try_greedy_placement_for_removed_pods(
+        self,
+        removed_pods: List[CarbonAwarePod],
+        flavours: List[CarbonAwareFlavour],
+        timeslots: List[CarbonAwareTimeslot],
+        leftover_cpu: Dict[str, Dict[int, float]],
+        leftover_ram: Dict[str, Dict[int, float]]
+    ) -> int:
+        """
+        Try to place removed pods using greedy algorithm.
+        Updates leftover resources as pods are placed.
+        """
+        placed_count = 0
+        
+        # Create working copies of resource availability
+        working_cpu = {}
+        working_ram = {}
+        for node_id in leftover_cpu:
+            working_cpu[node_id] = leftover_cpu[node_id].copy()
+            working_ram[node_id] = leftover_ram[node_id].copy()
+        
+        # Reduce available resources by already placed pods
+        for pod_id, (node_id, start_slot, _) in self.global_solution.items():
+            pod = next((p for p in self.pending_pods if p.id == pod_id), None)
+            if pod:
+                for offset in range(int(pod.duration)):
+                    slot = start_slot + offset
+                    if slot in working_cpu[node_id]:
+                        working_cpu[node_id][slot] -= pod.cpuRequest
+                        working_ram[node_id][slot] -= pod.ramRequest
+        
+        logging.info(f"    🎯 Attempting greedy placement for {len(removed_pods)} removed pods")
+        
+        for pod in removed_pods:
+            placement = self._greedy_placement(pod, flavours, timeslots, working_cpu, working_ram)
+            flv, ts, emissions = placement
+            
+            if flv and ts:
+                # Record placement
+                self.global_solution[pod.id] = (flv.id, ts.id, emissions)
+                
+                # Update working resources
+                for offset in range(int(pod.duration)):
+                    slot = ts.id + offset
+                    if slot in working_cpu[flv.id]:
+                        working_cpu[flv.id][slot] -= pod.cpuRequest
+                        working_ram[flv.id][slot] -= pod.ramRequest
+                
+                # Write to CSV
+                if self.is_precomputation_mode:
+                    self._write_placement_to_csv(
+                        pod_id=pod.id, node_id=flv.id, start_slot=ts.id,
+                        duration=pod.duration, cpu_request=pod.cpuRequest,
+                        ram_request=pod.ramRequest,
+                        total_carbon_emissions=emissions / 1000.0,
+                        solver_status="Greedy_Fallback", solver_iterations=0,
+                        solution_time_seconds=0.0
+                    )
+                
+                placed_count += 1
+                logging.info(f"      ✅ Greedy placed {pod.id} on {flv.id} at slot {ts.id}")
+            else:
+                logging.debug(f"      ❌ Could not place {pod.id} greedily")
+        
+        return placed_count
 
     def _add_resource_constraints(self, prob, x, placements, pods, leftover_cpu, leftover_ram, max_time_slots):
         """Helper method to add resource constraints to MILP problem"""

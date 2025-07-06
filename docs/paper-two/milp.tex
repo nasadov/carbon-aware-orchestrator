@@ -1,10 +1,13 @@
 \documentclass{article}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{amsthm}
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{xcolor}
 \usepackage{booktabs}
+
+\newtheorem{theorem}{Theorem}[section]
 
 \begin{document}
 
@@ -129,6 +132,134 @@ emb_{ij} = \frac{\text{EC}_j}{L_j \cdot u_j}
 \end{align}
 with $\text{EC}_j$ being the total embodied carbon of node $j$, $L_j$ being the node's expected lifetime in hours, and $u_j$ representing the pod's resource usage as a fraction of the node's total capacity.
 \end{itemize}
+
+\subsection{Relaxation Methods for Infeasible MILP Instances}
+
+The carbon-aware scheduling MILP formulation may become infeasible when resource constraints are over-subscribed or when pod deadlines are incompatible with available scheduling windows. To address this fundamental challenge, we develop a hierarchy of relaxation techniques that systematically transform the problem to ensure feasibility while preserving solution quality.
+
+\subsubsection{Theoretical Foundation}
+
+Let $\mathcal{M}$ denote the original MILP formulation. The feasibility of $\mathcal{M}$ depends on the existence of a solution $\mathbf{x} \in \{0,1\}^{|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|}$ satisfying constraints (14)-(17). When $\mathcal{M}$ is infeasible, we seek to solve a relaxed problem $\mathcal{M}'$ that:
+
+\begin{enumerate}
+\item Guarantees feasibility: $\mathcal{M}'$ always admits a solution
+\item Maximizes pod placement: Priority is given to scheduling as many pods as possible
+\item Minimizes carbon emissions: Among solutions with equal placement counts, prefer lower emissions
+\item Maintains computational tractability: Relaxation overhead should be minimal
+\end{enumerate}
+
+\subsubsection{Multi-Objective Optimization with Penalty Functions}
+
+Our primary relaxation strategy transforms the hard assignment constraints into soft constraints using penalty functions. This approach, known as \textit{goal programming} in the operations research literature, converts the infeasible MILP into a bi-objective optimization problem.
+
+\textbf{Extended Decision Variables:}
+We introduce slack variables to capture unplaced pods:
+\begin{align}
+y_i \in \{0,1\} \quad \forall i \in \mathcal{P}
+\end{align}
+where $y_i = 1$ indicates that pod $i$ remains unplaced.
+
+\textbf{Reformulated Objective Function:}
+The bi-objective formulation becomes:
+\begin{align}
+\text{Minimize} \quad Z(\mathbf{x}, \mathbf{y}) = \lambda \sum_{i \in \mathcal{P}} y_i + \sum_{i \in \mathcal{P}} \sum_{(j,t) \in \mathcal{V}_i} e_{ijt} \cdot x_{ijt}
+\end{align}
+where $\lambda \gg \max_{i,j,t} e_{ijt}$ is a penalty weight ensuring lexicographic optimization priority.
+
+\textbf{Softened Assignment Constraints:}
+The hard assignment constraint (14) is replaced with:
+\begin{align}
+\sum_{(j,t) \in \mathcal{V}_i} x_{ijt} + y_i = 1 \quad \forall i \in \mathcal{P}
+\end{align}
+
+This constraint ensures that each pod is either placed exactly once ($\sum x_{ijt} = 1, y_i = 0$) or marked as unplaced ($\sum x_{ijt} = 0, y_i = 1$).
+
+\textbf{Theoretical Properties:}
+
+\begin{theorem}[Feasibility Guarantee]
+The relaxed MILP formulation $\mathcal{M}'$ with objective (20) and constraints (21), (15)-(17) is always feasible.
+\end{theorem}
+
+\begin{proof}
+The solution $\mathbf{x} = \mathbf{0}$ and $y_i = 1$ for all $i \in \mathcal{P}$ satisfies all constraints trivially, as no resources are consumed when all pods are unplaced.
+\end{proof}
+
+\begin{theorem}[Optimality Preservation]
+For sufficiently large penalty $\lambda$, if the original problem $\mathcal{M}$ is feasible, then the optimal solution to $\mathcal{M}'$ places all pods (i.e., $\mathbf{y} = \mathbf{0}$) and achieves the same objective value as $\mathcal{M}$.
+\end{theorem}
+
+\begin{proof}
+If $\mathcal{M}$ is feasible with optimal value $Z^*$, then $\mathcal{M}'$ has a feasible solution with objective value $Z^*$. Any solution with unplaced pods has objective value at least $\lambda + Z^* > Z^*$ for $\lambda > 0$, thus the optimal solution to $\mathcal{M}'$ must place all pods.
+\end{proof}
+
+\subsubsection{Iterative Constraint Relaxation}
+
+When the multi-objective approach encounters solver limitations or remains computationally intractable, we apply an iterative constraint relaxation strategy that systematically reduces problem complexity.
+
+\textbf{Constraint Pressure Quantification:}
+We define a constraint pressure metric $\phi_i$ for each pod $i$:
+\begin{align}
+\phi_i = \alpha \cdot \frac{1}{|\mathcal{V}_i|} + \beta \cdot \max\left(0, \frac{\tau_{max} - \tau_i}{\tau_{max}}\right)
+\end{align}
+where:
+\begin{itemize}
+\item $|\mathcal{V}_i|$ is the number of feasible placements for pod $i$
+\item $\tau_i = D_i - s_i - d_i$ is the scheduling flexibility (slack) for pod $i$
+\item $\tau_{max} = 5$ is the maximum considered slack threshold
+\item $\alpha = 10$ and $\beta = 1$ are empirically determined weights
+\end{itemize}
+
+\textbf{Iterative Relaxation Algorithm:}
+
+\begin{algorithm}[H]
+\caption{Iterative Constraint Relaxation}
+\begin{algorithmic}[1]
+\STATE \textbf{Input:} Pod set $\mathcal{P}$, maximum iterations $k_{max}$, removal fraction $\rho = 0.1$
+\STATE \textbf{Initialize:} $\mathcal{P}^{(0)} = \mathcal{P}$, $\mathcal{P}^{removed} = \emptyset$, $k = 0$
+\WHILE{$|\mathcal{P}^{(k)}| > 0$ and $k < k_{max}$}
+    \STATE Solve MILP $\mathcal{M}(\mathcal{P}^{(k)})$ with pod set $\mathcal{P}^{(k)}$
+    \IF{$\mathcal{M}(\mathcal{P}^{(k)})$ is feasible}
+        \STATE \textbf{return} optimal solution and $\mathcal{P}^{removed}$
+    \ENDIF
+    \STATE Compute constraint pressure $\phi_i$ for all $i \in \mathcal{P}^{(k)}$
+    \STATE $n_{remove} = \max(1, \min(20, \lceil \rho \cdot |\mathcal{P}^{(k)}| \rceil))$
+    \STATE $\mathcal{P}^{remove} = \{i \in \mathcal{P}^{(k)} \mid \phi_i \text{ among top } n_{remove} \text{ values}\}$
+    \STATE $\mathcal{P}^{(k+1)} = \mathcal{P}^{(k)} \setminus \mathcal{P}^{remove}$
+    \STATE $\mathcal{P}^{removed} = \mathcal{P}^{removed} \cup \mathcal{P}^{remove}$
+    \STATE $k = k + 1$
+\ENDWHILE
+\STATE \textbf{return} empty solution and $\mathcal{P}^{removed} = \mathcal{P}$
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Greedy Recovery Phase:}
+For pods in $\mathcal{P}^{removed}$, we attempt placement using a greedy heuristic that selects the feasible placement with minimum carbon emissions:
+\begin{align}
+(j^*, t^*) = \arg\min_{(j,t) \in \mathcal{V}_i \cap \mathcal{A}} e_{ijt}
+\end{align}
+where $\mathcal{A}$ represents the set of currently available node-timeslot pairs.
+
+\subsubsection{Complexity Analysis}
+
+\textbf{Multi-Objective Approach:}
+The relaxed MILP has $|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}| + |\mathcal{P}|$ binary variables and $|\mathcal{P}| + |\mathcal{F}| \times |\mathcal{T}| \times 2$ constraints. The theoretical complexity remains NP-hard, but practical solving time may improve due to relaxed constraints.
+
+\textbf{Iterative Relaxation:}
+In the worst case, the algorithm requires $O(|\mathcal{P}|/\rho)$ iterations, each solving a MILP with decreasing size. The overall complexity is $O(|\mathcal{P}|^2 \cdot T_{solve})$ where $T_{solve}$ is the time to solve a single MILP instance.
+
+\textbf{Greedy Recovery:}
+The greedy phase has complexity $O(|\mathcal{P}^{removed}| \times |\mathcal{F}| \times |\mathcal{T}|)$, which is polynomial in the problem size.
+
+\subsubsection{Implementation Considerations}
+
+The relaxation methods are implemented in a hierarchical manner:
+\begin{enumerate}
+\item \textbf{Primary approach:} Multi-objective optimization with penalty functions
+\item \textbf{Fallback 1:} Iterative constraint relaxation when multi-objective fails
+\item \textbf{Fallback 2:} Greedy placement heuristic for remaining unplaced pods
+\end{enumerate}
+
+The penalty weight $\lambda$ is a critical parameter that balances placement priority against emissions optimization. In practice, values of $\lambda = 10^4$ have been observed to provide reasonable trade-offs, though systematic parameter tuning may be required for different problem instances.
 
 \subsection{Implementation Details}
 
