@@ -1,0 +1,144 @@
+% IEEE Transactions LaTeX Template
+% For IEEE Transactions on Cloud Computing
+
+\documentclass[journal]{IEEEtran}
+
+% *** PACKAGES ***
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{subfig}
+
+% *** PDF, URL AND HYPERLINK PACKAGES ***
+\usepackage{url}
+
+% *** Do not adjust lengths that control margins, column widths, etc. ***
+% *** Do not use packages that alter fonts (such as pslatex).       ***
+
+% correct bad hyphenation here
+\hyphenation{op-tical net-works semi-conduc-tor}
+
+\begin{document}
+
+% paper title
+\title{Carbon-Aware Container Orchestration: A Comparative Analysis of Heuristic and Optimal Scheduling Algorithms for Sustainable Computing}
+
+% author names and affiliations
+\author{Nasir~Asadov,
+        Vlad~C.~Coroamă,
+        Marco~Zambianco,
+        Silvio~Cretti,
+        and~Matthias~Finkbeiner% <-this % stops a space
+\thanks{N. Asadov, V. C. Coroamă, and M. Finkbeiner are with the Department
+of Environmental Technology, Technische Universität Berlin, Strasse des 17. Juni 135, 10623 Berlin, Germany 
+(e-mail: nasir.asadov@tu-berlin.de; coroama@tu-berlin.de; matthias.finkbeiner@tu-berlin.de).}% <-this % stops a space
+\thanks{M. Zambianco and S. Cretti are with Fondazione Bruno Kessler,
+38123 Trento, Italy (e-mail: zambianco@fbk.eu; cretti@fbk.eu).}% <-this % stops a space
+\thanks{Corresponding author: Nasir Asadov (e-mail: nasir.asadov@tu-berlin.de).}% <-this % stops a space
+\thanks{Manuscript received Month Day, Year; revised Month Day, Year.}}
+
+% The paper headers
+\markboth{IEEE Transactions on Cloud Computing,~Vol.~XX, No.~XX, Month~Year}%
+{Asadov \MakeLowercase{\textit{et al.}}: Carbon-Aware Container Orchestration}
+
+% make the title area
+\maketitle
+
+% As a general rule, do not put math, special symbols or citations
+% in the abstract or keywords.
+\begin{abstract}
+Container orchestration systems ignore carbon emissions in placement decisions, despite data centers consuming over 1\% of global electricity. Existing Kubernetes schedulers optimize for performance but lack carbon minimization mechanisms. We formulate the carbon-aware scheduling problem and develop a heuristic algorithm that incorporates both operational and embodied carbon emissions while respecting resource requirements and deadlines. Evaluation against vanilla Kubernetes and theoretical optimal solutions demonstrates our algorithm reduces carbon emissions significantly while maintaining practical execution times. This establishes that carbon-aware container orchestration provides a feasible pathway toward sustainable cloud computing.
+\end{abstract}
+
+% Note that keywords are not normally used for peerreview papers.
+\begin{IEEEkeywords}
+Carbon-aware computing, container orchestration, Kubernetes, sustainable computing, green cloud computing, optimization algorithms, mixed integer linear programming, global optimization.
+\end{IEEEkeywords}
+
+\IEEEpeerreviewmaketitle
+
+\section{Introduction}
+\IEEEPARstart{T}{he} exponential growth of cloud computing has led to significant environmental concerns, with data centers consuming approximately 1\% of global electricity and contributing substantially to carbon emissions~\cite{masanet2020recalibrating}. As organizations increasingly adopt containerized applications and orchestration platforms like Kubernetes, the need for carbon-aware scheduling mechanisms becomes paramount to address sustainability challenges in modern computing infrastructures.
+
+% Add your introduction content here
+
+\section{Related Work}
+% Literature review section
+
+\section{System Architecture and Problem Formulation}
+% Describe your carbon-aware orchestrator architecture
+
+\subsection{Carbon Intensity Modeling}
+% Describe how you model carbon intensity
+
+\subsection{Problem Formulation}
+% Mathematical formulation of the carbon-aware scheduling problem
+
+\section{Scheduling Algorithms}
+% Describe your three algorithms
+
+\subsection{Heuristic Carbon-Aware Scheduler}
+% Details of the heuristic approach
+
+\subsection{MILP-based Optimal Scheduler}
+% Mathematical optimization approach
+
+\subsection{Global MILP Optimizer}
+% Global optimization approach considering all pods simultaneously
+
+\section{Experimental Setup}
+% Describe your experimental methodology
+
+\subsection{Testbed Configuration}
+% Kubernetes cluster setup
+
+\subsection{Workload Characteristics}
+% Describe the workloads used
+
+\subsection{Evaluation Metrics}
+% Performance and carbon emission metrics
+
+\section{Results and Analysis}
+% Present your experimental results
+
+\subsection{Carbon Emission Reduction}
+% Results on carbon savings
+
+\subsection{Performance Impact}
+% Scheduling overhead and latency analysis
+
+\subsection{Scalability Analysis}
+% Large-scale deployment results
+
+\section{Discussion}
+% Interpret results and discuss implications
+
+\section{Conclusion and Future Work}
+% Summarize contributions and future directions
+
+% references section
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+% biography section (uncomment and add author photos when ready for submission)
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{nasir_photo}}]{Nasir Asadov}
+% received the B.S. degree in computer science from University Name in Year, and the Ph.D. degree in environmental technology from Technische Universität Berlin in Year. He is currently a researcher with the Department of Environmental Technology, Technische Universität Berlin. His research interests include sustainable computing, carbon-aware orchestration, and green computing algorithms.
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{vlad_photo}}]{Vlad C. Coroamă}
+% received the Ph.D. degree in computer science from ETH Zurich. He is currently a Professor with the Department of Environmental Technology, Technische Universität Berlin. His research interests include ICT for sustainability, environmental assessment of digital technologies, and sustainable computing systems.
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{marco_photo}}]{Marco Zambianco}
+% received the Ph.D. degree in computer science from University Name in Year. He is currently a Senior Research Scientist with Company Name. His research interests include cloud computing, optimization algorithms, and sustainable system design.
+% \end{IEEEbiography}
+
+\end{document} 
