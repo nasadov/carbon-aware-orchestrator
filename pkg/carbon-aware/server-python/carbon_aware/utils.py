@@ -60,8 +60,8 @@ def compute_emissions(flavour: CarbonAwareFlavour, timeslot_id: int, pod: Carbon
     # Calculate operational emissions
     operationalEmissions = carbon_intensity * pod.duration * pod.powerConsumption
 
-    # Embodied carbon distributed over lifetime (in hours)
-    hours_in_lifetime = 365 * flavour.lifetime * 24
+    # Embodied carbon distributed over lifetime (flavour.lifetime is already in hours)
+    hours_in_lifetime = flavour.lifetime
     if hours_in_lifetime <= 0:
         hours_in_lifetime = 1e-6
     embodied_per_hour = flavour.embodiedCarbon / hours_in_lifetime
@@ -73,7 +73,55 @@ def compute_emissions(flavour: CarbonAwareFlavour, timeslot_id: int, pod: Carbon
         f"[compute_emissions] Node={flavour.id}, TimeslotID={timeslot_id}, "
         f"carbon_intensity={carbon_intensity}, duration={pod.duration}, "
         f"cpu_ratio={cpu_usage_ratio:.2f}, power={power_consumption_watts:.2f}W ({pod.powerConsumption:.3f}kW), "
+        f"lifetime={hours_in_lifetime}h, embodied_per_hour={embodied_per_hour:.3f}, "
         f"operationalEmi={operationalEmissions:.3f}, embodiedEmi={embodiedEmissions:.3f}, total={total_emi:.3f}"
+    )
+    return total_emi
+
+
+def compute_emissions_operational_only(flavour: CarbonAwareFlavour, timeslot_id: int, pod: CarbonAwarePod) -> float:
+    """
+    Compute only the operational carbon emissions for placing 'pod' on 'flavour' during timeslot 'timeslot_id'.
+    
+    This function omits embodied emissions and only considers the operational carbon emissions
+    from power consumption during the workload execution.
+    
+    Emissions calculation:
+    - operationalEmissions = carbon_intensity * duration * power_consumption (kW)
+    - embodiedEmissions = 0 (omitted)
+    - total = operationalEmissions only
+    """
+    # Default carbon intensity if timeslot not in forecast
+    carbon_intensity = flavour.forecast.get(timeslot_id, 200.0)
+
+    # Calculate power consumption based on CPU usage
+    # Use the formula: idle + (max-active) * cpu_usage_ratio
+    idle_power = flavour.power["idle"]  # watts
+    active_power = flavour.power["active"]  # watts
+    max_power = flavour.power["max"]  # watts
+    
+    # CPU usage ratio (ensure we don't divide by zero)
+    cpu_usage_ratio = pod.cpuRequest / max(flavour.totalCpu, 0.001)  # Avoid division by zero
+    
+    # Calculate power based on the formula: idle + (max-active) * cpu_usage_ratio
+    power_consumption_watts = idle_power + (max_power - active_power) * cpu_usage_ratio
+    
+    # Convert watts to kilowatts for emissions calculation
+    pod.powerConsumption = power_consumption_watts / 1000.0  # convert W to kW
+    
+    # Calculate operational emissions
+    operationalEmissions = carbon_intensity * pod.duration * pod.powerConsumption
+
+    # For operational-only mode, embodied emissions are zero
+    embodiedEmissions = 0.0
+    total_emi = operationalEmissions
+
+    logging.debug(
+        f"[compute_emissions_operational_only] Node={flavour.id}, TimeslotID={timeslot_id}, "
+        f"carbon_intensity={carbon_intensity}, duration={pod.duration}, "
+        f"cpu_ratio={cpu_usage_ratio:.2f}, power={power_consumption_watts:.2f}W ({pod.powerConsumption:.3f}kW), "
+        f"operationalEmi={operationalEmissions:.3f}, "
+        f"embodiedEmi={embodiedEmissions:.3f} (omitted), total={total_emi:.3f}"
     )
     return total_emi
 
@@ -227,8 +275,8 @@ def get_node_hardware_metadata(node) -> tuple[float, float, Dict[str, float]]:
             # Embodied carbon and lifetime
             if annotation.key == "hardware.carbon/embodied_emissions":
                 try:
-                    embodied_carbon = float(annotation.value)
-                    logging.debug(f"Found embodied carbon from annotation: {embodied_carbon}")
+                    embodied_carbon = float(annotation.value) * 1000.0  # Convert kg to grams (README specifies kgCO2e)
+                    logging.debug(f"Found embodied carbon from annotation: {annotation.value} kg = {embodied_carbon} g")
                 except (ValueError, TypeError):
                     logging.warning(f"Invalid embodied carbon value: {annotation.value}, using default")
                 

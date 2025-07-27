@@ -75,6 +75,11 @@ def main() -> None:
         action='store_true',
         help='Prioritize carbon efficiency per CPU rather than total emissions for scheduling decisions'
     )
+    parser.add_argument(
+        '--operational-only',
+        action='store_true',
+        help='Use only operational emissions (omit embodied emissions) when using heuristic algorithm'
+    )
     
     args = parser.parse_args()
     
@@ -107,12 +112,16 @@ def main() -> None:
     # Set up session directory for logging
     if args.experiment:
         session_type_prefix = "experiment_session"
-        session_log_dir = os.path.join(args.experiment_dir, f"{args.algorithm}_{session_type_prefix}_{timestamp}")
+        # Use short "op" suffix for operational-only mode
+        algo_mode = f"{args.algorithm}_op" if args.operational_only else args.algorithm
+        session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         logging.info(f"🧪 Experiment mode: {session_log_dir}")
     elif args.perf_log:
         session_type_prefix = "perf_log_session" 
-        session_log_dir = os.path.join(args.experiment_dir, f"{args.algorithm}_{session_type_prefix}_{timestamp}")
+        # Use short "op" suffix for operational-only mode
+        algo_mode = f"{args.algorithm}_op" if args.operational_only else args.algorithm
+        session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         logging.info(f"📈 Performance logging: {session_log_dir}")
     else:
@@ -183,7 +192,8 @@ def main() -> None:
         workloads_dir=args.workloads_dir,
         nodes_file=args.nodes_file,
         forecasts_file=args.forecasts_file,
-        prioritize_efficiency=args.prioritize_efficiency
+        prioritize_efficiency=args.prioritize_efficiency,
+        operational_only=args.operational_only
     )
 
 

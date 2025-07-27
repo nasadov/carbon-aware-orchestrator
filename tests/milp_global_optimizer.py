@@ -127,7 +127,7 @@ class GlobalOptimizer:
                     region = labels.get('topology.kubernetes.io/region', 'DE')
                     
                     # Extract carbon and power data from annotations
-                    embodied_carbon = float(annotations.get('hardware.carbon/embodied_emissions', '0')) / 1000.0  # Convert g to kg
+                    embodied_carbon = float(annotations.get('hardware.carbon/embodied_emissions', '0')) * 1000.0  # Convert kg to grams
                     lifetime_years = float(annotations.get('hardware.carbon/lifetime_years', '5.0'))
                     idle_watts = float(annotations.get('hardware.power/idle_watts', '100.0'))
                     active_watts = float(annotations.get('hardware.power/active_watts', '200.0'))

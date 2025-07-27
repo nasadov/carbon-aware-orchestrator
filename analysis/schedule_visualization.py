@@ -12,7 +12,7 @@ import logging
 from collections import defaultdict  # Add defaultdict
 from matplotlib.patches import Patch
 
-CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "pkg", "carbon-aware", "infra-workload-config.yaml")
+CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "pkg", "carbon-aware", "nodes.yaml")
 
 def load_nodes_yaml_config(nodes_yaml_path):
     """Loads node configuration directly from a nodes.yaml file with multiple Kubernetes node documents."""
@@ -750,7 +750,7 @@ def main():
     parser.add_argument("-o", "--output_dir_base", default=os.path.join(os.path.dirname(__file__), "..", "figures"), help="Base directory to save the generated plots (default: ../figures relative to script). A subdirectory will be created here.")
     parser.add_argument("-m", "--mode", choices=["individual", "density", "all"], default="all", help="Type of visualization to generate: 'individual' pods, 'density' heatmap, or 'all' (default: all).")
     parser.add_argument("-n", "--name", default=None, help="Optional name for the run/comparison. This will be used as the subdirectory name under output_dir_base and in plot titles/filenames.")
-    parser.add_argument("--config_file", default=CONFIG_FILE_PATH, help=f"Path to the infrastructure config YAML file (default: {CONFIG_FILE_PATH}).")
+    parser.add_argument("--config_file", default=CONFIG_FILE_PATH, help=f"Path to the nodes.yaml file (default: {CONFIG_FILE_PATH}).")
     parser.add_argument("--workloads_dir", default=None, help="Path to the directory containing workload YAML files with CPU request information.")
     
     args = parser.parse_args()

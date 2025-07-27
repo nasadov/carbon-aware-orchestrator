@@ -1671,7 +1671,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     
                     # Parse embodied carbon
                     try:
-                        embodied_carbon = float(annotations.get("hardware.carbon/embodied_emissions", "0"))
+                        embodied_carbon = float(annotations.get("hardware.carbon/embodied_emissions", "0")) * 1000.0  # Convert kg to grams
                     except ValueError:
                         embodied_carbon = 0
                     

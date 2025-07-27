@@ -38,7 +38,7 @@ def load_nodes_yaml(filepath):
                 
                 # Get embodied carbon data
                 annotations = metadata.get('annotations', {})
-                embodied_emissions = float(annotations.get('hardware.carbon/embodied_emissions', 0))
+                embodied_emissions = float(annotations.get('hardware.carbon/embodied_emissions', 0)) * 1000.0  # Convert kg to grams
                 lifetime_years = float(annotations.get('hardware.carbon/lifetime_years', 1))
                 
                 # Get power data
@@ -122,12 +122,12 @@ def calculate_carbon_footprint(nodes_data, carbon_intensity, placements_df=None,
     logging.info("\nNode configuration details:")
     for node_name, node_info in nodes_data.items():
         logging.info(f"\n{node_name}:")
-        logging.info(f"  - Embodied emissions: {node_info['embodied_emissions']} g CO2e (grams)")
+        logging.info(f"  - Embodied emissions: {node_info['embodied_emissions']} g CO2e (converted from kg)")
         logging.info(f"  - Lifetime years: {node_info['lifetime_years']} years")
         logging.info(f"  - Idle watts: {node_info['idle_watts']} W")
         logging.info(f"  - Active watts: {node_info['active_watts']} W")
         # Calculate hourly amortized embodied carbon
-        # Assuming embodied_emissions is in grams
+        # embodied_emissions is now in grams (converted from kg)
         embodied_per_hour = node_info['embodied_emissions'] / (node_info['lifetime_years'] * 365 * 24)
         logging.info(f"  - Amortized embodied carbon: {embodied_per_hour:.6f} g CO2e/hour")
         
@@ -137,7 +137,7 @@ def calculate_carbon_footprint(nodes_data, carbon_intensity, placements_df=None,
         region = node_info['region']
         
         # Calculate hourly amortized embodied carbon
-        # Assuming embodied_emissions is in grams
+        # embodied_emissions is now in grams (converted from kg)
         embodied_per_hour = node_info['embodied_emissions'] / (node_info['lifetime_years'] * 365 * 24)
         
         # Get region carbon intensity, or use average if not available

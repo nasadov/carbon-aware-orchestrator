@@ -23,10 +23,167 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         self.experiment_logger = None
         self.perf_logger = perf_logger
         self._session_log_dir: Optional[str] = None
+        self._operational_only = False  # Flag for operational-only emissions mode
         
         self._placement_csv_file_handle = None
         self._placement_csv_writer = None
         self._placement_csv_path: Optional[str] = None
+
+    def _load_nodes_from_yaml(self, nodes_file: str) -> List[CarbonAwareFlavour]:
+        """
+        Load nodes directly from nodes.yaml file.
+        
+        Args:
+            nodes_file: Path to nodes.yaml file
+        
+        Returns:
+            List of CarbonAwareFlavour objects
+        """
+        import yaml
+        import re
+        import os
+        import traceback
+        from carbon_aware.utils import load_carbon_intensity_data
+        
+        logging.info(f"🔄 [HEURISTIC] Loading nodes infrastructure from {nodes_file}")
+        
+        # Check if file exists
+        if not os.path.exists(nodes_file):
+            logging.error(f"❌ Nodes file not found: {nodes_file}")
+            return []
+            
+        # Check if file is empty
+        if os.path.getsize(nodes_file) == 0:
+            logging.error(f"❌ Nodes file is empty: {nodes_file}")
+            return []
+            
+        flavours = []
+        
+        try:
+            logging.info(f"📂 Reading YAML content from {nodes_file}")
+            with open(nodes_file, 'r') as f:
+                nodes_data = yaml.safe_load_all(f)
+                for node in nodes_data:
+                    if not node:
+                        continue
+                        
+                    # Extract node ID
+                    node_id = node.get("metadata", {}).get("name", "")
+                    if not node_id:
+                        continue
+                        
+                    # Extract annotations
+                    annotations = node.get("metadata", {}).get("annotations", {})
+                    
+                    # Extract status
+                    status = node.get("status", {})
+                    allocatable = status.get("allocatable", {})
+                    
+                    # Extract CPU, RAM and set defaults
+                    try:
+                        total_cpu = float(allocatable.get("cpu", "0"))
+                    except ValueError:
+                        # Handle unit suffixes like '2' or '200m'
+                        cpu_str = allocatable.get("cpu", "0")
+                        if cpu_str.endswith('m'):
+                            total_cpu = float(cpu_str[:-1]) / 1000
+                        else:
+                            total_cpu = float(cpu_str)
+                    
+                    # Parse RAM (convert from Ki, Mi, Gi to MB for consistency with pod requests)
+                    ram_str = allocatable.get("memory", "0")
+                    ram_match = re.match(r'(\d+)([KMG]i?)?', ram_str)
+                    if ram_match:
+                        ram_value = float(ram_match.group(1))
+                        ram_unit = ram_match.group(2) or ""
+                        
+                        if ram_unit == "Ki":
+                            total_ram = ram_value / 1024  # Convert Ki to MB
+                        elif ram_unit == "Mi":
+                            total_ram = ram_value  # Already in MB
+                        elif ram_unit in ["Gi", "G"]:
+                            total_ram = ram_value * 1024  # Convert Gi to MB
+                        else:
+                            total_ram = ram_value / (1024 * 1024)  # Assume bytes, convert to MB
+                    else:
+                        total_ram = 0.0
+                    
+                    # Extract region from labels
+                    labels = node.get("metadata", {}).get("labels", {})
+                    region_label = labels.get("topology.kubernetes.io/region", "")
+                    
+                    # Extract hardware annotations for embodied carbon, lifetime, and power
+                    embodied_carbon = 0.0
+                    lifetime_hours = 8760.0  # Default 1 year
+                    power_settings = {"idle": 50.0, "active": 100.0, "max": 150.0}  # Default power in watts
+                    
+                    # Parse embodied emissions from annotations (convert kg to grams)
+                    if "hardware.carbon/embodied_emissions" in annotations:
+                        try:
+                            embodied_carbon = float(annotations["hardware.carbon/embodied_emissions"]) * 1000.0  # Convert kg to grams
+                        except ValueError:
+                            embodied_carbon = 0.0
+                    
+                    # Parse lifetime
+                    if "hardware.carbon/lifetime" in annotations:
+                        try:
+                            lifetime_hours = float(annotations["hardware.carbon/lifetime"])
+                        except ValueError:
+                            lifetime_hours = 8760.0
+                    
+                    # Parse power consumption settings
+                    if "hardware.carbon/power_consumption" in annotations:
+                        try:
+                            power_str = annotations["hardware.carbon/power_consumption"]
+                            # Expected format: "idle:X,active:Y,max:Z"
+                            power_parts = power_str.split(',')
+                            for part in power_parts:
+                                if ':' in part:
+                                    key, value = part.split(':', 1)
+                                    power_settings[key.strip()] = float(value.strip())
+                        except (ValueError, AttributeError):
+                            pass  # Keep defaults
+                    
+                    # Load carbon intensity data
+                    carbon_data = load_carbon_intensity_data()
+                    
+                    # Get carbon intensity forecast for this region
+                    if region_label.upper() in carbon_data:
+                        forecast_dict = carbon_data[region_label.upper()]
+                        logging.debug(f"Using carbon intensity data for node {node_id} (region {region_label})")
+                    else:
+                        # Fallback to default values if region not found in carbon data
+                        forecast_dict = {i: 200.0 for i in range(24)}  # Default carbon intensity
+                        logging.warning(f"No carbon data for region {region_label}, using default values for node {node_id}")
+                    
+                    # Create the flavor (node representation)
+                    flavour = CarbonAwareFlavour(
+                        id=node_id,
+                        embodiedCarbon=embodied_carbon,
+                        lifetime=lifetime_hours,  # In hours
+                        totalCpu=total_cpu,
+                        totalRam=total_ram,
+                        totalStorage=1000 * 1024 * 1024 * 1024,  # Default 1TB
+                        forecast=forecast_dict,
+                        power=power_settings
+                    )
+                    
+                    # Add region as an additional attribute
+                    flavour.region = region_label.upper() if region_label else ""
+                    
+                    flavours.append(flavour)
+                    
+                    logging.debug(f"Loaded node {node_id} with {total_cpu} CPU, {total_ram} RAM, " +
+                                f"region={flavour.region}, embodied={embodied_carbon}, " +
+                                f"lifetime={lifetime_hours}h, power={power_settings}")
+            
+            logging.info(f"✅ [HEURISTIC] Successfully loaded {len(flavours)} nodes from {nodes_file}")
+            return flavours
+            
+        except Exception as e:
+            logging.error(f"❌ [HEURISTIC] Error loading nodes from {nodes_file}: {e}")
+            logging.error(traceback.format_exc())
+            return []
 
     @classmethod
     def _ensure_dir_exists(cls, directory_path: str):
@@ -46,7 +203,9 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             HeuristicAlgorithm._ensure_dir_exists(self._session_log_dir)
             logging.warning(f"Using fallback log directory for placements: {self._session_log_dir}")
 
-        self._placement_csv_path = os.path.join(self._session_log_dir, self._placement_csv_filename_suffix)
+        # Use short "op" suffix for operational-only CSV files
+        base_filename = "heuristic_op_placements_session.csv" if self._operational_only else self._placement_csv_filename_suffix
+        self._placement_csv_path = os.path.join(self._session_log_dir, base_filename)
         
         if hasattr(self, '_placement_csv_file_handle') and self._placement_csv_file_handle:
             try:
@@ -152,6 +311,11 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         logging.warning(f"⚠️ Pod {pod_id} not found in any timeslot_X.yaml file, defaulting to earliest_timeslot=0")
         return 0
     
+    def set_operational_only(self, operational_only: bool):
+        """Set whether to use operational-only emissions calculation."""
+        self._operational_only = operational_only
+        logging.info(f"HeuristicAlgorithm: operational_only mode set to {operational_only}")
+
     @property
     def name(self) -> str:
         return "Carbon-Aware-Heuristic"
@@ -173,7 +337,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         considered_options = len(flavours) * len(timeslots)
         
         best_node, best_slot, emissions = find_best_node_and_timeslot(
-            pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots
+            pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots, self._operational_only
         )
         
         if self.experiment_logger:
@@ -268,7 +432,11 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                     
                     if resource_check:
                         # Calculate emissions for this candidate
-                        total_emi = compute_emissions(flv, ts.id, pod)
+                        if self._operational_only:
+                            from carbon_aware.utils import compute_emissions_operational_only
+                            total_emi = compute_emissions_operational_only(flv, ts.id, pod)
+                        else:
+                            total_emi = compute_emissions(flv, ts.id, pod)
                         candidates.append((flv, ts, total_emi))
                         logging.debug(f"[find_placement_atomic] Valid candidate: pod={pod.id}, node={flv.id}, timeslot={ts.id}, emissions={total_emi:.3f}")
                     else:
@@ -337,7 +505,8 @@ def find_best_node_and_timeslot(
     timeslots: List[CarbonAwareTimeslot],
     leftover_cpu: Dict[str, Dict[int, float]],
     leftover_ram: Dict[str, Dict[int, float]],
-    max_time_slots: int = 48
+    max_time_slots: int = 48,
+    operational_only: bool = False
 ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
     """
     Find the best node and timeslot for a pod that minimizes carbon emissions.
@@ -352,6 +521,7 @@ def find_best_node_and_timeslot(
         leftover_cpu: Remaining CPU capacity per node and timeslot
         leftover_ram: Remaining RAM capacity per node and timeslot
         max_time_slots: Maximum number of timeslots to consider
+        operational_only: Flag to use operational-only emissions calculation
         
     Returns:
         Tuple of (best_node, best_timeslot, emissions) or (None, None, inf) if no placement found
@@ -385,7 +555,11 @@ def find_best_node_and_timeslot(
                     break
 
             if duration_feasible:
-                total_emi = compute_emissions(flv, ts.id, pod)
+                if operational_only:
+                    from carbon_aware.utils import compute_emissions_operational_only
+                    total_emi = compute_emissions_operational_only(flv, ts.id, pod)
+                else:
+                    total_emi = compute_emissions(flv, ts.id, pod)
                 if total_emi < minimal_emissions:
                     minimal_emissions = total_emi
                     best_node = flv

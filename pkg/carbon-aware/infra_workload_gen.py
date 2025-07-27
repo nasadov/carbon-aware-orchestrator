@@ -288,7 +288,14 @@ def generate_nodes_file(config: Dict[str, Any]):
         # Legacy format
         hardware_assignment_method = config.get("hardware_assignment_method", "cycle")
         hardware_cycle_offset = config.get("hardware_cycle_offset", 1)
-        hardware_counts = None
+        
+        # Check if we have hardware_counts in the flat structure (current config format)
+        if hardware_assignment_method == "exact_counts" and "hardware_counts" in hardware_assignment:
+            hardware_counts = hardware_assignment["hardware_counts"]
+            hardware_types = list(hardware_counts.keys())
+            print(f"Using exact_counts hardware assignment: {hardware_counts}")
+        else:
+            hardware_counts = None
     
     # Get hardware subcategories configuration
     hardware_subcategories = config.get("hardware_subcategories", {

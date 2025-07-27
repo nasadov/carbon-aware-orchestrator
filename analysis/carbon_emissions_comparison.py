@@ -376,7 +376,7 @@ def load_nodes_from_yaml(nodes_file):
                 total_ram = float(ram_str.replace('Gi', '')) * 1024  # Gi to MB
             
             # Parse embodied carbon and lifetime
-            embodied_carbon = float(annotations.get("hardware.carbon/embodied_emissions", "0"))
+            embodied_carbon = float(annotations.get("hardware.carbon/embodied_emissions", "0")) * 1000.0  # Convert kg to grams
             lifetime_years = float(annotations.get("hardware.carbon/lifetime_years", "3"))
             lifetime_hours = lifetime_years * 365 * 24
             

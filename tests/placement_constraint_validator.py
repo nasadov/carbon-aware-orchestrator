@@ -379,7 +379,7 @@ Examples:
     if not args.nodes_file and not args.workloads_dir:
         # Default paths
         base_dir = "/root/carbon-aware-orchestrator/pkg/carbon-aware"
-        args.nodes_file = f"{base_dir}/server-python/nodes.yaml"
+        args.nodes_file = f"{base_dir}/nodes.yaml"
         args.workloads_dir = f"{base_dir}/workloads"
         print(f"🔧 Using default paths:")
         print(f"   Nodes file: {args.nodes_file}")

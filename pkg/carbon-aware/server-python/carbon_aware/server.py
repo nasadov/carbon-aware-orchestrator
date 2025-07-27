@@ -39,13 +39,14 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
     """
     def __init__(self, algorithm_name='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None, 
                  workloads_dir=None, nodes_file=None, forecasts_file=None, prioritize_efficiency=False,
-                 precomputed_solution=None, precomputation_done=False):
+                 precomputed_solution=None, precomputation_done=False, operational_only=False):
         self.algo = Algorithm(algorithm_name, True)
         self.command_line_algorithm = algorithm_name 
         self.persistent_state = PersistentStateStorage()
         self.experiment_logger = experiment_logger
         self.perf_logger = perf_logger
         self.session_log_dir = session_log_dir # This is the single directory for the entire server session
+        self.operational_only = operational_only
         
         # Global optimization parameters
         self.workloads_dir = workloads_dir
@@ -158,8 +159,20 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             logging.info("-" * 60)
             logging.info(f"📊 INFRASTRUCTURE PARSING")
             start_time = time.time()  # Record algorithm start time
-            flavours = parse_infrastructure(request.infrastructure)
-            logging.info(f"  ▶ Processed {len(flavours)} nodes in {(time.time() - start_time):.2f}s")
+            
+            # For heuristic algorithm, read nodes from nodes.yaml instead of client request
+            if self.algo.name == "heuristic":
+                logging.info(f"🔄 Using nodes.yaml for heuristic algorithm: {self.nodes_file}")
+                # Get a temporary heuristic instance to load nodes
+                from carbon_aware.algorithms.heuristic import HeuristicAlgorithm
+                temp_heuristic = HeuristicAlgorithm()
+                flavours = temp_heuristic._load_nodes_from_yaml(self.nodes_file)
+                logging.info(f"  ▶ Loaded {len(flavours)} nodes from nodes.yaml in {(time.time() - start_time):.2f}s")
+            else:
+                # For other algorithms, use client-provided infrastructure
+                logging.info(f"🔄 Using client-provided infrastructure for {self.algo.name} algorithm")
+                flavours = parse_infrastructure(request.infrastructure)
+                logging.info(f"  ▶ Processed {len(flavours)} nodes from client in {(time.time() - start_time):.2f}s")
             
             # Check if carbon intensity data is available
             regions = set()
@@ -199,59 +212,22 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     # This will set up the run-specific subdirectory and placement CSV file.
                     if hasattr(algorithm_instance, 'setup_session_placement_log'):
                         algorithm_instance.setup_session_placement_log()
-                        logging.info(f"Algorithm {self.algo.name}: Setup session placement log for placement logging.")
+                        logging.info(f"📊 Algorithm placement CSV logging configured")
                     else:
-                        logging.warning(f"Algorithm {self.algo.name} has set_base_log_dir but no setup_session_placement_log. Placement CSVs may not be properly initialized for this run.")
+                        logging.warning(f"Algorithm {self.algo.name} does not support session placement logging")
                 else:
-                    logging.warning(f"Algorithm {self.algo.name} does not have set_base_log_dir. Placement CSVs might not be in the session directory structure.")
-            else:
-                logging.warning(f"Session log directory not set. Placement CSVs will likely not be saved for algorithm {self.algo.name}.")
+                    logging.warning(f"Algorithm {self.algo.name} does not support base log directory setting")
             
-            # The PerformanceLogger is already configured in __init__ to append to a single session file.
-            # No need to call set_new_log_file here for perf_logger per CalculatePlacement call.
+            # Set operational_only flag if the algorithm supports it
+            if hasattr(algorithm_instance, 'set_operational_only'):
+                algorithm_instance.set_operational_only(self.operational_only)
+                if self.operational_only:
+                    logging.info(f"🔥 Algorithm configured for operational-only emissions mode")
+            elif self.operational_only:
+                logging.warning(f"Algorithm {self.algo.name} does not support operational-only mode")
 
-            # Initialize global optimization for global-optimal algorithm
-            if self.algo.name == 'global-optimal' and not self.comprehensive_initialized:
-                if self.precomputation_done:
-                    # Use precomputed solution from server startup
-                    logging.info(f"🎯 Using precomputed global optimization solution")
-                    logging.info(f"  📊 Precomputed solution contains {len(self.precomputed_solution)} pod placements")
-                    
-                    # Transfer the precomputed solution to the algorithm instance
-                    if hasattr(algorithm_instance, 'global_solution'):
-                        algorithm_instance.global_solution = self.precomputed_solution
-                        algorithm_instance.optimization_done = True
-                        algorithm_instance.has_solved = True
-                        logging.info(f"✅ Precomputed solution loaded into algorithm instance")
-                    
-                    self.comprehensive_initialized = True
-                else:
-                    # Fallback to old behavior if precomputation wasn't done
-                    logging.info(f"🌟 Initializing global optimization mode (fallback behavior)")
-                    logging.info(f"  ▶ Workloads directory: {self.workloads_dir}")
-                    logging.info(f"  ▶ Nodes file: {self.nodes_file}")
-                    logging.info(f"  ▶ Forecasts file: {self.forecasts_file}")
-                    
-                    if hasattr(algorithm_instance, 'precompute_all_workloads'):
-                        success = algorithm_instance.precompute_all_workloads(
-                            workloads_dir=self.workloads_dir,
-                            nodes_file=self.nodes_file,
-                            forecasts_file=self.forecasts_file
-                        )
-                        
-                        if success:
-                            logging.info(f"✅ Global optimization initialized successfully")
-                            self.comprehensive_initialized = True
-                        else:
-                            logging.error(f"❌ Failed to initialize global optimization")
-                    else:
-                        logging.error(f"❌ Algorithm {self.algo.name} does not support global optimization")
-            
-            # Inject experiment_logger into algorithm (for experiment logger, if used)
-            if self.experiment_logger:
-                if not hasattr(self.experiment_logger, 'session_started'):
-                    self.experiment_logger.start_session(self.algo.name)
-                    self.experiment_logger.session_started = True
+            # Pass experiment logger to algorithm if supported
+            if self.experiment_logger and hasattr(algorithm_instance, 'experiment_logger'):
                 algorithm_instance.experiment_logger = self.experiment_logger
             
             placements_success = 0
@@ -571,7 +547,7 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 
 def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None,
          workloads_dir="./workloads", nodes_file="../nodes.yaml", forecasts_file="./all_forecasts.json",
-         prioritize_efficiency=False):
+         prioritize_efficiency=False, operational_only=False):
     """
     Creates and runs the gRPC server on the specified port, registering the PlacementAlgorithm servicer.
     Implements graceful shutdown handling.
@@ -586,6 +562,7 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         nodes_file (str): Path to nodes.yaml
         forecasts_file (str): Path to all_forecasts.json
         prioritize_efficiency (bool): Whether to prioritize carbon efficiency per CPU
+        operational_only (bool): Whether to use only operational emissions (omit embodied emissions)
     """
     shutdown_in_progress = False
     
@@ -672,7 +649,8 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         forecasts_file=forecasts_file,
         prioritize_efficiency=prioritize_efficiency,
         precomputed_solution=global_precomputed_solution,
-        precomputation_done=global_optimization_done
+        precomputation_done=global_optimization_done,
+        operational_only=operational_only
     )
     idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(servicer, server)
     server.add_insecure_port('[::]:' + port)
