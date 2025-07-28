@@ -1,219 +1,522 @@
-\documentclass{article}
-\usepackage[utf8]{inputenc}
-\usepackage{enumitem}
-\usepackage{verbatim}
-\usepackage{amsmath}
-\usepackage{hyperref}
-\usepackage{graphicx}  % Add graphicx package for including figures
-\usepackage{subcaption}  % Add subcaption package for subfigures
+% IEEE Transactions LaTeX Template
+% For IEEE Transactions on Cloud Computing
 
-\title{Experimental Design for Carbon-Aware Orchestrator Publication}
-\author{}
-\date{}
+\documentclass[journal]{IEEEtran}
+
+% *** PACKAGES ***
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{subfig}
+\usepackage{tikz}
+
+% *** PDF, URL AND HYPERLINK PACKAGES ***
+\usepackage{url}
+
+% *** Do not adjust lengths that control margins, column widths, etc. ***
+% *** Do not use packages that alter fonts (such as pslatex).       ***
+
+% correct bad hyphenation here
+\hyphenation{op-tical net-works semi-conduc-tor}
 
 \begin{document}
+
+% paper title
+\title{Carbon-Aware Container Orchestration: A Comparative Analysis of Heuristic and Optimal Scheduling Algorithms for Sustainable Computing}
+
+% author names and affiliations
+\author{Nasir~Asadov,
+        Vlad~C.~Coroamă,
+        Marco~Zambianco,
+        Silvio~Cretti,
+        and~Matthias~Finkbeiner% <-this % stops a space
+\thanks{N. Asadov, V. C. Coroamă, and M. Finkbeiner are with the Department
+of Environmental Technology, Technische Universität Berlin, Strasse des 17. Juni 135, 10623 Berlin, Germany
+(e-mail: nasir.asadov@tu-berlin.de; coroama@tu-berlin.de; matthias.finkbeiner@tu-berlin.de).}% <-this % stops a space
+\thanks{M. Zambianco and S. Cretti are with Fondazione Bruno Kessler,
+38123 Trento, Italy (e-mail: zambianco@fbk.eu; cretti@fbk.eu).}% <-this % stops a space
+\thanks{Corresponding author: Nasir Asadov (e-mail: nasir.asadov@tu-berlin.de).}% <-this % stops a space
+\thanks{Manuscript received Month Day, Year; revised Month Day, Year.}}
+
+% The paper headers
+\markboth{IEEE Transactions on Cloud Computing,~Vol.~XX, No.~XX, Month~Year}%
+{Asadov \MakeLowercase{\textit{et al.}}: Carbon-Aware Container Orchestration}
+
+% make the title area
 \maketitle
 
+% As a general rule, do not put math, special symbols or citations
+% in the abstract or keywords.
+\begin{abstract}
+Container orchestration systems ignore carbon emissions in placement decisions, despite data centers consuming over 1\% of global electricity. Existing Kubernetes schedulers optimize for performance but lack carbon minimization mechanisms. We formulate the carbon-aware scheduling problem and develop a heuristic algorithm that incorporates both operational and embodied carbon emissions while respecting resource requirements and deadlines. Evaluation against vanilla Kubernetes and theoretical optimal solutions demonstrates our algorithm reduces carbon emissions significantly while maintaining practical execution times. This establishes that carbon-aware container orchestration provides a feasible pathway toward sustainable cloud computing.
+\end{abstract}
 
-\section{Comparative Evaluation Framework}
-\textbf{Algorithms to Compare:}
+% Note that keywords are not normally used for peerreview papers.
+\begin{IEEEkeywords}
+Carbon-aware computing, container orchestration, Kubernetes, sustainable computing, green cloud computing, optimization algorithms, mixed integer linear programming, global optimization.
+\end{IEEEkeywords}
+
+\IEEEpeerreviewmaketitle
+
+\section{Introduction}
+\IEEEPARstart{T}{he} exponential growth of cloud computing has led to significant environmental concerns, with data centers consuming approximately 1\% of global electricity and contributing substantially to carbon emissions~\cite{masanet2020recalibrating}. As organizations increasingly adopt containerized applications and orchestration platforms like Kubernetes, the need for carbon-aware scheduling mechanisms becomes paramount to address sustainability challenges in modern computing infrastructures.
+
+% Add your introduction content here
+
+\section{Related Work}
+% Literature review section
+
+\section{System Architecture and Problem Formulation}
+
+\subsection{The Hidden Impact: Why Embodied Emissions Matter}
+
+Current carbon-aware scheduling approaches in the literature focus predominantly on operational emissions—the carbon footprint from electricity consumed during workload execution. While this operational perspective captures the immediate energy consumption of running containers, it fundamentally overlooks a critical component of the total carbon footprint: embodied emissions from hardware manufacturing, transportation, and end-of-life processing.
+
+Our preliminary analysis reveals that embodied emissions constitute a substantial portion of the total carbon footprint in modern data center environments. Based on detailed lifecycle assessment of representative hardware configurations from \cite{boavizta2023methodology}, we find that embodied carbon represents a significant fraction of total emissions over typical hardware lifetimes, with this proportion varying significantly based on hardware type, utilization patterns, and regional electricity carbon intensity.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.45\textwidth]{figures/comparison/operational_only_density.png}
+\caption{Scheduling decisions using operational emissions only. The algorithm optimizes placement based solely on electricity carbon intensity, leading to concentrated utilization patterns that may overlook hardware embodied carbon implications.}
+\label{fig:operational-only}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.45\textwidth]{figures/comparison/comprehensive_density.png}
+\caption{Scheduling decisions incorporating both operational and embodied emissions. The comprehensive approach reveals markedly different placement patterns, demonstrating how embodied carbon considerations fundamentally alter the optimization landscape.}
+\label{fig:comprehensive}
+\end{figure}
+
+The contrast between Figures~\ref{fig:operational-only} and \ref{fig:comprehensive} illustrates a profound shift in the scheduling decision landscape when embodied emissions are incorporated. The operational-only approach (Figure~\ref{fig:operational-only}) exhibits clustering behavior that prioritizes nodes with favorable electricity carbon intensity, often concentrating workloads on a subset of available hardware. However, when embodied emissions are considered (Figure~\ref{fig:comprehensive}), the algorithm discovers a more distributed utilization pattern that balances both operational and embodied carbon costs.
+
+This transformation in scheduling behavior emerges from a fundamental insight: embodied emissions represent a \textit{fixed carbon cost} that must be amortized over the hardware's operational lifetime. Unlike operational emissions that scale directly with utilization, embodied emissions create an incentive to maximize hardware utilization efficiency across the entire infrastructure. Consequently, the comprehensive approach often favors distributing workloads more evenly to amortize embodied carbon costs effectively, even when this means accepting slightly higher operational emissions in some time slots.
+
+The implications extend beyond mere placement optimization. When embodied emissions are ignored, scheduling algorithms may inadvertently create scenarios where low-carbon electricity incentivizes concentrating workloads on a subset of nodes, leaving other hardware underutilized. This apparent optimization actually increases the per-workload embodied carbon footprint by failing to amortize manufacturing emissions across the full infrastructure capacity.
+
+Our analysis demonstrates that neglecting embodied emissions can lead to suboptimal scheduling decisions that significantly underestimate total carbon impact in typical cloud workload scenarios. More critically, operational-only approaches may actively work against sustainability goals by creating utilization patterns that waste the embodied carbon investment in underutilized hardware.
+
+\subsection{System Architecture Overview}
+
+Our carbon-aware orchestration system is implemented as a distributed architecture that integrates with Kubernetes through a custom gRPC-based interface. The system decouples carbon-aware scheduling logic from the underlying orchestration platform, enabling algorithmic experimentation while maintaining production-grade performance and reliability.
+
+Figure~\ref{fig:architecture} illustrates the complete system architecture and component interactions. The system follows a layered design where external clients communicate through a standardized gRPC interface, while the core engine coordinates between algorithms, data services, and persistent state management.
+
+\subsubsection{Core System Components}
+
+The architecture comprises five interconnected components:
+
+\textbf{1. gRPC Placement Service:} The central \texttt{PlacementAlgorithm} service implements the Interface Definition Language (IDL) protocol, providing a language-agnostic API for scheduling requests. The service receives infrastructure snapshots and workload specifications, returning optimized placement decisions through standardized protocol buffer messages.
+
+\textbf{2. Multi-Algorithm Engine:} A pluggable algorithm framework supporting two scheduling approaches: (i) heuristic spatiotemporal optimization for real-time online scheduling of incoming pods, and (ii) MILP-based oracle optimization that assumes perfect knowledge of all pods (including future arrivals) to compute theoretically optimal solutions for benchmarking and analysis.
+
+\textbf{3. Carbon Data Service:} Aggregates and processes carbon intensity forecasts from multiple data sources including Electricity Maps API, regional grid operators, and weather-based renewable energy predictions. The service maintains rolling 24-48 hour forecasts with hourly updates, supporting geographical and temporal carbon optimization across distributed infrastructure.
+
+\textbf{4. Hardware Metadata Repository:} Maintains comprehensive hardware profiles including power consumption characteristics (idle, 10\%, 50\%, maximum load), embodied carbon values from lifecycle assessments, and expected operational lifetimes. Node metadata is extracted from Kubernetes annotations and labels, enabling fine-grained carbon accounting per hardware category.
+
+\textbf{5. Performance Monitoring and Analytics:} Implements comprehensive logging through \texttt{PerformanceLogger} and \texttt{ExperimentLogger} classes, capturing algorithm execution metrics, carbon emissions outcomes, and resource utilization patterns. The monitoring system enables continuous algorithm improvement and validation of carbon reduction claims.
+
+\subsubsection{Integration Architecture}
+
+\textbf{Kubernetes Integration:} The system interfaces with Kubernetes through the IDL protocol, which models cluster snapshots including node flavours, resource availability, and workload requirements. The gRPC interface enables polyglot implementation with Python-based algorithms and Go-based clients, facilitating integration with existing Kubernetes scheduler frameworks.
+
+\textbf{Data Flow Pipeline:} Infrastructure data flows from Kubernetes node specifications through the IDL interface to algorithm implementations. Carbon intensity forecasts are loaded from JSON configuration files or real-time API endpoints. The system processes scheduling requests by combining infrastructure constraints, workload requirements, and carbon optimization objectives to produce placement decisions.
+
+\textbf{State Management:} \texttt{PersistentStateStorage} maintains scheduling state across service restarts, enabling consistent placement decisions and experiment continuity. The state management layer supports both stateless operation for production deployments and stateful experiment tracking for research applications.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[node distance=0.8cm, auto, thick, scale=0.75, transform shape,
+    block/.style={rectangle, draw, fill=blue!20, text width=1.8cm, text centered, minimum height=0.7cm, font=\scriptsize},
+    external/.style={rectangle, draw, fill=orange!20, text width=1.6cm, text centered, minimum height=0.6cm, font=\scriptsize},
+    data/.style={rectangle, draw, fill=green!20, text width=1.6cm, text centered, minimum height=0.6cm, font=\scriptsize}]
+    
+    % Vertical layout for double-column
+    \node[block] (client) at (0,5) {Go Client\\(K8s)};
+    \node[block] (grpc) at (0,4) {gRPC\\Service};
+    \node[block] (engine) at (0,3) {Algorithm\\Engine};
+    
+    % Algorithms side by side but compact
+    \node[block] (heuristic) at (-1,2) {Heuristic};
+    \node[block] (oracle) at (1,2) {MILP\\Oracle};
+    
+    % Data services vertical stack
+    \node[data] (carbon) at (0,1) {Carbon\\Data};
+    \node[data] (hardware) at (-1,0) {Hardware\\Metadata};
+    \node[data] (state) at (1,0) {State\\Storage};
+    
+    % External sources at bottom
+    \node[external] (maps) at (0,-1) {Electricity\\Maps};
+    \node[external] (k8s) at (-1,-2) {K8s\\Nodes};
+    \node[external] (boavizta) at (1,-2) {Boavizta\\DB};
+    
+    % Vertical flow arrows
+    \draw[->] (client) -- (grpc);
+    \draw[->] (grpc) -- (engine);
+    \draw[->] (engine) -- (heuristic);
+    \draw[->] (engine) -- (oracle);
+    \draw[->] (heuristic) -- (carbon);
+    \draw[->] (oracle) -- (carbon);
+    \draw[->] (heuristic) -- (state);
+    \draw[->] (carbon) -- (maps);
+    \draw[->] (hardware) -- (k8s);
+    \draw[->] (hardware) -- (boavizta);
+    
+    % Cross connections
+    \draw[->] (heuristic) -- (hardware);
+    \draw[->] (oracle) -- (hardware);
+    
+\end{tikzpicture}
+\caption{Carbon-aware orchestration system architecture with component interactions and data flow.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Carbon Intensity Modeling and Data Sources}
+
+Our carbon intensity modeling incorporates both geographical and temporal variations in electricity grid carbon footprint, providing the foundation for accurate operational carbon emission calculations.
+
+\subsubsection{Carbon Intensity Data Integration}
+
+\textbf{Grid-Level Forecasting:} The system integrates carbon intensity forecasts from Electricity Maps API, which provides real-time and predicted carbon intensity data for European regions. Forecasts incorporate renewable energy generation, fossil fuel plant dispatch, and grid interconnection effects.
+
+\textbf{Regional Coverage:} Current implementation supports 4 European regions (DE, FR, ES, IT-NO) with hourly carbon intensity forecasts. Regional data shows carbon intensities ranging from 30 gCO\textsubscript{2}/kWh to 479 gCO\textsubscript{2}/kWh, reflecting differences in electricity generation portfolios across European grids.
+
+\textbf{Forecast Processing:} The \texttt{build\_timeslots} function constructs temporal scheduling windows by combining carbon intensity forecasts with infrastructure availability. Timeslots align with forecast granularity (hourly) while supporting sub-hourly workload placement through interpolation methods.
+
+\subsubsection{Hardware Power Profiling}
+
+\textbf{Multi-Point Power Models:} Each node maintains power consumption profiles at four utilization levels: idle, 10\%, 50\%, and maximum load. These profiles enable accurate power estimation based on actual workload characteristics rather than simplified linear models.
+
+\textbf{Dynamic Power Calculation:} Power consumption for individual workloads is calculated using the formula:
+$$P_{workload} = P_{idle} + (P_{max} - P_{active}) \times \frac{CPU_{request}}{CPU_{total}}$$
+
+where $P_{active}$ represents the 50\% load power consumption, providing a realistic baseline for container workload power estimation.
+
+\textbf{Metadata Integration:} Hardware power profiles are extracted from Kubernetes node annotations (\texttt{hardware.power/idle\_watts}, \texttt{hardware.power/active\_watts}) with fallback to category-based defaults when node-specific data is unavailable.
+
+\subsection{Embodied Carbon Quantification Methodology}
+
+To accurately account for embodied emissions in our scheduling decisions, we developed a comprehensive methodology for quantifying the embodied carbon footprint of ICT hardware. Our approach addresses a critical gap in existing carbon-aware systems, which typically ignore the substantial manufacturing-related emissions embedded in computing infrastructure.
+
+\subsubsection{Hardware Lifecycle Assessment Data Sources}
+
+Our embodied carbon calculations are based on lifecycle assessment (LCA) data from the Boavizta database~\cite{boavizta2023methodology}, which aggregates manufacturer-reported environmental product declarations following ISO 14040/14044 standards. We processed a comprehensive dataset of hardware embodied carbon values and computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{tab:embodied-carbon}.
+
+\begin{table}[ht]
+\centering
+\caption{Hardware Category Embodied Carbon Values}
+\label{tab:embodied-carbon}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Hardware Category} & \textbf{Embodied Emissions} & \textbf{Lifetime} \\
+                           & \textbf{(kg CO\textsubscript{2}e)} & \textbf{(years)} \\
+\midrule
+IoT                        & 27.471                      & 5.20 \\
+Smartphone                 & 52.729                      & 3.03 \\
+Laptop                     & 231.855                     & 4.13 \\
+Server                     & 1230.656                    & 3.87 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The dataset encompasses over 200 hardware configurations from major manufacturers including Apple, Dell, and others, providing representative embodied carbon values across different hardware categories. For each category, we computed weighted averages of embodied emissions and operational lifetimes from the underlying device-specific LCA data.
+
+\subsubsection{Amortization and Allocation Model}
+
+The core challenge in embodied carbon accounting is properly amortizing the upfront manufacturing emissions over the hardware's operational lifetime and allocating them to individual workloads. Our model follows the temporal amortization approach:
+
+\begin{equation}
+E_{emb,hourly} = \frac{E_{emb,total}}{L_{lifetime} \times 365 \times 24}
+\end{equation}
+
+where $E_{emb,total}$ represents the total embodied emissions for a hardware unit (in grams CO\textsubscript{2}e), $L_{lifetime}$ is the expected operational lifetime in years, and $E_{emb,hourly}$ is the amortized hourly embodied carbon cost.
+
+For workload allocation, embodied emissions are attributed proportionally to the workload duration:
+
+\begin{equation}
+E_{emb,workload} = E_{emb,hourly} \times t_{duration}
+\end{equation}
+
+where $t_{duration}$ represents the workload execution time in hours. This allocation model ensures that longer-running workloads bear a proportionally larger share of the embodied carbon costs, creating appropriate incentives for efficient resource utilization.
+
+\subsubsection{Implementation and Data Integration}
+
+Our implementation extracts embodied carbon metadata from Kubernetes node annotations using a hierarchical priority system. Hardware-specific values take precedence over category defaults, enabling fine-grained modeling while maintaining compatibility with heterogeneous infrastructure deployments.
+
+The embodied carbon calculation is integrated directly into the scheduling objective function, where it combines with operational emissions to provide a comprehensive carbon footprint assessment for each placement decision. This integrated approach ensures that both emission components influence scheduling decisions simultaneously, rather than treating them as separate optimization phases.
+
+\subsection{Problem Formulation}
+
+We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Programming (MILP) optimization that finds optimal assignments of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing total carbon emissions incorporating both operational and embodied components.
+
+\subsubsection{Sets, Parameters and Decision Variables}
+
+\textbf{Sets:} Let $i \in \mathcal{P}$ denote the set of pods, $j \in \mathcal{F}$ the set of nodes, and $t \in \mathcal{T}$ the set of timeslots.
+
+\textbf{Parameters:}
+\begin{align}
+& D_i \in \mathbb{N}^+ & \text{Deadline timeslot for pod $i$} \\
+& s_{i} \in \mathbb{N}^+ & \text{Earliest timeslot for pod $i$} \\
+& d_i \in \mathbb{N}^+ & \text{Duration of pod $i$ (in timeslots)} \\
+& w_i \in \mathbb{N}^+ & \text{Temporal slack for pod $i$} \\
+& c_{i} \in \mathbb{R}^+ & \text{CPU request of pod $i$} \\
+& r_{i} \in \mathbb{R}^+ & \text{RAM request of pod $i$} \\
+& C_{jt} \in \mathbb{R}^+ & \text{Available CPU of node $j$ in timeslot $t$} \\
+& R_{jt} \in \mathbb{R}^+ & \text{Available RAM of node $j$ in timeslot $t$} \\
+& p_{ij} \in \mathbb{R}^+ & \text{Power consumption of pod $i$ on node $j$} \\
+& \text{CI}_{j,t} \in \mathbb{R}^+ & \text{Carbon intensity of node $j$ in timeslot $t$} \\
+& \text{EC}_j \in \mathbb{R}^+ & \text{Embodied carbon of node $j$} \\
+& L_j \in \mathbb{R}^+ & \text{Expected lifetime of node $j$} \\
+& u_j \in \mathbb{R}^+ & \text{Utilization factor of node $j$}
+\end{align}
+
+\textbf{Decision Variables:} The binary decision variable is defined as:
+\begin{align}
+x_{ijt} = 
+\begin{cases} 
+1 & \text{if pod $i$ placed on node $j$ at time $t$} \\
+0 & \text{otherwise}
+\end{cases}
+\end{align}
+
+\textbf{Feasible Placements:} Let $\mathcal{V}_i \subset \mathcal{F} \times \mathcal{T}$ be the set of valid node-timeslot pairs for pod $i$:
+\begin{align}
+\mathcal{V}_i = \{(j,t) \in \mathcal{F} \times \mathcal{T} \mid 
+& t \geq s_i, \; t + d_i \leq D_i, \nonumber \\
+& C_{j(t+k)} \geq c_i \; \forall k \in \{0,\ldots,d_i-1\}, \nonumber \\
+& R_{j(t+k)} \geq r_i \; \forall k \in \{0,\ldots,d_i-1\} \}
+\end{align}
+
+where the deadline timeslot $D_i = s_i + d_i + w_i$ includes the pod's execution duration and temporal slack for scheduling flexibility.
+
+\subsubsection{Objective Function}
+
+The optimization objective minimizes total carbon emissions across all scheduled pods:
+
+\begin{equation}
+\text{minimize} \sum_{i \in \mathcal{P}} \sum_{(j,t) \in \mathcal{V}_i} e_{ijt} \cdot x_{ijt}
+\end{equation}
+
+where $e_{ijt}$ represents the total carbon emissions for executing pod $i$ on node $j$ starting at timeslot $t$.
+
+\subsubsection{Carbon Emissions Model}
+
+The carbon emissions $e_{ijt}$ incorporate both operational and embodied components over the pod's execution duration $d_i$:
+
+\begin{equation}
+e_{ijt} = \sum_{k=0}^{d_i-1} \left( op_{ijt+k} + emb_{ij} \right)
+\end{equation}
+
+where operational emissions $op_{ijt+k} = p_{ij} \cdot \text{CI}_{j,t+k}$ depend on power consumption $p_{ij}$ and carbon intensity forecasts $\text{CI}_{j,t+k}$, and embodied emissions per timeslot are $emb_{ij} = \frac{\text{EC}_j}{L_j \cdot u_j}$ based on total embodied carbon $\text{EC}_j$, lifetime $L_j$, and utilization factor $u_j$.
+
+\subsubsection{Constraints}
+
+The formulation includes resource capacity constraints ensuring CPU and memory limits are respected, temporal constraints enforcing pod deadlines and scheduling windows, and placement constraints requiring each pod to be scheduled exactly once within its feasible region.
+
+\section{Scheduling Algorithms}
+% Describe your three algorithms
+
+\subsection{Heuristic Carbon-Aware Scheduler}
+
+While the MILP formulation provides optimal solutions, it becomes computationally intractable for large-scale deployments with hundreds of pods and nodes. To address this scalability challenge, we develop a heuristic carbon-aware spatiotemporal shifting algorithm that efficiently finds near-optimal solutions in real-time.
+
+\subsubsection{Algorithm Design Principles}
+
+Our heuristic algorithm operates on four key principles:
 \begin{enumerate}
-    \item Carbon-Aware Orchestrator
-    \item Kubernetes Default Scheduler
-    \item Random Placement
-    \item First-Fit/Bin-Packing Approach
-        \begin{itemize}
-            \item Process workloads in a predefined order (typically arrival time). For each workload, scan through nodes sequentially. Place the workload on the first node with sufficient resources. If no node has capacity, reject the workload or wait.
-            \item Differences from CAO:
-            \begin{itemize}
-                \item Only considers where to place workloads, not when
-                \item Optimizes for bin utilization, not carbon emissions
-                \item Makes greedy, immediate decisions without considering future timeslots
-                \item Has no concept of deadlines or scheduling windows
-            \end{itemize}
-        \end{itemize}
-    \item Theoretical optimal solution (if computationally feasible)
-    \item Other state-of-art energy-aware schedulers
+\item \textbf{Priority-driven scheduling}: Pods are processed in deadline order to minimize constraint violations
+\item \textbf{Spatiotemporal optimization}: The algorithm considers both geographical distribution and temporal flexibility
+\item \textbf{Comprehensive carbon accounting}: Both operational and embodied emissions influence placement decisions
+\item \textbf{Real-time adaptability}: The scheduler responds to new pod arrivals and updated carbon intensity forecasts
 \end{enumerate}
 
-\section{Workload Diversity}
+\subsubsection{Algorithmic Framework}
 
-\subsection*{Synthetic Workloads}
-Parameterized by characteristics:
-\begin{itemize}[leftmargin=*, label={--}]
-    \item CPU/Memory intensity ratios
-    \item Execution duration (short vs. long-running)
-    \item Deadlines (strict vs. flexible)
-    \item Burstiness patterns
-\end{itemize}
+The core algorithm maintains a priority queue of pending pods ordered by deadline urgency and evaluates all feasible (node, timeslot) combinations to minimize total carbon emissions. For each pod placement candidate, the algorithm computes:
 
-\subsection*{Real-World Traces (tbd)}
-\begin{itemize}[leftmargin=*, label={--}]
-    \item Alibaba or Google cluster traces
-    \item CI/CD pipeline workloads
-    \item Batch processing workloads
-    \item ML training jobs
-\end{itemize}
+\textbf{Operational carbon emissions:}
+\begin{equation}
+C^{op}_{ijk} = \widehat{\text{ACI}}_{jk} \times \text{U}_i \times \text{P}_i
+\end{equation}
 
-\section{Key Metrics}
+where $\widehat{\text{ACI}}_{jk}$ is the predicted average carbon intensity for node $j$ in timeslot $k$, $\text{U}_i$ is the execution time of pod $i$, and $\text{P}_i$ is its power consumption.
 
-\subsection*{Primary Carbon Metrics}
-\begin{itemize}[leftmargin=*, label={--}]
-    \item Total carbon emissions (kg CO\textsubscript{2}e)
-    \item Carbon reduction percentage vs. baselines
-    \item Carbon efficiency (computation/kg CO\textsubscript{2}e)
-\end{itemize}
+\textbf{Embodied carbon emissions:}
+\begin{equation}
+C^{emb}_{ijk} = c^{emb}_j \times \text{U}_i \times \frac{\text{P}_i}{P_{tot}}
+\end{equation}
 
-\subsection*{System Performance}
-\begin{itemize}[leftmargin=*, label={--}]
-    \item Resource utilization across nodes/regions
-    \item Job completion times
-    \item SLA violations/deadline misses
-    \item Scheduling overhead (time complexity)
-\end{itemize}
+where $c^{emb}_j = \frac{C^{emb}_j}{L_j}$ is the embodied carbon rate for node $j$, $C^{emb}_j$ is its total embodied carbon, $L_j$ is its expected lifetime, and $P_{tot}$ represents the total power consumption on the node.
 
-\subsection*{Tradeoff Analysis}
-\begin{itemize}[leftmargin=*, label={--}]
-    \item Carbon savings vs. performance impact
-    \item Pareto efficiency plots
-\end{itemize}
+\begin{algorithm}[ht]
+\caption{Carbon-Aware Spatiotemporal Shifting Algorithm}
+\label{alg:heuristic}
+\begin{algorithmic}[1]
+\State \textbf{Input:} Priority queue $Q$ of pods, nodes $N$, timeslots $T$
+\State \textbf{Output:} Feasible schedule minimizing carbon emissions
+\State
+\State Initialize schedule $S \leftarrow \emptyset$
+\State Initialize resource availability $R_{jk}$ for all $j \in N, k \in T$
+\State Calculate embodied emissions rate $c^{emb}_j \leftarrow \frac{C^{emb}_j}{L_j}$ for all $j \in N$
+\State
+\If{new pods arrived}
+    \State Add pods to priority queue $Q$ by deadline
+\EndIf
+\State
+\If{hourly update OR new pods arrive}
+    \For{each pod $i \in Q$}
+        \State $C^* \leftarrow \infty, j^* \leftarrow -1, k^* \leftarrow -1$
+        
+        \For{each timeslot $k \in T$ where $\text{End}_k \leq \text{Deadline}_i$}
+            \For{each node $j \in N$}
+                \If{resource constraints satisfied}
+                    \If{utilization constraints satisfied}
+                        \State $C^{op}_{ijk} \leftarrow \widehat{\text{ACI}}_{jk} \times \text{U}_i \times \text{P}_i$
+                        \State $P_{tot} \leftarrow \sum_{m \in S_{jk}} \text{P}_m + \text{P}_i$
+                        \State $C_{tot} \leftarrow C^{op}_{ijk} + c^{emb}_j \times \text{U}_i \times \frac{\text{P}_i}{P_{tot}}$
+                        
+                        \If{$C_{tot} < C^*$}
+                            \State $C^* \leftarrow C_{tot}, j^* \leftarrow j, k^* \leftarrow k$
+                        \EndIf
+                    \EndIf
+                \EndIf
+            \EndFor
+        \EndFor
+        
+        \If{$j^* \neq -1$ AND $k^* \neq -1$}
+            \State Schedule pod $i$ on node $j^*$ at timeslot $k^*$
+            \State Update schedule $S$ and remove pod $i$ from $Q$
+        \EndIf
+    \EndFor
+\EndIf
+\end{algorithmic}
+\end{algorithm}
 
-\section{Experimental Variables}
-Systematically vary:
-\begin{itemize}[leftmargin=*, label={--}]
-    \item \textbf{Infrastructure Scale:} 4, 8, 16, 32, 64 nodes
-    \item \textbf{Regional Distribution:} Single-region vs. multi-region
-    \item \textbf{Carbon Intensity Patterns:} Static, time-varying, region-varying
-    \item \textbf{Scheduling Window Flexibility:} 0h, 24h, 48h, 72h
-\end{itemize}
+\subsubsection{Constraint Handling and Feasibility}
 
-\section{Statistical Validity}
-\begin{itemize}[leftmargin=*, label={--}]
-    \item Run each experiment configuration 30+ times
-    \item Report mean, median, standard deviation, and 95\% confidence intervals
-    \item Conduct statistical significance tests (e.g., t-tests, ANOVA)
-    \item Perform sensitivity analysis for key algorithm parameters
-\end{itemize}
+The algorithm enforces multiple constraint types during placement evaluation:
 
-\section{Practical Impact}
-\begin{itemize}[leftmargin=*, label={--}]
-    \item Demonstrate real-world applicability through case studies
-    \item Show financial cost implications (carbon pricing)
-    \item Calculate environmental impact at scale (projections)
-\end{itemize}
+\textbf{Resource constraints}: CPU and memory requirements must not exceed available node capacity:
+$$\overline{\text{CPU}}_i \leq \text{CPU}_{j} - \sum_{m \in S_{jk}} \overline{\text{CPU}}_m$$
+$$\overline{\text{RAM}}_i \leq \text{RAM}_{j} - \sum_{m \in S_{jk}} \overline{\text{RAM}}_m$$
 
-\section{Experimental Results and Analysis}
-\label{sec:results}
+\textbf{Utilization constraints}: Total pod execution time must fit within available timeslot capacity:
+$$\sum_{m \in S_{jk}} \text{U}_m + \text{U}_i \leq \left(1 - \widehat{\text{Util}}_{jk}\right) \times \text{TimeSlotLength}$$
 
-We conducted extensive experiments to evaluate the performance characteristics and carbon efficiency of our carbon-aware orchestration algorithm. The following sections present our key findings across multiple dimensions.
+\textbf{Temporal constraints}: Pod completion must respect deadline requirements:
+$$\text{End}_k \leq \text{Deadline}_i$$
 
-\subsection{Algorithm Performance Characteristics}
+\subsubsection{Computational Complexity}
 
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.9\textwidth]{figures/execution_time_vs_pods.pdf}
-\caption{Execution time of the carbon-aware orchestration algorithm as a function of workload size. Note the logarithmic scale on the y-axis. While most data points show consistent performance, there's a notable outlier with significantly higher execution time that warrants further investigation.}
-\label{fig:execution-time}
-\end{figure}
+The heuristic algorithm has time complexity $O(|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|)$ for each scheduling iteration, where $|\mathcal{P}|$ is the number of pending pods, $|\mathcal{F}|$ is the number of nodes, and $|\mathcal{T}|$ is the number of timeslots. This represents a significant improvement over the MILP formulation while maintaining solution quality for practical deployment scenarios.
 
-Figure~\ref{fig:execution-time} illustrates how our algorithm's execution time scales with the number of pods processed. The majority of execution times remain under 20ms regardless of workload size, demonstrating good algorithmic efficiency for typical scenarios. However, we observe an outlier at call 11 (processing 7 pods) that exhibits significantly higher execution time (approximately 17 seconds). This outlier could be attributed to several factors:
+\subsection{MILP-based Oracle}
 
-\begin{itemize}
-    \item Complex interactions between specific pod characteristics and scheduling constraints
-    \item Resource contention on the host machine during that particular test run
-    \item Search space explosion for specific combinations of pods and constraints
-\end{itemize}
+The MILP-based oracle provides theoretically optimal solutions by assuming perfect knowledge of all pods (including future arrivals) and formulating the complete scheduling problem as a mixed-integer linear program. This oracle serves as an upper bound for algorithm performance evaluation and enables analysis of the theoretical optimality gap.
 
-To better understand the algorithm's per-pod efficiency, Figure~\ref{fig:per-pod-time} shows the execution time normalized by the number of pods processed.
+\subsubsection{Complete Mathematical Model}
 
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.9\textwidth]{figures/per_pod_execution_time.pdf}
-\caption{Per-pod execution time showing how efficiently the algorithm processes individual workload units. The outlier affects per-pod efficiency significantly.}
-\label{fig:per-pod-time}
-\end{figure}
+The complete MILP formulation extends the core problem with detailed constraints:
 
-\subsection{Carbon Efficiency Analysis}
+\textbf{Placement constraint:} Each pod must be scheduled exactly once within its feasible region:
+\begin{equation}
+\sum_{(j,t) \in \mathcal{V}_i} x_{ijt} = 1 \quad \forall i \in \mathcal{P}
+\end{equation}
 
-The primary goal of our orchestration system is optimizing carbon efficiency. Figure~\ref{fig:carbon-efficiency} shows the carbon emissions per pod across different workload sizes.
+\textbf{CPU capacity constraints:} Total CPU usage must not exceed node capacity:
+\begin{equation}
+\sum_{i \in \mathcal{P}} \sum_{t' \in \mathcal{T}_{it}} c_i \cdot x_{ijt'} \leq C_{jt} \quad \forall j \in \mathcal{F}, \forall t \in \mathcal{T}
+\end{equation}
 
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.9\textwidth]{figures/carbon_efficiency.pdf}
-\caption{Carbon emissions per pod as a function of the number of pods successfully placed. This shows the variation in emissions efficiency across different workloads.}
-\label{fig:carbon-efficiency}
-\end{figure}
+where $\mathcal{T}_{it} = \{t' \in \mathcal{T} \mid t' \leq t < t' + d_i, (j,t') \in \mathcal{V}_i\}$ represents starting timeslots where pod $i$ would be active at timeslot $t$.
 
-We observe significant variations in per-pod emissions across different runs, ranging from approximately 0.1 to 4.2 kg CO\textsubscript{2}e per pod. This variation can be attributed to:
+\textbf{Memory capacity constraints:} Total RAM usage must not exceed node capacity:
+\begin{equation}
+\sum_{i \in \mathcal{P}} \sum_{t' \in \mathcal{T}_{it}} r_i \cdot x_{ijt'} \leq R_{jt} \quad \forall j \in \mathcal{F}, \forall t \in \mathcal{T}
+\end{equation}
 
-\begin{itemize}
-    \item Different pod resource requirements and durations
-    \item Varying carbon intensity in the regions where pods are placed
-    \item Hardware heterogeneity in the target infrastructure
-\end{itemize}
+\subsubsection{Feasibility and Relaxation Techniques}
 
-There appears to be an increasing trend in per-pod emissions as more pods are placed, suggesting that as infrastructure utilization increases, the algorithm must make less optimal placement decisions from a carbon perspective.
+The MILP formulation may become infeasible when resource constraints are over-subscribed or pod deadlines are incompatible with available scheduling windows. We develop a theoretically grounded hierarchy of relaxation techniques that systematically ensure feasibility while preserving solution quality.
 
-\subsection{Multi-dimensional Performance Analysis}
+\textbf{Theoretical Foundation:} Let $\mathcal{M}$ denote the original MILP formulation. When $\mathcal{M}$ is infeasible, we seek to solve a relaxed problem $\mathcal{M}'$ that: (1) guarantees feasibility, (2) maximizes pod placement, (3) minimizes carbon emissions among solutions with equal placement counts, and (4) maintains computational tractability.
 
-To better understand the relationships between execution time, carbon efficiency, and system utilization, Figure~\ref{fig:multi-dim} presents these metrics across sequential algorithm runs.
+\textbf{Multi-Objective Optimization with Penalty Functions:} Our primary relaxation strategy transforms hard assignment constraints into soft constraints using penalty functions. We introduce slack variables $y_i \in \{0,1\}$ where $y_i = 1$ indicates that pod $i$ remains unplaced. The bi-objective formulation becomes:
 
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.95\textwidth]{figures/multi_dimension_analysis.pdf}
-\caption{Multi-dimensional analysis showing execution time, carbon emissions per pod, and CPU utilization across sequential algorithm runs. Numbers above data points indicate the number of pods processed in each run.}
-\label{fig:multi-dim}
-\end{figure}
+\begin{align}
+\text{Minimize} \quad Z(\mathbf{x}, \mathbf{y}) &= \lambda \sum_{i \in \mathcal{P}} y_i \nonumber \\
+&\quad + \sum_{i \in \mathcal{P}} \sum_{(j,t) \in \mathcal{V}_i} e_{ijt} \cdot x_{ijt}
+\end{align}
 
-Key observations from this analysis:
-\begin{itemize}
-    \item CPU utilization increases steadily as more pods are added to the system
-    \item Per-pod carbon emissions show significant variation but generally increase as the system becomes more utilized
-    \item The outlier in execution time (call 11) does not correspond to any significant anomaly in carbon efficiency or CPU utilization
-\end{itemize}
+where $\lambda \gg \max_{i,j,t} e_{ijt}$ ensures lexicographic optimization priority. The hard assignment constraint is replaced with:
 
-\subsection{Algorithmic Complexity Analysis}
+\begin{equation}
+\sum_{(j,t) \in \mathcal{V}_i} x_{ijt} + y_i = 1 \quad \forall i \in \mathcal{P}
+\end{equation}
 
-To characterize the theoretical complexity of our algorithm, Figure~\ref{fig:scalability} compares our empirical results against standard complexity classes.
+ensuring each pod is either placed exactly once or marked as unplaced. This relaxed formulation always admits a feasible solution while prioritizing maximum pod placement over carbon minimization.
 
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.9\textwidth]{figures/algorithm_scalability.pdf}
-\caption{Comparison of the carbon-aware orchestration algorithm's performance against theoretical complexity classes. The algorithm's behavior most closely resembles linear complexity for the tested workload sizes.}
-\label{fig:scalability}
-\end{figure}
+\subsubsection{Computational Complexity}
 
-Excluding outliers, our algorithm exhibits behavior closest to linear complexity (O(n)) across the tested workload sizes. This indicates good scalability characteristics for practical deployment scenarios, even as the number of pods increases.
+The MILP-based oracle exhibits fundamentally different computational characteristics compared to the heuristic algorithm. The problem involves $O(|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|)$ binary decision variables $x_{ijt}$, though the actual number is constrained by the feasible sets $\mathcal{V}_i$ for each pod $i$. The resulting binary integer programming problem is NP-hard, with worst-case exponential time complexity $O(2^{|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|})$.
 
-\subsection{Resource Utilization and Carbon Efficiency}
+In practice, modern MILP solvers like CBC employ branch-and-bound algorithms with cutting planes, achieving reasonable performance for moderate problem sizes. However, computational tractability deteriorates rapidly with scale. Our implementation imposes a 30-second time limit and employs the relaxation hierarchy when the full MILP becomes intractable, ensuring system responsiveness while maintaining solution quality where computationally feasible.
 
-Figure~\ref{fig:resource-carbon} explores the relationships between resource utilization and carbon emissions.
+The oracle's exponential complexity justifies the heuristic algorithm's polynomial-time approximation for production deployments, while the MILP provides theoretical optimality bounds for performance evaluation and small-scale optimization scenarios.
 
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.95\textwidth]{figures/resource_utilization_carbon_analysis.pdf}
-\caption{Relationships between resource utilization metrics (CPU and memory) and carbon emissions (both total and per-pod). Point sizes represent the number of pods processed.}
-\label{fig:resource-carbon}
-\end{figure}
+\section{Experimental Setup}
+% Describe your experimental methodology
 
-These visualizations reveal important insights:
-\begin{itemize}
-    \item Total carbon emissions generally increase with CPU utilization, as expected
-    \item Memory utilization shows a less clear correlation with emissions than CPU utilization
-    \item Per-pod emissions tend to increase at higher utilization levels, indicating diminishing returns in carbon efficiency as the system approaches capacity
-\end{itemize}
+\subsection{Testbed Configuration}
+% Kubernetes cluster setup
 
-\subsection{Discussion of Findings}
+\subsection{Workload Characteristics}
+% Describe the workloads used
 
-Our experimental results demonstrate that the heuristic carbon-aware orchestration algorithm achieves good performance characteristics for practical workload sizes, with execution times generally remaining under 20ms. The algorithm exhibits approximately linear complexity, making it suitable for deployment in production environments.
+\subsection{Evaluation Metrics}
+% Performance and carbon emission metrics
 
-However, the presence of outliers in execution time suggests that certain combinations of pods and constraints can lead to computational challenges. Further optimization could target these edge cases to provide more consistent performance.
+\section{Results and Analysis}
+% Present your experimental results
 
-From a carbon efficiency perspective, we observe that the algorithm makes effective placement decisions that consider both operational and embodied carbon emissions. However, carbon efficiency decreases as system utilization increases, highlighting the fundamental trade-off between resource efficiency and carbon optimization.
+\subsection{Carbon Emission Reduction}
+% Results on carbon savings
 
-Future work will compare these results against a global optimal algorithm based on mixed-integer linear programming (MILP) to quantify how close our heuristic comes to optimal solutions across different scenarios.
+\subsection{Performance Impact}
+% Scheduling overhead and latency analysis
 
-% Include the experimental results and algorithm comparison
-\input{results}
+\subsection{Scalability Analysis}
+% Large-scale deployment results
+
+\section{Discussion}
+% Interpret results and discuss implications
+
+\section{Conclusion and Future Work}
+% Summarize contributions and future directions
+
+% references section
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+% biography section (uncomment and add author photos when ready for submission)
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{nasir_photo}}]{Nasir Asadov}
+% received the B.S. degree in computer science from University Name in Year, and the Ph.D. degree in environmental technology from Technische Universität Berlin in Year. He is currently a researcher with the Department of Environmental Technology, Technische Universität Berlin. His research interests include sustainable computing, carbon-aware orchestration, and green computing algorithms.
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{vlad_photo}}]{Vlad C. Coroamă}
+% received the Ph.D. degree in computer science from ETH Zurich. He is currently a Professor with the Department of Environmental Technology, Technische Universität Berlin. His research interests include ICT for sustainability, environmental assessment of digital technologies, and sustainable computing systems.
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{marco_photo}}]{Marco Zambianco}
+% received the Ph.D. degree in computer science from University Name in Year. He is currently a Senior Research Scientist with Company Name. His research interests include cloud computing, optimization algorithms, and sustainable system design.
+% \end{IEEEbiography}
 
 \end{document}
