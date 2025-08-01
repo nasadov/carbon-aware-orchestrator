@@ -6,7 +6,6 @@ from typing import Optional
 
 from carbon_aware.algorithms.base import SchedulingAlgorithm
 from carbon_aware.algorithms.heuristic import HeuristicAlgorithm
-from carbon_aware.algorithms.optimal import OptimalAlgorithm 
 from carbon_aware.algorithms.global_optimal import GlobalOptimalAlgorithm
 
 # Store reference to precomputed global optimal instance
@@ -23,7 +22,7 @@ def get_algorithm(name: str) -> SchedulingAlgorithm:
     Get algorithm implementation by name.
     
     Args:
-        name: Algorithm name (heuristic, optimal, or global-optimal)
+        name: Algorithm name (heuristic or global-optimal)
         
     Returns:
         Algorithm implementation
@@ -35,8 +34,6 @@ def get_algorithm(name: str) -> SchedulingAlgorithm:
     
     if name == "heuristic":
         return HeuristicAlgorithm()
-    elif name == "optimal":
-        return OptimalAlgorithm()
     elif name == "global-optimal":  # Updated name
         # Return the precomputed instance if available, otherwise create new
         if _precomputed_global_optimal is not None:
@@ -46,4 +43,4 @@ def get_algorithm(name: str) -> SchedulingAlgorithm:
             logging.info("🔧 Creating new global optimal algorithm instance (no precomputed available)")
             return GlobalOptimalAlgorithm()
     else:
-        raise ValueError(f"Unknown algorithm: {name}")
+        raise ValueError(f"Unknown algorithm: {name}. Available: heuristic, global-optimal")

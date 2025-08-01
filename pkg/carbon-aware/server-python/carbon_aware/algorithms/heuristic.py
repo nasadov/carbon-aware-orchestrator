@@ -282,7 +282,14 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         import re
         
         # Look in the workloads directory for timeslot_*.yaml files
-        workloads_dir = "/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads"
+        # Use the configured workloads directory, with fallback to default
+        workloads_dir = getattr(self, '_workloads_dir', "../workloads")
+        
+        # If relative path, make it relative to the current working directory
+        if not os.path.isabs(workloads_dir):
+            workloads_dir = os.path.join(os.getcwd(), workloads_dir)
+        
+
         
         try:
             for filename in os.listdir(workloads_dir):
@@ -315,6 +322,11 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         """Set whether to use operational-only emissions calculation."""
         self._operational_only = operational_only
         logging.info(f"HeuristicAlgorithm: operational_only mode set to {operational_only}")
+        
+    def set_workloads_dir(self, workloads_dir: str):
+        """Set the workloads directory for YAML file lookup."""
+        self._workloads_dir = workloads_dir
+        logging.info(f"HeuristicAlgorithm: workloads directory set to {workloads_dir}")
 
     @property
     def name(self) -> str:

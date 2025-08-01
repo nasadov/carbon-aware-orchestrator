@@ -4,11 +4,113 @@ Main entry point for the Carbon-Aware Orchestrator.
 import argparse
 import logging
 import signal
+import sys
 import os
 from datetime import datetime
 
 from carbon_aware.server import serve
 from carbon_aware.experiments import ExperimentLogger
+import re
+import glob
+
+# Global variable to track placed pods
+placed_pods = set()
+
+def get_total_pod_count(workloads_dir):
+    """
+    Extract total pod count by finding the last pod name in the last timeslot file.
+    
+    Args:
+        workloads_dir: Directory containing timeslot_*.yaml files
+        
+    Returns:
+        Total number of pods (int), or None if unable to determine
+    """
+    try:
+        # Find all timeslot files and get the highest numbered one
+        timeslot_files = glob.glob(os.path.join(workloads_dir, "timeslot_*.yaml"))
+        if not timeslot_files:
+            return None
+            
+        # Sort to get the last timeslot file
+        timeslot_files.sort(key=lambda x: int(re.search(r'timeslot_(\d+)\.yaml', x).group(1)))
+        last_timeslot_file = timeslot_files[-1]
+        
+        # Read the last timeslot file and find the last pod name
+        with open(last_timeslot_file, 'r') as f:
+            content = f.read()
+            
+        # Find all pod names (pattern: name: m###)
+        pod_names = re.findall(r'name: m(\d+)', content)
+        if not pod_names:
+            return None
+            
+        # Get the highest pod number and add 1 for total count
+        last_pod_number = max(int(num) for num in pod_names)
+        total_pods = last_pod_number + 1
+        
+        logging.info(f"📊 Detected {total_pods} total pods in workload (last pod: m{last_pod_number:03d})")
+        return total_pods
+        
+    except Exception as e:
+        logging.warning(f"Could not determine pod count from workloads: {e}")
+        return None
+
+def log_experiment_summary(experiment_dir, total_pods):
+    """Log overall experiment summary when server shuts down."""
+    if not experiment_dir:
+        return
+        
+    log_file = None
+    for file in os.listdir(experiment_dir):
+        if '_server_' in file and file.endswith('.log'):
+            log_file = os.path.join(experiment_dir, file)
+            break
+            
+    if not log_file or not os.path.exists(log_file):
+        return
+        
+    try:
+        # Extract unique placed pod names from log
+        with open(log_file, 'r') as f:
+            log_content = f.read()
+            
+        placed_pod_matches = re.findall(r'PLACEMENT_SUCCESS for ([^-]*)-', log_content)
+        unique_placed_pods = set(placed_pod_matches)
+        placed_count = len(unique_placed_pods)
+        
+        overall_success_rate = (placed_count / total_pods) * 100 if total_pods > 0 else 0
+        
+        # Append summary to log file
+        with open(log_file, 'a') as f:
+            f.write("=" * 80 + "\n")
+            f.write("🏁 OVERALL EXPERIMENT SUMMARY\n")
+            f.write("=" * 80 + "\n")
+            f.write(f"  ▶ Total unique pods placed: {placed_count}\n")
+            f.write(f"  ▶ Total pods in workload: {total_pods}\n")
+            f.write(f"  ▶ OVERALL SUCCESS RATE: {placed_count}/{total_pods} pods ({overall_success_rate:.1f}%)\n")
+            f.write("=" * 80 + "\n")
+            
+        logging.info("=" * 80)
+        logging.info("🏁 OVERALL EXPERIMENT SUMMARY")
+        logging.info("=" * 80)
+        logging.info(f"  ▶ Total unique pods placed: {placed_count}")
+        logging.info(f"  ▶ Total pods in workload: {total_pods}")
+        logging.info(f"  ▶ OVERALL SUCCESS RATE: {placed_count}/{total_pods} pods ({overall_success_rate:.1f}%)")
+        logging.info("=" * 80)
+        
+    except Exception as e:
+        logging.warning(f"Could not generate experiment summary: {e}")
+
+def signal_handler(signum, frame, experiment_dir=None, total_pods=None):
+    """Handle shutdown signals and log experiment summary."""
+    logging.info("⏳ Received shutdown signal, stopping server gracefully...")
+    
+    if experiment_dir and total_pods:
+        log_experiment_summary(experiment_dir, total_pods)
+    
+    logging.info("👋 Server shutdown initiated")
+    sys.exit(0)
 
 def main() -> None:
     """
@@ -31,8 +133,8 @@ def main() -> None:
     parser.add_argument(
         '--algorithm',
         default='heuristic',
-        choices=['heuristic', 'optimal', 'global-optimal'],
-        help='Scheduling algorithm to use: heuristic (fast, local optimization), optimal (MILP, per-pod optimization), or global-optimal (MILP, considers all pods simultaneously) (default: heuristic)'
+        choices=['heuristic', 'global-optimal'],
+        help='Scheduling algorithm to use: heuristic (fast, local optimization) or global-optimal (MILP, considers all pods simultaneously) (default: heuristic)'
     )
     parser.add_argument(
         '--workloads-dir',
@@ -80,6 +182,11 @@ def main() -> None:
         action='store_true',
         help='Use only operational emissions (omit embodied emissions) when using heuristic algorithm'
     )
+    parser.add_argument(
+        '--precompute',
+        action='store_true',
+        help='Run precomputation mode: process all timeslot files sequentially and save placements to CSV without starting server (heuristic algorithm only)'
+    )
     
     args = parser.parse_args()
     
@@ -118,13 +225,33 @@ def main() -> None:
         os.makedirs(session_log_dir, exist_ok=True)
         logging.info(f"🧪 Experiment mode: {session_log_dir}")
     elif args.perf_log:
-        session_type_prefix = "perf_log_session" 
+        # Try to get pod count for more informative directory names
+        pod_count = get_total_pod_count(args.workloads_dir)
+        
+        if pod_count is not None:
+            session_type_prefix = f"{pod_count}pods"
+        else:
+            session_type_prefix = "perf_log_session"  # Fallback
+            
         # Use short "op" suffix for operational-only mode
         algo_mode = f"{args.algorithm}_op" if args.operational_only else args.algorithm
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
-        logging.info(f"📈 Performance logging: {session_log_dir}")
+        
+        # Set up signal handler with experiment parameters
+        if pod_count is not None:
+            signal.signal(signal.SIGINT, lambda signum, frame: signal_handler(signum, frame, session_log_dir, pod_count))
+            signal.signal(signal.SIGTERM, lambda signum, frame: signal_handler(signum, frame, session_log_dir, pod_count))
+            logging.info(f"📈 Performance logging ({pod_count} pods): {session_log_dir}")
+        else:
+            # Basic signal handlers without experiment summary
+            signal.signal(signal.SIGINT, lambda signum, frame: signal_handler(signum, frame))
+            signal.signal(signal.SIGTERM, lambda signum, frame: signal_handler(signum, frame))
+            logging.info(f"📈 Performance logging: {session_log_dir}")
     else:
+        # Basic signal handlers for non-performance mode
+        signal.signal(signal.SIGINT, lambda signum, frame: signal_handler(signum, frame))
+        signal.signal(signal.SIGTERM, lambda signum, frame: signal_handler(signum, frame))
         session_log_dir = None
 
     # Add file handler if we have a session directory
@@ -177,9 +304,51 @@ def main() -> None:
             logging.error(f"Error setting up performance logger: {e}. Running without performance logging.")
             perf_logger = None
     
+    # Check if precompute mode is requested
+    if args.precompute:
+        if args.algorithm not in ['heuristic', 'global-optimal']:
+            logging.error(f"Precompute mode is only supported for 'heuristic' and 'global-optimal' algorithms, got: {args.algorithm}")
+            sys.exit(1)
+        
+        logging.info(f"🧮 Running precomputation mode for {args.algorithm} algorithm")
+        logging.info(f"📂 Will process all timeslot files from: {args.workloads_dir}")
+        
+        # Run precomputation instead of starting server
+        if args.algorithm == 'heuristic':
+            from carbon_aware.precompute_heuristic import run_heuristic_precomputation
+            success = run_heuristic_precomputation(
+                workloads_dir=args.workloads_dir,
+                nodes_file=args.nodes_file,
+                forecasts_file=args.forecasts_file,
+                session_log_dir=session_log_dir,
+                perf_logger=perf_logger,
+                prioritize_efficiency=args.prioritize_efficiency,
+                operational_only=args.operational_only
+            )
+        elif args.algorithm == 'global-optimal':
+            from carbon_aware.precompute_global_optimal import run_global_optimal_precomputation
+            success = run_global_optimal_precomputation(
+                workloads_dir=args.workloads_dir,
+                nodes_file=args.nodes_file,
+                forecasts_file=args.forecasts_file,
+                session_log_dir=session_log_dir,
+                perf_logger=perf_logger,
+                prioritize_efficiency=args.prioritize_efficiency,
+                operational_only=args.operational_only
+            )
+        
+        if success:
+            logging.info("✅ Precomputation completed successfully")
+            sys.exit(0)
+        else:
+            logging.error("❌ Precomputation failed")
+            sys.exit(1)
+    
     # Basic server start logging (moved after log dir setup for clarity)
     logging.info(f"Starting carbon-aware server with algorithm: {args.algorithm}")
     
+    # Signal handlers are set up in the perf_log section above when needed
+
     # Start the server
     # Pass the session_log_dir to the server, so it can pass it to algorithms
     # for consistent logging paths for placements.

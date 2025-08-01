@@ -6,6 +6,8 @@ import logging
 import signal
 import threading
 import time
+import re
+import os
 from datetime import datetime as dt
 
 
@@ -283,6 +285,18 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                 logging.info(f"          Earliest-constraint range: {earliest_constraint_range} timeslots")
                 logging.info(f"          Required range: {required_timeslot_range} timeslots")
                 
+                # GLOBAL-OPTIMAL PRECOMPUTED SOLUTION FIX: Expand timeslot range if needed
+                if hasattr(algorithm_instance, 'global_solution') and algorithm_instance.optimization_done:
+                    if pod.id in algorithm_instance.global_solution:
+                        flv_id, precomputed_ts_id, emissions = algorithm_instance.global_solution[pod.id]
+                        precomputed_required_range = precomputed_ts_id + 2  # Add buffer
+                        if precomputed_required_range > required_timeslot_range:
+                            logging.info(f"          🎯 PRECOMPUTED SOLUTION FIX: Pod {pod.id} needs timeslot {precomputed_ts_id}")
+                            logging.info(f"          📈 Expanding timeslot range from {required_timeslot_range} to {precomputed_required_range}")
+                            required_timeslot_range = precomputed_required_range
+                        else:
+                            logging.info(f"          ✅ Precomputed timeslot {precomputed_ts_id} already within range {required_timeslot_range}")
+                
                 timeslots = build_timeslots(required_timeslot_range)
                 logging.info(f"       Generated {len(timeslots)} timeslots (expanded for earliest_timeslot constraint)")
                 
@@ -407,12 +421,15 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                 out_placements.placements.append(placement)
                 logging.info(f"    Processing time: {(time.time() - ms_start_time):.3f}s")
 
-            logging.info("=" * 60)
-            logging.info(f"📋 PLACEMENT SUMMARY")
-            logging.info(f"  ▶ Total microservices: {len(request.workload.microservices)}")
+            logging.info("=" * 80)
+            logging.info(f"📋 FINAL PLACEMENT SUMMARY - {self.algo.name.upper()}")
+            logging.info("=" * 80)
+            logging.info(f"  ▶ Algorithm: {self.algo.name}")
+            logging.info(f"  ▶ Total microservices received: {len(request.workload.microservices)}")
             logging.info(f"  ▶ Successfully placed: {placements_success}")
             logging.info(f"  ▶ Failed to place: {placements_failed}")
-            logging.info(f"  ▶ Skipped (non-TO_DEPLOY): {placements_skipped}") 
+            logging.info(f"  ▶ Skipped (non-TO_DEPLOY): {placements_skipped}")
+            logging.info(f"  ▶ PLACEMENT RATE: {placements_success}/{len(request.workload.microservices)} pods ({(placements_success/len(request.workload.microservices)*100):.1f}%)")
             logging.info(f"  ▶ Total carbon footprint: {total_emissions:.6f}kgCO2e ({total_emissions*1000:.2f}gCO2e)")
             logging.info(f"  ▶ Total execution time: {(time.time() - start_time):.3f}s")
             logging.info("=" * 80)
@@ -655,7 +672,7 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
     idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(servicer, server)
     server.add_insecure_port('[::]:' + port)
 
-    def graceful_shutdown(sig, frame):
+    def graceful_shutdown(signum, frame):
         nonlocal shutdown_in_progress
         if shutdown_in_progress:
             return
@@ -668,6 +685,120 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
             experiment_logger.save_all_results()
             experiment_logger.generate_report()
             logging.info("📊 Experiment results saved")
+        
+        # Add experiment summary for performance logging sessions
+        if session_log_dir and "pods" in session_log_dir:
+            logging.info(f"🔍 Debug: Attempting to generate experiment summary for {session_log_dir}")
+            try:
+                # Extract total pods from directory name (e.g., "heuristic_47pods_20250729_171619")
+                import re
+                match = re.search(r'(\d+)pods', session_log_dir)
+                logging.info(f"🔍 Debug: Regex match for pod count: {match}")
+                if match:
+                    total_pods = int(match.group(1))
+                    logging.info(f"🔍 Debug: Extracted total pods: {total_pods}")
+                    
+                    # Find the log file in the session directory
+                    log_file = None
+                    logging.info(f"🔍 Debug: Looking for log files in {session_log_dir}")
+                    for file in os.listdir(session_log_dir):
+                        logging.info(f"🔍 Debug: Found file: {file}")
+                        if '_server_' in file and file.endswith('.log'):
+                            log_file = os.path.join(session_log_dir, file)
+                            logging.info(f"🔍 Debug: Selected log file: {log_file}")
+                            break
+                    
+                    if log_file and os.path.exists(log_file):
+                        logging.info(f"🔍 Debug: Processing log file: {log_file}")
+                        # Extract unique placed pod names from log
+                        with open(log_file, 'r') as f:
+                            log_content = f.read()
+                        
+                        placed_pod_matches = re.findall(r'PLACEMENT_SUCCESS for ([^-]*)-', log_content)
+                        logging.info(f"🔍 Debug: Found {len(placed_pod_matches)} placement success entries")
+                        unique_placed_pods = set(placed_pod_matches)
+                        placed_count = len(unique_placed_pods)
+                        logging.info(f"🔍 Debug: Unique placed pods: {placed_count}")
+                        
+                        # Extract infrastructure info from log
+                        node_matches = re.findall(r'NODE \d+: name=([^\s]+)', log_content)
+                        infrastructure_nodes = list(set(node_matches))  # Remove duplicates
+                        
+                        # Extract node placement distribution (including duplicates)
+                        node_placement_matches = re.findall(r'Selected: node=([^,]+),', log_content)
+                        node_placement_counts = {}
+                        for node in node_placement_matches:
+                            node_placement_counts[node] = node_placement_counts.get(node, 0) + 1
+                        
+                        overall_success_rate = (placed_count / total_pods) * 100 if total_pods > 0 else 0
+                        failed_count = total_pods - placed_count
+                        
+                        # Create experiment summary log file with exact format match
+                        experiment_summary_file = os.path.join(session_log_dir, 'experiment_summary.log')
+                        logging.info(f"🔍 Debug: Creating summary file: {experiment_summary_file}")
+                        
+                        # Algorithm name formatting
+                        algorithm_title = algorithm.replace('-', ' ').title()
+                        
+                        summary_lines = [
+                            f'{algorithm_title} Experiment Placement Summary',
+                            f'Generated: {dt.now().strftime("%Y-%m-%d %H:%M:%S")}',
+                            '',
+                            'Experiment-Wide Pod Placement Statistics:',
+                            f'- Total pods in timeslot_11.yaml: {total_pods}',
+                            f'- Unique pods successfully placed: {placed_count}',
+                            f'- Pods not placed: {failed_count}',
+                            f'- Success rate: {placed_count}/{total_pods} = {overall_success_rate:.1f}%',
+                            '',
+                            'Unique Successfully Placed Pods:',
+                        ]
+                        
+                        # Add comma-separated list of placed pods (with full names)
+                        placed_pod_full_matches = re.findall(r'PLACEMENT_SUCCESS for ([^:]+):', log_content)
+                        unique_placed_pods_full = sorted(set(placed_pod_full_matches))
+                        if unique_placed_pods_full:
+                            summary_lines.append(', '.join(unique_placed_pods_full))
+                        else:
+                            summary_lines.append('None')
+                        
+                        summary_lines.extend([
+                            '',
+                            'Node Placement Distribution (including duplicates):'
+                        ])
+                        
+                        # Add node placement counts
+                        for node in sorted(node_placement_counts.keys()):
+                            count = node_placement_counts[node]
+                            summary_lines.append(f'- {node}: {count} pods')
+                        
+                        # Add empty line at the end
+                        summary_lines.append('')
+                        
+                        # Write to separate summary file
+                        with open(experiment_summary_file, 'w') as f:
+                            f.write('\n'.join(summary_lines))
+                        
+                        # Also log to console
+                        logging.info('=' * 80)
+                        logging.info('🏁 OVERALL EXPERIMENT SUMMARY')
+                        logging.info('=' * 80)
+                        logging.info(f'  ▶ Total unique pods placed: {placed_count}')
+                        logging.info(f'  ▶ Total pods in workload: {total_pods}')
+                        logging.info(f'  ▶ OVERALL SUCCESS RATE: {placed_count}/{total_pods} pods ({overall_success_rate:.1f}%)')
+                        logging.info(f'  ▶ Infrastructure nodes: {len(infrastructure_nodes)} nodes')
+                        logging.info('=' * 80)
+                        logging.info(f"📊 Detailed experiment summary saved to: {experiment_summary_file}")
+                    else:
+                        logging.warning(f"🔍 Debug: Log file not found or doesn't exist: {log_file}")
+                else:
+                    logging.warning(f"🔍 Debug: Could not extract pod count from directory name: {session_log_dir}")
+                    
+            except Exception as e:
+                logging.warning(f"⚠️ Could not generate experiment summary: {e}")
+                import traceback
+                logging.warning(f"⚠️ Full traceback: {traceback.format_exc()}")
+        else:
+            logging.info(f"🔍 Debug: Skipping experiment summary. session_log_dir={session_log_dir}, contains 'pods': {'pods' in session_log_dir if session_log_dir else 'N/A'}")
         
         threading.Thread(target=server.stop, args=(5,)).start()
         

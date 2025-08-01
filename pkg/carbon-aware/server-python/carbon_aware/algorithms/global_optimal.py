@@ -2347,6 +2347,22 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     logging.info("📊 Sample placements:")
                     for pod_id, (node_id, ts_id, emissions) in sample:
                         logging.info(f"  - Pod {pod_id} -> Node {node_id}, Timeslot {ts_id}, Emissions {emissions/1000.0:.6f}kgCO2e ({emissions:.2f}gCO2e)")
+                
+                # Generate placement summary automatically
+                try:
+                    if hasattr(self, '_session_csv_path') and self._session_csv_path:
+                        from carbon_aware.placement_summary import generate_placement_summary
+                        summary_path = generate_placement_summary(
+                            self._session_csv_path, 
+                            "global-optimal", 
+                            os.path.dirname(self._session_csv_path)
+                        )
+                        if summary_path:
+                            logging.info(f"📋 Placement summary generated: {summary_path}")
+                        else:
+                            logging.warning("⚠️ Could not generate placement summary")
+                except Exception as e:
+                    logging.warning(f"⚠️ Failed to generate placement summary: {e}")
                         
                 return True
             else:
