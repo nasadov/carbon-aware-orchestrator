@@ -10,22 +10,22 @@
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{url}
-\usepackage{hyperref}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{multirow}
 \usepackage{booktabs}
-\usepackage{subfig}
+\usepackage[caption=false,font=footnotesize]{subfig}
 \usepackage{tikz}
 
 % *** PDF, URL AND HYPERLINK PACKAGES ***
-\usepackage{url}
+% \usepackage{url} % already loaded above
 
 % *** Do not adjust lengths that control margins, column widths, etc. ***
 % *** Do not use packages that alter fonts (such as pslatex).       ***
 
 % correct bad hyphenation here
 \hyphenation{op-tical net-works semi-conduc-tor}
+\usepackage[hidelinks]{hyperref}
 
 \begin{document}
 
@@ -72,24 +72,41 @@ Carbon-aware computing, container orchestration, Kubernetes, sustainable computi
 % Add your introduction content here
 
 \section{Related Work}
-% Literature review section
+\label{sec:related}
+
+\subsection{Summary of Paper I}
+Our earlier review analyzed carbon-aware workload placement and scheduling along nine axes: (i) temporal shifting; (ii) spatial shifting; (iii) network and migration energy; (iv) which carbon signal is used (average vs.\ marginal); (v) forecasting of demand and carbon signals; (vi) forecasting targets and approaches; (vii) workload-to-power mapping; (viii) inclusion of embodied/life-cycle emissions; and (ix) code availability for reproducibility. We found that most systems optimized either time \emph{or} place, rarely both; average carbon intensity (ACI) dominated over marginal signals; network/migration energy was often ignored; forecasting was seldomly applied; embodied emissions were virtually absent; and open-sourced codebases was sporadic. These gaps motivated the benchmarking choices in this paper.
+
+\subsection{Developments Since Paper I (2025)}
+\textbf{Temporal Shifting with Explicit Power Mapping:} \textsc{GREEN} \cite{greenNSDI2025} schedules ML training jobs to align cluster power draw with lower carbon-intensity (CI) windows while preserving daily capacity; it couples temporal shifting with per-job power modeling (GPU via NVIDIA Management Library, NVML; CPU model), reporting substantial cluster-wide CO\textsubscript{2}e reductions at small job completion time (JCT) trade-offs. This directly addresses our temporal-shifting and power-mapping axes and provides scheduler-overhead/latency numbers useful for benchmarks.
+
+\textbf{Spatial (and Spatiotemporal) Shifting under SLOs:} At the edge, \textsc{CarbonEdge} \cite{carbonedge2025} demonstrates that carbon intensity varies at mesoscale granularity (within states/among neighboring countries), enabling geography-aware placement that respects tight latency budgets---i.e., spatial shifting with explicit service-level objective (SLO) constraints. For always-on services that cannot move across regions, \textsc{Quality Time} \cite{qualitytime2025} uses \emph{forecast-based} quality adaptation within a region to reduce CO\textsubscript{2}e while meeting service constraints, giving an orthogonal baseline along our forecasting axis.
+
+\textbf{Signals and Benchmarking:} \texttt{ElectricityEmissions.jl} \cite{electricityemissionsjl2025} provides a reproducible toolkit to compute and compare multiple carbon signals (ACI, marginal variants, and a proposed hybrid) on standard grid cases, showing how signal choice can flip measured outcomes. Complementing this, a 2025 statement paper \cite{wiesnerkao2025mci} argues that \emph{marginal carbon intensity (MCI)} is neither reliable nor actionable for accounting or grid flexibility due to non-observability and unverifiability; it advocates using more actionable signals such as directly reported ``excess renewable power,'' and incorporating storage and stability explicitly in marginal metrics.
+
+\textbf{Network/Migration Energy:} Beyond compute placement, \textsc{LinTS} \cite{lints2025} schedules inter-datacenter \emph{data transfers} over time to exploit carbon-intensity (CI) variability along the transfer path, explicitly modeling network energy and meeting deadlines---filling a gap our review identified around transfer-dominated workloads.
+
+\textbf{Embodied Emissions:} Finally, \textsc{Aging-aware CPU Core Management} \cite{hewage2025agingaware} introduces a run-time policy that \emph{amortizes embodied emissions} by extending CPU lifetime in LLM inference clusters, quantifying when embodied-aware decisions change the operational optimum. This is directly relevant to our life-cycle axis and to reporting operational vs.\ embodied sensitivity in benchmarks.
+
+\subsection{Takeaways}
+The 2025 literature advances the axes flagged in our review: temporally aware schedulers with measured power models (\textsc{GREEN}); spatial shifting at finer granularity with SLOs (\textsc{CarbonEdge}); forecast-driven controllers for always-on services (\textsc{Quality Time}); reproducible signal computation and guidance on actionable metrics beyond MCI (\texttt{ElectricityEmissions.jl}, \cite{wiesnerkao2025mci}); explicit accounting of network transfer CO\textsubscript{2}e (\textsc{LinTS}); and first steps toward embodied-aware \emph{operational} policies (aging-aware CPU management). These works close several gaps we highlighted and provide solid guidance for our benchmarking protocol.
 
 \section{System Architecture and Problem Formulation}
 
 \subsection{The Hidden Impact: Why Embodied Emissions Matter}
 
-Current carbon-aware scheduling approaches in the literature focus predominantly on operational emissions—the carbon footprint from electricity consumed during workload execution. While this operational perspective captures the immediate energy consumption of running containers, it fundamentally overlooks a critical component of the total carbon footprint: embodied emissions from hardware manufacturing, transportation, and end-of-life processing.
+Current carbon-aware scheduling approaches in the literature focus predominantly on operational emissions---the carbon footprint from electricity consumed during workload execution. While this operational perspective captures the immediate energy consumption of running containers, it fundamentally overlooks a critical component of the total carbon footprint: embodied emissions from hardware manufacturing, transportation, and end-of-life processing.
 
 Our preliminary analysis reveals that embodied emissions constitute a substantial portion of the total carbon footprint in modern data center environments. Based on detailed lifecycle assessment of representative hardware configurations from \cite{boavizta2023methodology}, we find that embodied carbon represents a significant fraction of total emissions over typical hardware lifetimes, with this proportion varying significantly based on hardware type, utilization patterns, and regional electricity carbon intensity.
 
-\begin{figure}[ht]
+\begin{figure}[htbp]
 \centering
 \includegraphics[width=0.45\textwidth]{figures/comparison/operational_only_density.png}
 \caption{Scheduling decisions using operational emissions only. The algorithm optimizes placement based solely on electricity carbon intensity, leading to concentrated utilization patterns that may overlook hardware embodied carbon implications.}
 \label{fig:operational-only}
 \end{figure}
 
-\begin{figure}[ht]
+\begin{figure}[htbp]
 \centering
 \includegraphics[width=0.45\textwidth]{figures/comparison/comprehensive_density.png}
 \caption{Scheduling decisions incorporating both operational and embodied emissions. The comprehensive approach reveals markedly different placement patterns, demonstrating how embodied carbon considerations fundamentally alter the optimization landscape.}
@@ -126,7 +143,7 @@ The architecture comprises five interconnected components:
 
 \subsubsection{Integration Architecture}
 
-\textbf{Kubernetes Integration:} The system interfaces with Kubernetes through the IDL protocol, which models cluster snapshots including node flavours, resource availability, and workload requirements. The gRPC interface enables polyglot implementation with Python-based algorithms and Go-based clients, facilitating integration with existing Kubernetes scheduler frameworks.
+\textbf{Kubernetes Integration:} The system interfaces with Kubernetes through the IDL protocol, which models cluster snapshots including node flavors, resource availability, and workload requirements. The gRPC interface enables polyglot implementation with Python-based algorithms and Go-based clients, facilitating integration with existing Kubernetes scheduler frameworks.
 
 \textbf{Data Flow Pipeline:} Infrastructure data flows from Kubernetes node specifications through the IDL interface to algorithm implementations. Carbon intensity forecasts are loaded from JSON configuration files or real-time API endpoints. The system processes scheduling requests by combining infrastructure constraints, workload requirements, and carbon optimization objectives to produce placement decisions.
 
@@ -187,7 +204,7 @@ Our carbon intensity modeling incorporates both geographical and temporal variat
 
 \textbf{Grid-Level Forecasting:} The system integrates carbon intensity forecasts from Electricity Maps API, which provides real-time and predicted carbon intensity data for European regions. Forecasts incorporate renewable energy generation, fossil fuel plant dispatch, and grid interconnection effects.
 
-\textbf{Regional Coverage:} Current implementation supports 4 European regions (DE, FR, ES, IT-NO) with hourly carbon intensity forecasts. Regional data shows carbon intensities ranging from 30 gCO\textsubscript{2}/kWh to 479 gCO\textsubscript{2}/kWh, reflecting differences in electricity generation portfolios across European grids.
+\textbf{Regional Coverage:} The current implementation supports four European regions (DE, FR, ES, IT-NO) with hourly carbon-intensity forecasts. Regional data shows carbon intensities ranging from 30 gCO\textsubscript{2}/kWh to 479 gCO\textsubscript{2}/kWh, reflecting differences in electricity generation portfolios across European grids.
 
 \textbf{Forecast Processing:} The \texttt{build\_timeslots} function constructs temporal scheduling windows by combining carbon intensity forecasts with infrastructure availability. Timeslots align with forecast granularity (hourly) while supporting sub-hourly workload placement through interpolation methods.
 
@@ -196,7 +213,9 @@ Our carbon intensity modeling incorporates both geographical and temporal variat
 \textbf{Multi-Point Power Models:} Each node maintains power consumption profiles at four utilization levels: idle, 10\%, 50\%, and maximum load. These profiles enable accurate power estimation based on actual workload characteristics rather than simplified linear models.
 
 \textbf{Dynamic Power Calculation:} Power consumption for individual workloads is calculated using the formula:
-$$P_{workload} = P_{idle} + (P_{max} - P_{active}) \times \frac{CPU_{request}}{CPU_{total}}$$
+\begin{equation*}
+P_{workload} = P_{idle} + (P_{max} - P_{active}) \times \frac{CPU_{request}}{CPU_{total}}
+\end{equation*}
 
 where $P_{active}$ represents the 50\% load power consumption, providing a realistic baseline for container workload power estimation.
 
@@ -210,7 +229,7 @@ To accurately account for embodied emissions in our scheduling decisions, we dev
 
 Our embodied carbon calculations are based on lifecycle assessment (LCA) data from the Boavizta database~\cite{boavizta2023methodology}, which aggregates manufacturer-reported environmental product declarations following ISO 14040/14044 standards. We processed a comprehensive dataset of hardware embodied carbon values and computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{tab:embodied-carbon}.
 
-\begin{table}[ht]
+\begin{table}[htbp]
 \centering
 \caption{Hardware Category Embodied Carbon Values}
 \label{tab:embodied-carbon}
@@ -356,7 +375,7 @@ C^{emb}_{ijk} = c^{emb}_j \times \text{U}_i \times \frac{\text{P}_i}{P_{tot}}
 
 where $c^{emb}_j = \frac{C^{emb}_j}{L_j}$ is the embodied carbon rate for node $j$, $C^{emb}_j$ is its total embodied carbon, $L_j$ is its expected lifetime, and $P_{tot}$ represents the total power consumption on the node.
 
-\begin{algorithm}[ht]
+\begin{algorithm}[htbp]
 \caption{Carbon-Aware Spatiotemporal Shifting Algorithm}
 \label{alg:heuristic}
 \begin{algorithmic}[1]
@@ -405,14 +424,22 @@ where $c^{emb}_j = \frac{C^{emb}_j}{L_j}$ is the embodied carbon rate for node $
 The algorithm enforces multiple constraint types during placement evaluation:
 
 \textbf{Resource constraints}: CPU and memory requirements must not exceed available node capacity:
-$$\overline{\text{CPU}}_i \leq \text{CPU}_{j} - \sum_{m \in S_{jk}} \overline{\text{CPU}}_m$$
-$$\overline{\text{RAM}}_i \leq \text{RAM}_{j} - \sum_{m \in S_{jk}} \overline{\text{RAM}}_m$$
+\begin{equation*}
+\overline{\text{CPU}}_i \leq \text{CPU}_{j} - \sum_{m \in S_{jk}} \overline{\text{CPU}}_m
+\end{equation*}
+\begin{equation*}
+\overline{\text{RAM}}_i \leq \text{RAM}_{j} - \sum_{m \in S_{jk}} \overline{\text{RAM}}_m
+\end{equation*}
 
 \textbf{Utilization constraints}: Total pod execution time must fit within available timeslot capacity:
-$$\sum_{m \in S_{jk}} \text{U}_m + \text{U}_i \leq \left(1 - \widehat{\text{Util}}_{jk}\right) \times \text{TimeSlotLength}$$
+\begin{equation*}
+\sum_{m \in S_{jk}} \text{U}_m + \text{U}_i \leq \left(1 - \widehat{\text{Util}}_{jk}\right) \times \text{TimeSlotLength}
+\end{equation*}
 
 \textbf{Temporal constraints}: Pod completion must respect deadline requirements:
-$$\text{End}_k \leq \text{Deadline}_i$$
+\begin{equation*}
+\text{End}_k \leq \text{Deadline}_i
+\end{equation*}
 
 \subsubsection{Computational Complexity}
 
