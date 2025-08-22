@@ -722,26 +722,50 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             # Solve the problem
             logging.info(f"🔍 STEP 4: Solving multi-objective optimization problem")
             logging.info(f"  - Problem size: {len(x)} placement vars + {len(s)} slack vars = {len(x) + len(s)} total variables")
-            logging.info(f"  - Setting up MILP solver with time limit of 30 seconds")
-            
+
+            # Read solver settings from config (with safe defaults)
+            solver_cfg = self.config.get('optimization', {}).get('solver', {}) if hasattr(self, 'config') else {}
+            time_limit_cfg = solver_cfg.get('time_limit', 60)
+            gap_tolerance_cfg = solver_cfg.get('gap_tolerance', 0.05)
+            threads_cfg = 4
+
+            logging.info(f"  - CBC settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
+
             solver_start_time = time.time()
             try:
-                # Try with more generous settings for multi-objective optimization
-                prob.solve(pulp.PULP_CBC_CMD(
-                    msg=False,  # Disable verbose output to avoid log spam
-                    timeLimit=30,  # Increased time limit
-                    gapRel=0.05,  # Allow 5% optimality gap for faster convergence
-                    threads=4  # Use multiple threads
-                ))
+                # Primary attempt: config-driven time limit and gap tolerance
+                primary_solver = pulp.PULP_CBC_CMD(
+                    msg=True,
+                    timeLimit=time_limit_cfg,
+                    gapRel=gap_tolerance_cfg,
+                    threads=threads_cfg
+                )
+
+                # Warn if CBC is not available in this environment
+                try:
+                    if hasattr(primary_solver, 'available') and not primary_solver.available():
+                        logging.error("  - CBC solver not available in this environment. Please install coinor-cbc.")
+                except Exception:
+                    pass
+
+                prob.solve(primary_solver)
                 solution_time = time.time() - solver_start_time
                 logging.info(f"  - Solver completed in {solution_time:.3f}s")
             except Exception as solver_error:
                 solution_time = time.time() - solver_start_time
                 logging.error(f"  - Solver failed after {solution_time:.3f}s: {solver_error}")
-                logging.info(f"  - Attempting fallback solver without time limit...")
+                logging.info(f"  - Attempting fallback solver with relaxed settings...")
                 try:
-                    # Fallback: try without time limit but with gap tolerance
-                    prob.solve(pulp.PULP_CBC_CMD(msg=False, gapRel=0.1))
+                    # Fallback attempt with longer time and looser gap to obtain a feasible solution
+                    fallback_time_limit = max(int(time_limit_cfg * 2), 120)
+                    fallback_gap = max(float(gap_tolerance_cfg), 0.2)
+                    fallback_solver = pulp.PULP_CBC_CMD(
+                        msg=True,
+                        timeLimit=fallback_time_limit,
+                        gapRel=fallback_gap,
+                        threads=threads_cfg
+                    )
+                    prob.solve(fallback_solver)
                     solution_time = time.time() - solver_start_time
                     logging.info(f"  - Fallback solver completed in {solution_time:.3f}s")
                 except Exception as fallback_error:
@@ -757,6 +781,27 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             logging.info(f"  - Global optimization completed in {solution_time:.3f}s")
             logging.info(f"  - Solver status: {self.status}")
             logging.info(f"  - Solver iterations: {self.iterations}")
+
+            # Handle ambiguous results by retrying once with more relaxed parameters
+            if self.status in ("Not Solved", "Undefined", "Time Limit") or (self.iterations == 0 and self.status != "Optimal"):
+                logging.warning(f"  - Solver returned status '{self.status}' with {self.iterations} iterations. Retrying with relaxed settings...")
+                retry_start = time.time()
+                try:
+                    retry_time_limit = max(int(time_limit_cfg * 2), 180)
+                    retry_gap = max(float(gap_tolerance_cfg), 0.2)
+                    retry_solver = pulp.PULP_CBC_CMD(
+                        msg=True,
+                        timeLimit=retry_time_limit,
+                        gapRel=retry_gap,
+                        threads=threads_cfg
+                    )
+                    prob.solve(retry_solver)
+                    solution_time = time.time() - solver_start_time
+                    self.status = pulp.LpStatus[prob.status]
+                    self.iterations = prob.solverModel.Iterations if hasattr(prob.solverModel, 'Iterations') else 0
+                    logging.info(f"  - Retry completed in {time.time() - retry_start:.3f}s with status: {self.status}, iterations: {self.iterations}")
+                except Exception as retry_error:
+                    logging.error(f"  - Retry failed: {retry_error}")
 
             # Extract solution if optimal
             logging.info(f"🔍 STEP 5: Processing solution and recording results")

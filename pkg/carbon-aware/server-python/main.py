@@ -158,8 +158,8 @@ def main() -> None:
     )
     parser.add_argument(
         '--experiment-dir',
-        default='./experiments',
-        help='Directory to store experiment results'
+        default=os.path.join(os.path.dirname(__file__), 'experiments'),
+        help='Directory to store experiment results (default: server-python/experiments)'
     )
     parser.add_argument(
         '--perf-log',
