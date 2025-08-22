@@ -16,6 +16,8 @@
 \usepackage{booktabs}
 \usepackage[caption=false,font=footnotesize]{subfig}
 \usepackage{tikz}
+\usepackage{xcolor}
+\newcommand{\pk}[1]{\textcolor{red}{[NA: #1]}}
 
 % *** PDF, URL AND HYPERLINK PACKAGES ***
 % \usepackage{url} % already loaded above
@@ -59,7 +61,6 @@ of Environmental Technology, Technische Universität Berlin, Strasse des 17. Jun
 Container orchestration systems ignore carbon emissions in placement decisions, despite data centers consuming over 1\% of global electricity. Existing Kubernetes schedulers optimize for performance but lack carbon minimization mechanisms. We formulate the carbon-aware scheduling problem and develop a heuristic algorithm that incorporates both operational and embodied carbon emissions while respecting resource requirements and deadlines. Evaluation against vanilla Kubernetes and theoretical optimal solutions demonstrates our algorithm reduces carbon emissions significantly while maintaining practical execution times. This establishes that carbon-aware container orchestration provides a feasible pathway toward sustainable cloud computing.
 \end{abstract}
 
-% Note that keywords are not normally used for peerreview papers.
 \begin{IEEEkeywords}
 Carbon-aware computing, container orchestration, Kubernetes, sustainable computing, green cloud computing, optimization algorithms, mixed integer linear programming, global optimization.
 \end{IEEEkeywords}
@@ -67,9 +68,26 @@ Carbon-aware computing, container orchestration, Kubernetes, sustainable computi
 \IEEEpeerreviewmaketitle
 
 \section{Introduction}
+
+\subsection{Motivation}
+
 \IEEEPARstart{T}{he} exponential growth of cloud computing has led to significant environmental concerns, with data centers consuming approximately 1\% of global electricity and contributing substantially to carbon emissions~\cite{masanet2020recalibrating}. As organizations increasingly adopt containerized applications and orchestration platforms like Kubernetes, the need for carbon-aware scheduling mechanisms becomes paramount to address sustainability challenges in modern computing infrastructures.
 
-% Add your introduction content here
+\subsection{Contributions}
+
+\begin{itemize}
+    \item We formulate the carbon-aware scheduling problem and develop a heuristic algorithm that incorporates both operational and embodied carbon emissions while respecting resource requirements and deadlines.
+    \item We evaluate our algorithm against vanilla Kubernetes and theoretical optimal solutions demonstrating significant carbon emission reductions while maintaining practical execution times.
+    \item We establish that carbon-aware container orchestration provides a feasible pathway toward sustainable cloud computing.
+\end{itemize}
+
+\subsection{Research Questions}
+
+\begin{description}
+    \item[RQ1:] How does the proposed algorithm compare to baseline algorithms in terms of carbon emission reduction?
+    \item[RQ2:] How does the proposed algorithm compare to baseline algorithms in terms of computational complexity?
+    \item[RQ3:] How does the proposed algorithm compare to baseline algorithms in terms of placement success rate?
+\end{description}
 
 \section{Related Work}
 \label{sec:related}
@@ -91,7 +109,7 @@ Our earlier review analyzed carbon-aware workload placement and scheduling along
 \subsection{Takeaways}
 The 2025 literature advances the axes flagged in our review: temporally aware schedulers with measured power models (\textsc{GREEN}); spatial shifting at finer granularity with SLOs (\textsc{CarbonEdge}); forecast-driven controllers for always-on services (\textsc{Quality Time}); reproducible signal computation and guidance on actionable metrics beyond MCI (\texttt{ElectricityEmissions.jl}, \cite{wiesnerkao2025mci}); explicit accounting of network transfer CO\textsubscript{2}e (\textsc{LinTS}); and first steps toward embodied-aware \emph{operational} policies (aging-aware CPU management). These works close several gaps we highlighted and provide solid guidance for our benchmarking protocol.
 
-\section{System Architecture and Problem Formulation}
+\section{Proposed Method}
 
 \subsection{The Hidden Impact: Why Embodied Emissions Matter}
 
@@ -196,11 +214,11 @@ The architecture comprises five interconnected components:
 \label{fig:architecture}
 \end{figure}
 
-\subsection{Carbon Intensity Modeling and Data Sources}
+\subsection{Carbon Accounting Models}
+
+\subsubsection{Carbon Signals}
 
 Our carbon intensity modeling incorporates both geographical and temporal variations in electricity grid carbon footprint, providing the foundation for accurate operational carbon emission calculations.
-
-\subsubsection{Carbon Intensity Data Integration}
 
 \textbf{Grid-Level Forecasting:} The system integrates carbon intensity forecasts from Electricity Maps API, which provides real-time and predicted carbon intensity data for European regions. Forecasts incorporate renewable energy generation, fossil fuel plant dispatch, and grid interconnection effects.
 
@@ -208,7 +226,7 @@ Our carbon intensity modeling incorporates both geographical and temporal variat
 
 \textbf{Forecast Processing:} The \texttt{build\_timeslots} function constructs temporal scheduling windows by combining carbon intensity forecasts with infrastructure availability. Timeslots align with forecast granularity (hourly) while supporting sub-hourly workload placement through interpolation methods.
 
-\subsubsection{Hardware Power Profiling}
+\subsubsection{Power Modeling}
 
 \textbf{Multi-Point Power Models:} Each node maintains power consumption profiles at four utilization levels: idle, 10\%, 50\%, and maximum load. These profiles enable accurate power estimation based on actual workload characteristics rather than simplified linear models.
 
@@ -221,11 +239,9 @@ where $P_{active}$ represents the 50\% load power consumption, providing a reali
 
 \textbf{Metadata Integration:} Hardware power profiles are extracted from Kubernetes node annotations (\texttt{hardware.power/idle\_watts}, \texttt{hardware.power/active\_watts}) with fallback to category-based defaults when node-specific data is unavailable.
 
-\subsection{Embodied Carbon Quantification Methodology}
+\subsubsection{Embodied Emissions and Amortization}
 
 To accurately account for embodied emissions in our scheduling decisions, we developed a comprehensive methodology for quantifying the embodied carbon footprint of ICT hardware. Our approach addresses a critical gap in existing carbon-aware systems, which typically ignore the substantial manufacturing-related emissions embedded in computing infrastructure.
-
-\subsubsection{Hardware Lifecycle Assessment Data Sources}
 
 Our embodied carbon calculations are based on lifecycle assessment (LCA) data from the Boavizta database~\cite{boavizta2023methodology}, which aggregates manufacturer-reported environmental product declarations following ISO 14040/14044 standards. We processed a comprehensive dataset of hardware embodied carbon values and computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{tab:embodied-carbon}.
 
@@ -238,17 +254,15 @@ Our embodied carbon calculations are based on lifecycle assessment (LCA) data fr
 \textbf{Hardware Category} & \textbf{Embodied Emissions} & \textbf{Lifetime} \\
                            & \textbf{(kg CO\textsubscript{2}e)} & \textbf{(years)} \\
 \midrule
-IoT                        & 27.471                      & 5.20 \\
-Smartphone                 & 52.729                      & 3.03 \\
-Laptop                     & 231.855                     & 4.13 \\
-Server                     & 1230.656                    & 3.87 \\
+IoT                        & 27.47                      & 5.20 \\
+Smartphone                 & 52.73                      & 3.03 \\
+Laptop                     & 231.86                     & 4.13 \\
+Server                     & 1230.66                    & 3.87 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The dataset encompasses over 200 hardware configurations from major manufacturers including Apple, Dell, and others, providing representative embodied carbon values across different hardware categories. For each category, we computed weighted averages of embodied emissions and operational lifetimes from the underlying device-specific LCA data.
-
-\subsubsection{Amortization and Allocation Model}
 
 The core challenge in embodied carbon accounting is properly amortizing the upfront manufacturing emissions over the hardware's operational lifetime and allocating them to individual workloads. Our model follows the temporal amortization approach:
 
@@ -266,13 +280,11 @@ E_{emb,workload} = E_{emb,hourly} \times t_{duration}
 
 where $t_{duration}$ represents the workload execution time in hours. This allocation model ensures that longer-running workloads bear a proportionally larger share of the embodied carbon costs, creating appropriate incentives for efficient resource utilization.
 
-\subsubsection{Implementation and Data Integration}
-
 Our implementation extracts embodied carbon metadata from Kubernetes node annotations using a hierarchical priority system. Hardware-specific values take precedence over category defaults, enabling fine-grained modeling while maintaining compatibility with heterogeneous infrastructure deployments.
 
 The embodied carbon calculation is integrated directly into the scheduling objective function, where it combines with operational emissions to provide a comprehensive carbon footprint assessment for each placement decision. This integrated approach ensures that both emission components influence scheduling decisions simultaneously, rather than treating them as separate optimization phases.
 
-\subsection{Problem Formulation}
+\subsection{Problem Formulation (MILP)}
 
 We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Programming (MILP) optimization that finds optimal assignments of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing total carbon emissions incorporating both operational and embodied components.
 
@@ -340,10 +352,7 @@ where operational emissions $op_{ijt+k} = p_{ij} \cdot \text{CI}_{j,t+k}$ depend
 
 The formulation includes resource capacity constraints ensuring CPU and memory limits are respected, temporal constraints enforcing pod deadlines and scheduling windows, and placement constraints requiring each pod to be scheduled exactly once within its feasible region.
 
-\section{Scheduling Algorithms}
-% Describe your three algorithms
-
-\subsection{Heuristic Carbon-Aware Scheduler}
+\subsection{Proposed Heuristic Carbon-Aware Scheduler}
 
 While the MILP formulation provides optimal solutions, it becomes computationally intractable for large-scale deployments with hundreds of pods and nodes. To address this scalability challenge, we develop a heuristic carbon-aware spatiotemporal shifting algorithm that efficiently finds near-optimal solutions in real-time.
 
@@ -445,7 +454,9 @@ The algorithm enforces multiple constraint types during placement evaluation:
 
 The heuristic algorithm has time complexity $O(|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|)$ for each scheduling iteration, where $|\mathcal{P}|$ is the number of pending pods, $|\mathcal{F}|$ is the number of nodes, and $|\mathcal{T}|$ is the number of timeslots. This represents a significant improvement over the MILP formulation while maintaining solution quality for practical deployment scenarios.
 
-\subsection{MILP-based Oracle}
+\section{Experimental Setup}
+
+\subsection{Baseline Algorithm 1: MILP-based Oracle} \pk{alternatively move to Proposed Method → Algorithms → MILP Oracle}
 
 The MILP-based oracle provides theoretically optimal solutions by assuming perfect knowledge of all pods (including future arrivals) and formulating the complete scheduling problem as a mixed-integer linear program. This oracle serves as an upper bound for algorithm performance evaluation and enables analysis of the theoretical optimality gap.
 
@@ -499,51 +510,33 @@ In practice, modern MILP solvers like CBC employ branch-and-bound algorithms wit
 
 The oracle's exponential complexity justifies the heuristic algorithm's polynomial-time approximation for production deployments, while the MILP provides theoretical optimality bounds for performance evaluation and small-scale optimization scenarios.
 
-\section{Experimental Setup}
-% Describe your experimental methodology
+\subsection{Baseline Algorithm 2: Vanilla K8s Scheduler}
 
-\subsection{Testbed Configuration}
-% Kubernetes cluster setup
+\subsection{Testbed Configuration}  % justify all parameter choices
 
 \subsection{Workload Characteristics}
-% Describe the workloads used
 
 \subsection{Evaluation Metrics}
-% Performance and carbon emission metrics
 
-\section{Results and Analysis}
-% Present your experimental results
+\section{Results and Analysis}  % nice to have: stat confidence or repeated runs; sensitivity to forecast error
 
-\subsection{Carbon Emission Reduction}
-% Results on carbon savings
+\subsection{Carbon Reduction}
 
-\subsection{Performance Impact}
-% Scheduling overhead and latency analysis
+\subsection{Performance}
 
-\subsection{Scalability Analysis}
-% Large-scale deployment results
+\subsection{Scalability}
+
+\pk{\subsection{Ablation and Sensitivity}}
 
 \section{Discussion}
-% Interpret results and discuss implications
+
+\subsection{Implications and Limitations}
+
+\subsection{Threats to Validity} \pk{internal, external, construct, conclusion, mitigations}
 
 \section{Conclusion and Future Work}
-% Summarize contributions and future directions
 
-% references section
 \bibliographystyle{IEEEtran}
 \bibliography{references}
-
-% biography section (uncomment and add author photos when ready for submission)
-% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{nasir_photo}}]{Nasir Asadov}
-% received the B.S. degree in computer science from University Name in Year, and the Ph.D. degree in environmental technology from Technische Universität Berlin in Year. He is currently a researcher with the Department of Environmental Technology, Technische Universität Berlin. His research interests include sustainable computing, carbon-aware orchestration, and green computing algorithms.
-% \end{IEEEbiography}
-
-% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{vlad_photo}}]{Vlad C. Coroamă}
-% received the Ph.D. degree in computer science from ETH Zurich. He is currently a Professor with the Department of Environmental Technology, Technische Universität Berlin. His research interests include ICT for sustainability, environmental assessment of digital technologies, and sustainable computing systems.
-% \end{IEEEbiography}
-
-% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{marco_photo}}]{Marco Zambianco}
-% received the Ph.D. degree in computer science from University Name in Year. He is currently a Senior Research Scientist with Company Name. His research interests include cloud computing, optimization algorithms, and sustainable system design.
-% \end{IEEEbiography}
 
 \end{document}
