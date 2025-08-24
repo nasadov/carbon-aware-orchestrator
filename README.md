@@ -191,7 +191,12 @@ The scheduler calculates emissions for each potential node-workload pairing usin
 1. **Dynamic power model**: `idle + (max-active) * CPU_usage_ratio` (measured in Watts)
 2. **Operational emissions**: `power * duration * carbon_intensity` (measured in g CO2e)
 3. **Embodied emissions**: `(embodied_carbon / lifetime_hours) * duration` (measured in g CO2e)
-4. **Total emissions**: Sum of operational and embodied emissions (g CO2e)
+
+Updated (co-location aware) allocation:
+- Node power at aggregate utilization U = sum_i (cpu_i / CPU_total): `P_node = P_idle + (P_max - P_active) * U`.
+- Idle and embodied are paid once per (node,timeslot) when any pod is present; dynamic is linear in CPU share.
+- Per-pod allocation: `dynamic_i = (P_max - P_active) * u_i`, and idle+embodied are allocated proportionally to `u_i / U` across active pods in that slot.
+- The MILP objective mirrors this: dynamic terms per placement and a binary `y[node,slot]` to pay idle+embodied once per active slot.
 
 **Important**: All embodied carbon values in configuration files are specified in whole grams (g CO2e), not kilograms. For detailed information about units and calculation methods, see the [Carbon Units Documentation](docs/carbon_units.md).
 

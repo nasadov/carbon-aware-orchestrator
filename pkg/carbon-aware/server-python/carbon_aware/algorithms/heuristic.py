@@ -443,12 +443,25 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                     )
                     
                     if resource_check:
-                        # Calculate emissions for this candidate
-                        if self._operational_only:
-                            from carbon_aware.utils import compute_emissions_operational_only
-                            total_emi = compute_emissions_operational_only(flv, ts.id, pod)
-                        else:
-                            total_emi = compute_emissions(flv, ts.id, pod)
+                        # Calculate marginal emissions for this candidate using node-aware model
+                        from carbon_aware.utils import compute_marginal_emissions_for_pod_over_duration
+                        # Build a view of already used CPU for each slot from persistent state (cores consumed)
+                        used_cpu_before = {}
+                        for slot_offset in range(int(pod.duration)):
+                            slot_id = ts.id + slot_offset
+                            # total used = total capacity - leftover
+                            total_capacity = flv.totalCpu
+                            leftover = persistent_state.leftover_cpu[flv.id][slot_id]
+                            used_cpu_before[slot_id] = max(total_capacity - leftover, 0.0)
+
+                        total_emi = compute_marginal_emissions_for_pod_over_duration(
+                            flavour=flv,
+                            start_slot=ts.id,
+                            duration_hours=pod.duration,
+                            pod_cpu_request=pod.cpuRequest,
+                            used_cpu_before_by_slot=used_cpu_before,
+                            include_embodied=not self._operational_only,
+                        )
                         candidates.append((flv, ts, total_emi))
                         logging.debug(f"[find_placement_atomic] Valid candidate: pod={pod.id}, node={flv.id}, timeslot={ts.id}, emissions={total_emi:.3f}")
                     else:
