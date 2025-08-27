@@ -627,6 +627,16 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             for pod_id in placements:
                 s[pod_id] = pulp.LpVariable(f"unplaced_{pod_id}", cat=pulp.LpBinary)
             
+            # Assignment constraints: each pod must be placed exactly once or marked unplaced
+            for pod_id, pod_placements in placements.items():
+                if pod_placements:
+                    prob += (
+                        pulp.lpSum([x[(pod_id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]) + s[pod_id] == 1
+                    ), f"ASSIGN_{pod_id}"
+                else:
+                    # If no feasible placements exist for this pod, force it to be unplaced
+                    prob += (s[pod_id] == 1), f"ASSIGN_NOPLACE_{pod_id}"
+            
             # Multi-objective: Minimize (penalty for unplaced pods + total emissions)
             # Get penalty weight from config, default to 10000 (prioritizes placement over emissions)
             penalty_for_unplaced = self.config.get('optimization', {}).get('unplaced_penalty', 10000)
@@ -682,7 +692,24 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             prob += pulp.lpSum(objective_terms)
             
             logging.info(f"  - Setting up resource capacity constraints and activation linking")
-            # ... existing code ...
+            # Build per-(node,timeslot) resource usage expressions for constraints and activation linking
+            cpu_usage = {}
+            ram_usage = {}
+            for pod_id, pod_placements in placements.items():
+                pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                if not pod_obj:
+                    continue
+                for flv_id, ts_id, _ in pod_placements:
+                    for offset in range(int(pod_obj.duration)):
+                        slot = ts_id + offset
+                        if slot >= max_time_slots:
+                            break
+                        cpu_key = (flv_id, slot)
+                        ram_key = (flv_id, slot)
+                        cpu_usage.setdefault(cpu_key, []).append(pod_obj.cpuRequest * x[(pod_id, flv_id, ts_id)])
+                        ram_usage.setdefault(ram_key, []).append(pod_obj.ramRequest * x[(pod_id, flv_id, ts_id)])
+
+            constraint_count = 0
             # Add CPU capacity constraints and activation linking
             for (flv_id, ts_id), usage_expressions in cpu_usage.items():
                 if flv_id in leftover_cpu and ts_id in leftover_cpu[flv_id]:
@@ -695,7 +722,14 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 else:
                     logging.warning(f"     - Missing CPU capacity data for node {flv_id}, timeslot {ts_id}")
             
-            # ... existing code ...
+            # Add RAM capacity constraints
+            for (flv_id, ts_id), usage_expressions in ram_usage.items():
+                if flv_id in leftover_ram and ts_id in leftover_ram[flv_id]:
+                    constraint_count += 1
+                    ram_limit = leftover_ram[flv_id][ts_id]
+                    prob += pulp.lpSum(usage_expressions) <= ram_limit, f"RAM_{flv_id}_{ts_id}"
+                else:
+                    logging.warning(f"     - Missing RAM capacity data for node {flv_id}, timeslot {ts_id}")
             
             logging.info(f"  - Created {constraint_count} resource capacity constraints")
             logging.info(f"  - Final problem size: {len(x)} variables, {len(prob.constraints)} constraints")
@@ -820,8 +854,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 # Log sample of unplaced pods (if any)
                 if unplaced_pods:
                     logging.warning(f"  - Unplaced pods: {unplaced_pods[:5]}{'...' if len(unplaced_pods) > 5 else ''}")
-                else:
+                elif len(solution_dict) == len(self.pending_pods):
                     logging.info(f"  - ✅ All pods successfully placed!")
+                else:
+                    logging.warning("  - Inconsistent solution: no unplaced pods reported but not all pods have placements")
                 
                 # Validate constraints on the extracted solution
                 is_valid, constraint_violations = self._validate_solution_constraints(
@@ -866,7 +902,6 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         occupancy.setdefault((flv_id_sol, slot), []).append((pod_id_sol, u_i))
 
                 # 2) Aggregate per-pod emissions
-                from carbon_aware.utils import compute_node_dynamic_coeff_watts, get_carbon_intensity, compute_embodied_per_hour_g
                 pod_total_g = {pid: 0.0 for pid in solution_dict.keys()}
                 for (flv_id, slot), items in occupancy.items():
                     flv_obj = next((f for f in flavours if f.id == flv_id), None)
@@ -1422,7 +1457,6 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                 break
                         
                         if duration_feasible:
-                            from carbon_aware.utils import compute_emissions
                             emissions = compute_emissions(flv, ts.id, pod)
                             pod_placements.append((flv.id, ts.id, emissions))
                             

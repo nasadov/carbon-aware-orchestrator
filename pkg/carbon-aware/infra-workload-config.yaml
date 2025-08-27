@@ -90,7 +90,7 @@ workload:
   num_timeslots: 12
   
   # Lambda parameter for Poisson distribution (average services per timeslot)
-  poisson_lambda: 16
+  poisson_lambda: 4  # [4, 8, 10, 12, 16]
   
   # Minimum number of services per timeslot, regardless of Poisson distribution
   min_services: 1
