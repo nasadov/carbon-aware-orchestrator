@@ -62,6 +62,9 @@ docs/paper-two/
 # Performance logs
 pkg/carbon-aware/server-python/performance_logs/*.csv
 
+# Precompute timing CSVs
+pkg/carbon-aware/server-python/experiments/precompute_timing_*.csv
+
 # Test logs and archived test scripts
 test_logs/
 tests/archive/

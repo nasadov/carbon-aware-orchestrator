@@ -63,6 +63,9 @@ The interface definition is in the `./pkg/idl/idl.proto` file. It models a snaps
     - `visualization.py`: Script for generating performance visualizations
     - `simple_carbon_heatmap.py`: Carbon emissions visualization tools
     - `carbon_emissions_comparison.py`: Comprehensive analysis comparing carbon emissions across algorithms
+    - `emissions_vs_pods_plot_generator.py`: Plot total and per‑pod emissions vs. pod count (Vanilla/Heuristic/Global‑Optimal)
+    - `success_rate_plot_generator.py`: Plot scheduling success rate vs. pod count (multi‑algorithm)
+    - `heuristic_time_complexity_plot_generator.py`: Plot heuristic precompute time vs. pods and vs. nodes
     - `fix_start_slots.py`: Tool for fixing timeslot inconsistencies in placement data for vanilla algorithm
 - `figures/`: Generated visualization outputs organized by experiment
     - `Comparison/Carbon_Emissions_Analysis_TIMESTAMP/`: Carbon emissions comparison results with automatic timestamping
@@ -459,6 +462,26 @@ The visualization script creates:
 - Constraint satisfaction markers (if earliest timeslot is respected)
 
 Visualization outputs are saved to the `figures/` directory in a timestamped folder.
+
+**Additional Plot Generators:**
+
+- Emissions vs Pods (total and per‑pod):
+  ```bash
+  python analysis/emissions_vs_pods_plot_generator.py
+  ```
+  Outputs saved under `figures/EmissionsVsPods/`.
+
+- Success Rate vs Pods:
+  ```bash
+  python analysis/success_rate_plot_generator.py
+  ```
+  Outputs saved under `figures/SuccessRate/`.
+
+- Heuristic Time Complexity (runtime vs pods and vs nodes):
+  ```bash
+  python analysis/heuristic_time_complexity_plot_generator.py
+  ```
+  Consumes precompute timing CSVs from `pkg/carbon-aware/server-python/experiments/` named like `precompute_timing_<START>-<HHMMSS>.csv`; outputs saved under `figures/TimeComplexity/`.
 
 **3. CSV Tracking and Output Details:**
 
