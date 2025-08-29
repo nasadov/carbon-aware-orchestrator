@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Sweep values for poisson_lambda
-LAMBDA_VALUES=(4 8 10 12 16)
+# Prevent concurrent runs (best-effort lock)
+exec 9>/tmp/sweep_poisson_and_precompute.lock
+if ! flock -n 9; then
+  echo "Another sweep_poisson_and_precompute.sh run is already active. Exiting." >&2
+  exit 0
+fi
+
+# Sweep values for exact total pods
+POD_VALUES=(50 100 150 200)
 
 REPO_ROOT=/root/carbon-aware-orchestrator
 CONFIG_FILE="$REPO_ROOT/pkg/carbon-aware/infra-workload-config.yaml"
@@ -10,6 +17,10 @@ GENERATOR="$REPO_ROOT/pkg/carbon-aware/infra_workload_gen.py"
 SERVER_MAIN="$REPO_ROOT/pkg/carbon-aware/server-python/main.py"
 SERVER_DIR="$REPO_ROOT/pkg/carbon-aware/server-python"
 FORECASTS_FILE="$SERVER_DIR/all_forecasts.json"
+
+# Optional: run vanilla benchmark via external script (requires cluster)
+RUN_VANILLA_BENCHMARK=${RUN_VANILLA_BENCHMARK:-false}
+CARBON_BENCH_SCRIPT="/root/carbon/scripts/run_benchmark.sh"
 
 # Run identifiers and timing
 RUN_START_ID=$(date +%Y%m%d_%H%M%S)
@@ -33,22 +44,41 @@ cleanup() {
 trap cleanup EXIT
 
 # Initialize summary CSV with header
-echo "run_id,begin_time,end_time,lambda,algorithm,pods,nodes,elapsed_seconds" > "$SUMMARY_CSV"
+echo "run_id,begin_time,end_time,target_pods,algorithm,pods,nodes,elapsed_seconds" > "$SUMMARY_CSV"
 
-# Function to in-place update poisson_lambda in YAML while preserving inline comments
-update_lambda() {
-  local new_lambda="$1"
-  python3 - "$CONFIG_FILE" "$new_lambda" <<'PY'
+# Function to ensure generation_strategy is set to exact_total
+ensure_exact_strategy() {
+  python3 - "$CONFIG_FILE" <<'PY'
+import sys, re
+path=sys.argv[1]
+with open(path,'r') as f:
+    s=f.read()
+if re.search(r'^(\s*generation_strategy:\s*)exact_total\b', s, flags=re.M):
+    print("generation_strategy already set to exact_total")
+    print("OK")
+    sys.exit(0)
+new_s=re.sub(r'^(\s*generation_strategy:\s*).*$','\1exact_total', s, count=1, flags=re.M)
+with open(path,'w') as f:
+    f.write(new_s)
+print(f"Updated generation_strategy to exact_total in {path}")
+print("OK")
+PY
+}
+
+# Function to in-place update exact_total_pods in YAML while preserving inline comments
+update_total_pods() {
+  local new_total="$1"
+  python3 - "$CONFIG_FILE" "$new_total" <<'PY'
 import sys, re
 path=sys.argv[1]
 val=sys.argv[2]
 with open(path,'r') as f:
     s=f.read()
-# Replace the first occurrence of the poisson_lambda value, preserving trailing comment/content
-new_s=re.sub(r'^(\s*poisson_lambda:\s*)\d+(\b.*)$', rf'\g<1>{val}\2', s, count=1, flags=re.M)
+# Replace the first occurrence of the exact_total_pods value, preserving trailing comment/content
+new_s=re.sub(r'^(\s*exact_total_pods:\s*)\d+(\b.*)$', rf'\g<1>{val}\2', s, count=1, flags=re.M)
 with open(path,'w') as f:
     f.write(new_s)
-print(f"Updated poisson_lambda to {val} in {path}")
+print(f"Updated exact_total_pods to {val} in {path}")
 PY
 }
 
@@ -89,9 +119,10 @@ if [[ ! -f "$FORECASTS_FILE" ]]; then
   exit 1
 fi
 
-for L in "${LAMBDA_VALUES[@]}"; do
-  echo "==== Processing lambda=$L ===="
-  update_lambda "$L"
+for P in "${POD_VALUES[@]}"; do
+  echo "==== Processing target_pods=$P ===="
+  ensure_exact_strategy
+  update_total_pods "$P"
 
   # Generate infra and workloads
   (
@@ -104,7 +135,7 @@ for L in "${LAMBDA_VALUES[@]}"; do
   NODES=$(count_nodes)
 
   # Precompute heuristic with timing
-  echo "-- heuristic precompute (lambda=$L) --"
+  echo "-- heuristic precompute (pods=$P) --"
   begin_h="$(date +%Y-%m-%dT%H:%M:%S)"
   start_h=$(date +%s%N)
   python3 "$SERVER_MAIN" \
@@ -123,10 +154,10 @@ s=int(sys.argv[1]); e=int(sys.argv[2])
 print(f"{(e-s)/1e9:.3f}")
 PY
 )
-  echo "$RUN_ID,$begin_h,$end_iso_h,$L,heuristic,$PODS,$NODES,$elapsed_h" >> "$SUMMARY_CSV"
+  echo "$RUN_ID,$begin_h,$end_iso_h,$P,heuristic,$PODS,$NODES,$elapsed_h" >> "$SUMMARY_CSV"
 
   # Precompute global-optimal with timing
-  echo "-- global-optimal precompute (lambda=$L) --"
+  echo "-- global-optimal precompute (pods=$P) --"
   begin_g="$(date +%Y-%m-%dT%H:%M:%S)"
   start_g=$(date +%s%N)
   python3 "$SERVER_MAIN" \
@@ -145,13 +176,34 @@ s=int(sys.argv[1]); e=int(sys.argv[2])
 print(f"{(e-s)/1e9:.3f}")
 PY
 )
-  echo "$RUN_ID,$begin_g,$end_iso_g,$L,global-optimal,$PODS,$NODES,$elapsed_g" >> "$SUMMARY_CSV"
+  echo "$RUN_ID,$begin_g,$end_iso_g,$P,global-optimal,$PODS,$NODES,$elapsed_g" >> "$SUMMARY_CSV"
 
-  # Tag the most recent experiment directories with lambda in a marker file
+  # Optional vanilla benchmark (cluster-based)
+  if [[ "$RUN_VANILLA_BENCHMARK" == "true" ]]; then
+    echo "-- vanilla benchmark (pods=$P) --"
+    EXP_NAME="vanilla_${PODS}pods_${RUN_START_ID}_P${P}"
+    begin_v="$(date +%Y-%m-%dT%H:%M:%S)"
+    bash "$CARBON_BENCH_SCRIPT" \
+      -n "$EXP_NAME" \
+      -a vanilla \
+      -f 3600 \
+      --call-interval 3600 \
+      -o "$SERVER_DIR/experiments" \
+      -F "$FORECASTS_FILE" \
+      -i 60 \
+      --auto-stop \
+      --non-interactive | sed -u 's/.*/[vanilla] &/' || echo "vanilla benchmark failed"
+    end_v="$(date +%Y-%m-%dT%H:%M:%S)"
+    # Tag the vanilla result dir with pods
+    dir=$(ls -d "$SERVER_DIR/experiments/${EXP_NAME}_vanilla" 2>/dev/null | tail -n 1 || true)
+    [[ -n "$dir" ]] && echo "pods=$P" > "$dir/pods.txt"
+  fi
+
+  # Tag the most recent experiment directories with pods in a marker file
   for algo in heuristic global-optimal; do
     dir=$(ls -d "$SERVER_DIR/experiments/$algo"* 2>/dev/null | tail -n 1 || true)
     if [[ -n "$dir" ]]; then
-      echo "lambda=$L" > "$dir/lambda.txt"
+      echo "pods=$P" > "$dir/pods.txt"
     fi
   done
 

@@ -89,8 +89,15 @@ workload:
   # Number of timeslots to generate
   num_timeslots: 12
   
+  # Strategy for generating pods per timeslot: "poisson" or "exact_total"
+  generation_strategy: exact_total
+  
   # Lambda parameter for Poisson distribution (average services per timeslot)
   poisson_lambda: 4  # [4, 8, 10, 12, 16]
+  
+  # Total number of pods to generate across all timeslots
+  # Used only when generation_strategy == "exact_total"
+  exact_total_pods: 120
   
   # Minimum number of services per timeslot, regardless of Poisson distribution
   min_services: 1

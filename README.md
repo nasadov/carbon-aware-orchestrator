@@ -1,6 +1,6 @@
 # Carbon-Aware Orchestrator
 
-This repository contains an experimental implementation of a carbon-aware orchestrator that attempts to optimize workload placement based on both operational and embodied carbon emissions. The goal is to explore environmentally-conscious placement decisions within Kubernetes scheduling frameworks.
+This repository contains an experimental implementation of a carbon-aware orchestrator that optimizes workload placement based on both operational and embodied carbon emissions. The goal is to explore environmentally-conscious placement decisions within Kubernetes scheduling frameworks.
 
 This work builds upon the original scheduler plugin developed by Fondazione Bruno Kessler (FBK), and remains an ongoing research project.
 
@@ -32,7 +32,7 @@ This work builds upon the original scheduler plugin developed by Fondazione Brun
 
 ## Overview
 
-The carbon-aware orchestrator attempts to consider multiple factors when placing workloads:
+The carbon-aware orchestrator considers multiple factors when placing workloads:
 
 1. **Operational carbon emissions**: Estimates based on regional carbon intensity forecasts and power consumption models
 2. **Embodied carbon emissions**: Approximations of hardware manufacturing emissions amortized over device lifetime
@@ -43,7 +43,7 @@ This is experimental work and the accuracy of carbon calculations depends on the
 
 ## The IDL 
 
-The interface definition is in the `./pkg/idl/idl.proto` file. It models a snapshot of a Kubernetes cluster in terms of infrastructure and workload deployment, along with placement information including scheduling time for each microservice and scores for each pod and node. This gRPC interface aims to decouple the FogAtlas code (written in Go) from the placement algorithm implementations that can be written in various programming languages.
+The interface definition is in the `./pkg/idl/idl.proto` file. It models a snapshot of a Kubernetes cluster in terms of infrastructure and workload deployment, along with placement information including scheduling time for each microservice and scores for each pod and node. This gRPC interface decouples the FogAtlas code (written in Go) from the placement algorithm implementations that can be written in various programming languages.
 
 ## Repository Structure
 
@@ -82,7 +82,7 @@ The carbon-aware orchestrator currently provides two scheduling approaches, both
 
 ### Heuristic Algorithm
 
-The heuristic algorithm aims to provide reasonable placement decisions by:
+The heuristic algorithm provides reasonable placement decisions by:
 
 1. **Carbon Score Calculation**: For each pod-node pairing, calculating total carbon emissions (operational + embodied)
 2. **Constraint Filtering**: Ensuring resource requirements and timing constraints are met
@@ -92,7 +92,7 @@ This approach is fast and practical, but may not always find the global optimum.
 
 ### MILP Global Optimizer
 
-The Mixed Integer Linear Programming (MILP) optimizer attempts to find globally optimal solutions by:
+The Mixed Integer Linear Programming (MILP) optimizer finds globally optimal solutions by:
 
 1. **Mathematical Modeling**: Formulating the entire scheduling problem as a linear program
 2. **Global Optimization**: Finding the best solution across all pods and nodes simultaneously

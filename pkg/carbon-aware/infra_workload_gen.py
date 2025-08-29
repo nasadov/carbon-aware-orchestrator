@@ -476,7 +476,9 @@ def generate_timeslot_files(config: Dict[str, Any]):
     output_dir = config.get("output_dir", "workloads")
     vanilla_output_dir = config.get("vanilla_output_dir", output_dir + "-vanilla")
     num_timeslots = config.get("num_timeslots", 5)
+    generation_strategy = config.get("generation_strategy", "poisson")
     poisson_lambda = config.get("poisson_lambda", 2)
+    exact_total_pods = config.get("exact_total_pods", None)
     min_services = config.get("min_services", 1)
     base_name = config.get("base_name", "m")
     
@@ -512,7 +514,15 @@ def generate_timeslot_files(config: Dict[str, Any]):
     random.seed(random_seed)
     np.random.seed(random_seed)
     
-    print(f"Using Poisson distribution (λ={poisson_lambda}) for microservices per timeslot")
+    print(f"Generation strategy: {generation_strategy}")
+    if generation_strategy == "poisson":
+        print(f"Using Poisson distribution (λ={poisson_lambda}) for microservices per timeslot")
+    else:
+        print(f"Using exact total pods across all timeslots")
+        if exact_total_pods is None:
+            raise ValueError("exact_total_pods must be set when generation_strategy is 'exact_total'")
+        if not isinstance(exact_total_pods, int) or exact_total_pods < 0:
+            raise ValueError("exact_total_pods must be a non-negative integer")
     print(f"Using {duration_assignment_method} duration assignment with options: {durations} hours")
     print(f"Using {deadline_strategy} deadline strategy")
     if deadline_strategy == "flexible" or deadline_strategy == "mixed":
@@ -531,9 +541,18 @@ def generate_timeslot_files(config: Dict[str, Any]):
 
     # Pre-generate service counts so we can report the total
     service_counts = []
-    for _ in range(num_timeslots):
-        count = max(min_services, np.random.poisson(poisson_lambda))
-        service_counts.append(count)
+    if generation_strategy == "poisson":
+        for _ in range(num_timeslots):
+            count = max(min_services, np.random.poisson(poisson_lambda))
+            service_counts.append(count)
+    else:
+        # Deterministically distribute exact_total_pods across timeslots using fixed seed
+        # Even split with remainder distributed to early slots via floor-division method
+        total = int(exact_total_pods)
+        for s in range(num_timeslots):
+            prev = (total * s) // num_timeslots
+            curr = (total * (s + 1)) // num_timeslots
+            service_counts.append(curr - prev)
     
     total_services = sum(service_counts)
     print(f"Will generate {total_services} total microservices across {num_timeslots} timeslots")
