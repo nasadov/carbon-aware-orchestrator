@@ -313,6 +313,14 @@ workload:
         - 512Mi
         - 256Mi
         - 128Mi
+
+    # Strategy for generating the number of pods per timeslot
+    # - "poisson": draw per-timeslot counts from a Poisson(λ)
+    # - "exact_total": generate an exact total and distribute across timeslots deterministically
+    generation_strategy: poisson
+
+    # Exact total pods to generate across all timeslots (used when generation_strategy: exact_total)
+    exact_total_pods: 120
 ```
 
 ### Generate Test Data
@@ -352,6 +360,22 @@ python3 tests/check_timeslot_constraints.py pkg/carbon-aware/server-python/exper
 ```
 
 The script will analyze the placements and report any constraint violations.
+
+#### Batch validation and reporting (all experiments)
+
+We also provide a batch validator that scans all experiment folders and writes a timestamped report under `tests/reports/` (ignored by Git):
+
+```bash
+python3 tests/validate_experiments_and_report.py \
+  --experiments-dir pkg/carbon-aware/server-python/experiments \
+  --nodes-file pkg/carbon-aware/nodes.yaml \
+  --workloads-dir pkg/carbon-aware/workloads \
+  --workloads-vanilla-dir pkg/carbon-aware/workloads-vanilla
+```
+
+Outputs:
+- CSV: `tests/reports/placement_validation_report_<timestamp>.csv`
+- TXT: `tests/reports/placement_validation_report_<timestamp>.txt`
 
 ### Performance Metrics
 

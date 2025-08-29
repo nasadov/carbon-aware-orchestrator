@@ -102,5 +102,8 @@ workloads-vanilla/
 **/carbon_emissions_results/
 **/carbon_analysis_output/
 
+# Test reports (generated)
+tests/reports/
+
 # But track the configuration files
 !infra-workload-config.yaml
