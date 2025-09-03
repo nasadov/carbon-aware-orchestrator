@@ -13,6 +13,7 @@ import numpy as np
 from datetime import datetime
 import os
 import re
+import csv
 from collections import defaultdict
 
 def _parse_success_rates_from_experiments(experiments_root: str):
@@ -85,6 +86,53 @@ def _parse_success_rates_from_experiments(experiments_root: str):
             total_num = int(m_total.group(1))
         if placed_num is not None and total_num is not None and total_num > 0:
             results[algo_key][pods_count].append(100.0 * placed_num / total_num)
+            continue
+
+        # Last resort: if no summary present or parse failed, try placement CSV directly
+        # Compute success rate as (unique pods placed) / (target pods from folder name)
+        placement_csv = None
+        candidate_names = []
+        if algo_key == 'global-optimal':
+            candidate_names = ['global_optimal_placements_session.csv']
+        elif algo_key == 'heuristic':
+            candidate_names = ['heuristic_placements_session.csv']
+        elif algo_key == 'vanilla':
+            candidate_names = [
+                'vanilla_placement_session_fixed.csv',
+                'vanilla_placement_session.csv',
+                'vanilla_placements.csv',
+            ]
+        else:
+            candidate_names = [
+                'global_optimal_placements_session.csv',
+                'heuristic_placements_session.csv',
+                'vanilla_placement_session_fixed.csv',
+                'vanilla_placement_session.csv',
+                'vanilla_placements.csv',
+            ]
+
+        for name in candidate_names:
+            p = os.path.join(entry_path, name)
+            if os.path.exists(p):
+                placement_csv = p
+                break
+
+        if placement_csv:
+            try:
+                with open(placement_csv, 'r') as fh:
+                    reader = csv.DictReader(fh)
+                    unique_pods = set()
+                    for row in reader:
+                        pid = row.get('pod_id')
+                        if pid:
+                            unique_pods.add(pid)
+                placed = len(unique_pods)
+                total = pods_count
+                if total > 0:
+                    results[algo_key][pods_count].append(100.0 * placed / total)
+            except Exception:
+                # If CSV parsing fails, skip
+                pass
 
     return results
 

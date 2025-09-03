@@ -284,46 +284,12 @@ for P in "${PODS_VALUES[@]}"; do
 
   echo "-- Running vanilla benchmark: $EXP_NAME --"
   begin_v="$(date +%Y-%m-%dT%H:%M:%S)"
-  # Start background watcher to capture ms_name -> nodeName during run
-  WATCH_MAP="$EXP_DIR/pod_node_map.json"
-  mkdir -p "$EXP_DIR"
-  (
-    set +e
-    python3 - "$WATCH_MAP" <<'PY'
-import sys, json, subprocess, time
-out=sys.argv[1]
-mapping={}
-while True:
-    try:
-        proc=subprocess.run(['kubectl','get','pods','-n','default','-o','json'], capture_output=True, text=True)
-        s=proc.stdout or ''
-        if s.strip():
-            try:
-                data=json.loads(s)
-            except Exception:
-                time.sleep(1); continue
-            for item in data.get('items',[]):
-                labels=((item.get('metadata') or {}).get('labels') or {})
-                name=labels.get('name','')
-                node=((item.get('spec') or {}).get('nodeName') or '')
-                if name and node:
-                    mapping[name]=node
-            try:
-                with open(out,'w') as f:
-                    json.dump(mapping,f)
-            except Exception:
-                pass
-    except Exception:
-        pass
-    time.sleep(1)
-PY
-  ) & WATCH_PID=$!
   # Run non-interactively, auto-stop collector, SHRINK_FACTOR=3600, CALL_INTERVAL=3600
   set +e
   bash "$CARBON_BENCH_SCRIPT" \
     -n "$EXP_NAME" \
     -a vanilla \
-    -f 3600 \
+    -f "${SHRINK_FACTOR:-3600}" \
     --call-interval 3600 \
     -o "$SERVER_DIR/experiments" \
     -F "$FORECASTS_FILE" \
@@ -332,77 +298,10 @@ PY
     --non-interactive | sed -u 's/.*/[vanilla] &/'
   rc=$?
   set -e
-  # Stop watcher
-  if [[ -n "${WATCH_PID:-}" ]]; then kill $WATCH_PID 2>/dev/null || true; fi
   end_v="$(date +%Y-%m-%dT%H:%M:%S)"
   if [[ $rc -ne 0 ]]; then
-    echo "WARNING: vanilla benchmark failed for lambda=$L (rc=$rc)"
+    echo "WARNING: vanilla benchmark failed (rc=$rc)"
   fi
-
-  # Ensure expected vanilla files are created under EXP_DIR
-  mkdir -p "$EXP_DIR"
-  # 1) vanilla_placement_session.csv
-  if [[ ! -f "$EXP_DIR/vanilla_placement_session.csv" ]]; then
-    # Prefer node map if captured
-    if [[ -f "$WATCH_MAP" ]]; then
-      python3 "$PY_PLACE_GEN" \
-        --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads-vanilla" \
-        --namespace default \
-        --experiment-dir "$EXP_DIR" \
-        --node-map "$WATCH_MAP" | sed -u 's/.*/[post] &/'
-    else
-      python3 "$PY_PLACE_GEN" \
-        --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads-vanilla" \
-        --namespace default \
-        --experiment-dir "$EXP_DIR" | sed -u 's/.*/[post] &/'
-    fi
-  fi
-  # 2) placement_summary.log
-  if [[ -f "$EXP_DIR/vanilla_placement_session.csv" && ! -f "$EXP_DIR/placement_summary.log" ]]; then
-    PYTHONPATH="$REPO_ROOT/pkg/carbon-aware/server-python:${PYTHONPATH:-}" CSV="$EXP_DIR/vanilla_placement_session.csv" python3 - <<'PY'
-import os, sys
-from carbon_aware.placement_summary import generate_placement_summary
-csv_path = os.environ['CSV']
-out_dir = os.path.dirname(csv_path)
-res = generate_placement_summary(csv_path, 'vanilla', out_dir)
-print('Generated placement summary:', res)
-PY
-  fi
-  # 3) vanilla_perf_session.csv (fallback minimal if analyzer didn't produce it)
-  if [[ ! -f "$EXP_DIR/vanilla_perf_session.csv" ]]; then
-    # Minimal CSV with header and one row based on placement counts
-    python3 - "$EXP_DIR/vanilla_placement_session.csv" "$EXP_DIR/vanilla_perf_session.csv" <<'PY'
-import sys,csv
-inp, outp = sys.argv[1], sys.argv[2]
-placed=0
-try:
-  with open(inp) as f:
-    r=csv.DictReader(f)
-    rows=list(r)
-    placed=len(rows)
-except Exception:
-  placed=0
-hdr=['timestamp','call_id','execution_time_ms','algorithm','pods_total','pods_processed','pods_placed','pods_failed','pods_skipped']
-with open(outp,'w',newline='') as f:
-  w=csv.DictWriter(f,fieldnames=hdr); w.writeheader()
-  w.writerow({
-    'timestamp':'-',
-    'call_id':1,
-    'execution_time_ms':0,
-    'algorithm':'vanilla',
-    'pods_total':placed,
-    'pods_processed':placed,
-    'pods_placed':placed,
-    'pods_failed':0,
-    'pods_skipped':0
-  })
-print('Wrote minimal vanilla_perf_session.csv')
-PY
-  fi
-
-  # Tag the vanilla experiment dir with target pods for traceability
-  echo "target_pods=$P" > "$EXP_DIR/pods.txt"
-  echo "Tagged $EXP_DIR with target_pods=$P"
 
 done
 

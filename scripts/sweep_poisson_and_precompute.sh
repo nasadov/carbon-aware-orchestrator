@@ -9,7 +9,7 @@ if ! flock -n 9; then
 fi
 
 # Sweep values for exact total pods
-POD_VALUES=(50 100 150 200)
+POD_VALUES=(20 40 60 80 100 120 140 160 180 200)
 
 REPO_ROOT=/root/carbon-aware-orchestrator
 CONFIG_FILE="$REPO_ROOT/pkg/carbon-aware/infra-workload-config.yaml"

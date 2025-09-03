@@ -158,6 +158,30 @@ def _compute_total_emissions_for_csv(algo: str, csv_path: str, nodes_dict: dict)
     """
     total_kg = 0.0
     rows = 0
+    def _parse_cpu_to_cores(val) -> float:
+        s = str(val).strip() if val is not None else ""
+        if not s:
+            return 0.0
+        try:
+            return float(s)
+        except Exception:
+            pass
+        # Handle Kubernetes milli-CPU, e.g., "500m" => 0.5 cores
+        if s.endswith('m'):
+            try:
+                return float(s[:-1]) / 1000.0
+            except Exception:
+                return 0.0
+        # Fallback: remove any non-digit suffix and try again
+        import re
+        m = re.match(r"^([0-9]+(?:\.[0-9]+)?)", s)
+        if m:
+            try:
+                return float(m.group(1))
+            except Exception:
+                return 0.0
+        return 0.0
+
     with open(csv_path, 'r') as fh:
         reader = csv.DictReader(fh)
         # Compute node-level emissions by grouping per (node, slot) for all algorithms
@@ -171,7 +195,7 @@ def _compute_total_emissions_for_csv(algo: str, csv_path: str, nodes_dict: dict)
             try:
                 start_slot = int(float(row.get('start_slot', 0)))
                 duration = int(float(row.get('duration', 0)))
-                cpu_req = float(row.get('cpu_request', 0))
+                cpu_req = _parse_cpu_to_cores(row.get('cpu_request', 0))
             except Exception:
                 continue
             for offset in range(duration):
