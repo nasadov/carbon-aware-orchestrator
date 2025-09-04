@@ -20,18 +20,50 @@ import glob
 from collections import defaultdict
 from typing import Dict, List, Tuple, Optional
 
-def parse_memory_str(mem_str: str) -> float:
-    """Convert memory string (like '2Gi', '4Gi') to MB."""
-    if mem_str.endswith('Gi'):
-        return float(mem_str[:-2]) * 1024
-    elif mem_str.endswith('Mi'):
-        return float(mem_str[:-2])
-    elif mem_str.endswith('G'):
-        return float(mem_str[:-1]) * 1024
-    elif mem_str.endswith('M'):
-        return float(mem_str[:-1])
-    else:
-        return float(mem_str)
+def parse_memory_str(mem_val) -> float:
+    """Convert memory value to MB.
+
+    Accepts strings with units (Gi, Mi, G, M) or plain numeric (assumed MB).
+    """
+    s = str(mem_val).strip()
+    if not s:
+        return 0.0
+    # Plain numeric (assume MB)
+    try:
+        if s.replace('.', '', 1).isdigit():
+            return float(s)
+    except Exception:
+        pass
+    # Unit-suffixed
+    if s.endswith('Gi'):
+        return float(s[:-2]) * 1024
+    if s.endswith('Mi'):
+        return float(s[:-2])
+    if s.endswith('G'):
+        return float(s[:-1]) * 1024
+    if s.endswith('M'):
+        return float(s[:-1])
+    # Fallback best-effort
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
+
+
+def parse_cpu_str(cpu_val) -> float:
+    """Convert CPU request string to cores.
+
+    Accepts milli-cores like '2000m' or plain numeric cores like '2', '0.5'.
+    """
+    s = str(cpu_val).strip()
+    if not s:
+        return 0.0
+    try:
+        if s.endswith('m'):
+            return float(s[:-1]) / 1000.0
+        return float(s)
+    except Exception:
+        return 0.0
 
 def load_node_capacities(nodes_file: str) -> Dict[str, Dict[str, float]]:
     """Load node capacities from YAML file."""
@@ -278,11 +310,12 @@ def validate_placement_constraints(csv_file: str, nodes_file: Optional[str] = No
         print(f"❌ Missing required columns: {missing_columns}")
         return False
     
-    # Convert numeric columns
+    # Convert numeric columns and parse resource unit strings
     df['start_slot'] = pd.to_numeric(df['start_slot'], errors='coerce')
     df['duration'] = pd.to_numeric(df['duration'], errors='coerce')
-    df['cpu_request'] = pd.to_numeric(df['cpu_request'], errors='coerce')
-    df['ram_request'] = pd.to_numeric(df['ram_request'], errors='coerce')
+    # Parse CPU cores (supports 'm' suffix) and Memory MB (supports Gi/Mi/G/M suffixes)
+    df['cpu_request'] = df['cpu_request'].apply(parse_cpu_str)
+    df['ram_request'] = df['ram_request'].apply(parse_memory_str)
     
     all_valid = True
     

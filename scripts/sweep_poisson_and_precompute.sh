@@ -183,14 +183,22 @@ PY
     echo "-- vanilla benchmark (pods=$P) --"
     EXP_NAME="vanilla_${PODS}pods_${RUN_START_ID}_P${P}"
     begin_v="$(date +%Y-%m-%dT%H:%M:%S)"
+    # Determine metrics collection interval: default to ceil(3600/SHRINK_FACTOR) with a minimum of 1 second
+    SF="${SHRINK_FACTOR:-3600}"
+    if [[ -z "${INTERVAL:-}" ]]; then
+      METRICS_INTERVAL=$(( (3600 + SF - 1) / SF ))
+      if [[ $METRICS_INTERVAL -lt 1 ]]; then METRICS_INTERVAL=1; fi
+    else
+      METRICS_INTERVAL="${INTERVAL}"
+    fi
     bash "$CARBON_BENCH_SCRIPT" \
       -n "$EXP_NAME" \
       -a vanilla \
-      -f 3600 \
+      -f "${SHRINK_FACTOR:-3600}" \
       --call-interval 3600 \
       -o "$SERVER_DIR/experiments" \
       -F "$FORECASTS_FILE" \
-      -i 60 \
+      -i "$METRICS_INTERVAL" \
       --auto-stop \
       --non-interactive | sed -u 's/.*/[vanilla] &/' || echo "vanilla benchmark failed"
     end_v="$(date +%Y-%m-%dT%H:%M:%S)"

@@ -18,7 +18,7 @@ fi
 #   bash scripts/vanilla_benchmark_series.sh
 # Optional env vars:
 #   LAMBDAS="4 8 10 12 16"   # override lambda list
-#   INTERVAL=60               # metrics collection interval (seconds)
+#   INTERVAL                 # metrics collection interval (seconds); default: ceil(3600/SHRINK_FACTOR)
 
 # Default sweep values for exact pod counts
 # Override with: MIN_PODS, MAX_PODS, PODS_STEP, or POD_COUNTS (space-separated)
@@ -286,6 +286,14 @@ for P in "${PODS_VALUES[@]}"; do
   begin_v="$(date +%Y-%m-%dT%H:%M:%S)"
   # Run non-interactively, auto-stop collector, SHRINK_FACTOR=3600, CALL_INTERVAL=3600
   set +e
+  # Determine metrics collection interval: default to ceil(3600/SHRINK_FACTOR) with a minimum of 1 second
+  SF="${SHRINK_FACTOR:-3600}"
+  if [[ -z "${INTERVAL:-}" ]]; then
+    METRICS_INTERVAL=$(( (3600 + SF - 1) / SF ))
+    if [[ $METRICS_INTERVAL -lt 1 ]]; then METRICS_INTERVAL=1; fi
+  else
+    METRICS_INTERVAL="${INTERVAL}"
+  fi
   bash "$CARBON_BENCH_SCRIPT" \
     -n "$EXP_NAME" \
     -a vanilla \
@@ -293,7 +301,7 @@ for P in "${PODS_VALUES[@]}"; do
     --call-interval 3600 \
     -o "$SERVER_DIR/experiments" \
     -F "$FORECASTS_FILE" \
-    -i "${INTERVAL:-60}" \
+    -i "$METRICS_INTERVAL" \
     --auto-stop \
     --non-interactive | sed -u 's/.*/[vanilla] &/'
   rc=$?

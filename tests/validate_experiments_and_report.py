@@ -25,6 +25,8 @@ from placement_constraint_validator import (  # type: ignore
     build_pod_timeslot_map,
     validate_capacity_constraints,
     validate_timeslot_constraints,
+    parse_cpu_str,
+    parse_memory_str,
 )
 
 
@@ -71,9 +73,15 @@ def find_csv(exp_dir: str, algo: str) -> Optional[str]:
 
 def validate_one(csv_path: str, nodes_file: str, workloads_dir: str) -> Tuple[Dict[str, int], bool, bool]:
     df = pd.read_csv(csv_path)
-    for col in ("start_slot", "duration", "cpu_request", "ram_request"):
+    # Numerics
+    for col in ("start_slot", "duration"):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+    # Parse resource unit strings
+    if 'cpu_request' in df.columns:
+        df['cpu_request'] = df['cpu_request'].apply(parse_cpu_str)
+    if 'ram_request' in df.columns:
+        df['ram_request'] = df['ram_request'].apply(parse_memory_str)
 
     # Capacity
     cap_counts = {"cpu_violations": 0, "memory_violations": 0, "unknown_nodes": 0}

@@ -1,0 +1,144 @@
+# Configuration for infrastructure and workload generation
+
+# Global optimization algorithm configuration
+optimization:
+  # Use lexicographic optimization: first maximize placements, then minimize emissions
+  # This ensures all feasible pods are placed while optimizing carbon footprint
+  use_lexicographic: true
+  
+  # Solver configuration
+  solver:
+    time_limit: 60  # seconds per phase for lexicographic, total for standard
+    gap_tolerance: 0.0  # No gap tolerance - enforce strict feasibility
+
+nodes:
+  # Filename for the generated nodes
+  filename: nodes.yaml
+  
+  # Regions configuration with exact counts
+  regions:
+    region_counts:
+      DE: 1
+      FR: 1
+      ES: 1
+      IT-NO: 1
+  
+  # Method to assign regions to nodes
+  assignment_method: exact_counts
+  
+  # Hardware assignment configuration with exact counts
+  hardware_assignment:
+    hardware_counts:
+      IoT: 1
+      Smartphone: 2
+      Laptop: 1
+      Server: 0
+  
+  # Method to assign hardware types to nodes
+  hardware_assignment_method: exact_counts
+  
+  # Hardware subcategories configuration
+  hardware_subcategories:
+    IoT:
+      cpu: "2"
+      memory: "2Gi"
+      embodied_carbon: 27.471
+      lifetime: 5.2
+      power:
+        idle: 0.5    # Watts
+        active: 2.0  # Watts
+        max: 5.0     # Watts
+    Smartphone:
+      cpu: "4"
+      memory: "4Gi"
+      embodied_carbon: 52.729
+      lifetime: 3.03
+      power:
+        idle: 1.0    # Watts
+        active: 3.0  # Watts
+        max: 15.0    # Watts
+    Laptop:
+      cpu: "8"
+      memory: "16Gi"
+      embodied_carbon: 231.855
+      lifetime: 4.13
+      power:
+        idle: 10.0   # Watts
+        active: 40.0 # Watts
+        max: 150.0   # Watts
+    Server:
+      cpu: "32"
+      memory: "64Gi"
+      embodied_carbon: 1230.656
+      lifetime: 3.87
+      power:
+        idle: 100.0  # Watts
+        active: 200.0# Watts
+        max: 400.0   # Watts
+  
+  # Random seed for reproducibility
+  random_seed: 42
+
+workload:
+  # Directory to output workload files
+  output_dir: workloads
+  
+  # Directory for vanilla scheduler workload files
+  vanilla_output_dir: workloads-vanilla
+  
+  # Number of timeslots to generate
+  num_timeslots: 12
+  
+  # Strategy for generating pods per timeslot: "poisson" or "exact_total"
+  generation_strategy: exact_total
+  
+  # Lambda parameter for Poisson distribution (average services per timeslot)
+  poisson_lambda: 4  # [4, 8, 10, 12, 16]
+  
+  # Total number of pods to generate across all timeslots
+  # Used only when generation_strategy == "exact_total"
+  exact_total_pods: 120
+  
+  # Minimum number of services per timeslot, regardless of Poisson distribution
+  min_services: 1
+  
+  # Base name for microservices
+  base_name: m
+  
+  # Available duration labels for pods (in hours)
+  durations:
+    - 1  # short duration (1 hour)
+    - 3  # medium duration (3 hours) 
+    - 6  # long duration (6 hours)
+  
+  # How to assign durations (cycle through the values or pick randomly)
+  duration_assignment_method: cycle  # "cycle" or "random"
+  
+  # Deadline configuration options
+  # Strategy for determining deadlines: "tight", "flexible", "mixed", or "exact"
+  deadline_strategy: flexible
+  
+  # Hours to add to duration for flexible deadlines
+  deadline_flexibility_hours:
+    - 1   # Low flexibility: duration + 1h
+    - 3   # Medium flexibility: duration + 3h
+    - 6  # High flexibility: duration + 6h
+  
+  # Available CPU request options
+  cpu_options:
+    - 2000m  # 2 full cores
+    - 1000m  # 1 full core
+    - 500m   # half core
+    - 250m   # quarter core
+    - 100m   # tenth of a core
+  
+  # Available memory request options
+  mem_options:
+    - 2Gi
+    - 1Gi
+    - 512Mi
+    - 256Mi
+    - 128Mi
+  
+  # Random seed for reproducibility
+  random_seed: 42 
