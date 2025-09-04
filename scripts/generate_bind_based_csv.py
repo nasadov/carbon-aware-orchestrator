@@ -4,6 +4,7 @@ import csv
 import json
 import os
 from collections import OrderedDict
+import re
 
 
 def read_binds(ndjson_path: str):
@@ -28,8 +29,31 @@ def read_binds(ndjson_path: str):
     return binds
 
 
+def _parse_duration_label_to_hours(label_value: str) -> float:
+    """Parse duration label strings like 'duration-1h', 'duration-3h', 'duration-1h30m', 'duration-90m'.
+
+    Returns hours as float; defaults to 1.0 if parsing fails.
+    """
+    if not label_value:
+        return 1.0
+    s = str(label_value).strip()
+    m = re.match(r"^duration-(?P<h>\d+(?:\.\d+)?)h(?:(?P<m>\d+)m)?$", s, flags=re.IGNORECASE)
+    if m:
+        hours = float(m.group('h'))
+        mins = float(m.group('m')) if m.group('m') else 0.0
+        return hours + mins / 60.0
+    m = re.match(r"^duration-(?P<m>\d+)m$", s, flags=re.IGNORECASE)
+    if m:
+        return float(m.group('m')) / 60.0
+    # Fallback: try to find a plain number of hours in the string
+    m = re.search(r"(\d+(?:\.\d+)?)\s*h", s, flags=re.IGNORECASE)
+    if m:
+        return float(m.group(1))
+    return 1.0
+
+
 def read_workload_requests(workloads_dir: str):
-    # Build a map ms_name -> (full_name, cpu, mem)
+    # Build a map ms_name -> (full_name, cpu, mem, duration_hours)
     import re, yaml
     ms_to_info = {}
     files = [os.path.join(workloads_dir, f) for f in os.listdir(workloads_dir) if f.startswith('timeslot_') and f.endswith('.yaml')]
@@ -47,16 +71,21 @@ def read_workload_requests(workloads_dir: str):
             if not isinstance(d, dict) or d.get('kind') != 'Deployment':
                 continue
             meta = d.get('metadata', {})
-            full_name = meta.get('name') or meta.get('labels', {}).get('app') or ''
+            labels = meta.get('labels', {}) if isinstance(meta, dict) else {}
+            full_name = meta.get('name') or labels.get('app') or ''
             ms_name = d.get('spec', {}).get('selector', {}).get('matchLabels', {}).get('name', '')
             conts = d.get('spec', {}).get('template', {}).get('spec', {}).get('containers', [])
             cpu = mem = ''
+            duration_hours = 1.0
             if conts:
                 reqs = conts[0].get('resources', {}).get('requests', {})
                 cpu = str(reqs.get('cpu', '') or '')
                 mem = str(reqs.get('memory', '') or '')
+            duration_label = labels.get('duration', '')
+            if duration_label:
+                duration_hours = _parse_duration_label_to_hours(duration_label)
             if ms_name:
-                ms_to_info[ms_name] = (full_name, cpu, mem)
+                ms_to_info[ms_name] = (full_name, cpu, mem, duration_hours)
     return ms_to_info
 
 
@@ -82,14 +111,15 @@ def main():
         w = csv.writer(fh)
         w.writerow(['pod_id','node_id','start_slot','duration','cpu_request','ram_request'])
         for ms_name, (node, slot) in chosen.items():
-            full_name, cpu, mem = ms_to_info.get(ms_name, (ms_name, '', ''))
-            # Duration unknown at bind-time; set to 1 slot by default (or refine later via presence)
-            w.writerow([full_name, node, float(slot), float(1.0), cpu, mem])
+            full_name, cpu, mem, duration_hours = ms_to_info.get(ms_name, (ms_name, '', '', 1.0))
+            # Use manifest-defined duration (in hours/slots) for vanilla logging
+            w.writerow([full_name, node, float(slot), float(duration_hours), cpu, mem])
     print(f"Wrote {len(chosen)} rows to {out_csv}")
 
 
 if __name__ == '__main__':
     main()
+
 
 
 

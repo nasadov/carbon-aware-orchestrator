@@ -47,40 +47,40 @@ def _parse_success_rates_from_experiments(experiments_root: str):
         except Exception:
             continue
 
+        summary_text = None
         summary_path = os.path.join(entry_path, "placement_summary.log")
-        if not os.path.exists(summary_path):
-            # If summary is missing, skip
-            continue
-
-        try:
-            with open(summary_path, 'r') as f:
-                summary_text = f.read()
-        except Exception:
-            continue
+        if os.path.exists(summary_path):
+            try:
+                with open(summary_path, 'r') as f:
+                    summary_text = f.read()
+            except Exception:
+                summary_text = None
 
         # Parse success from a line like: "📈 Placed: 156/181 pods (86.2%)"
-        placed_match = re.search(r"Placed:\s*(\d+)\s*/\s*(\d+)\s*pods\s*\(([-\d\.]+)%\)", summary_text)
-        if placed_match:
-            placed = int(placed_match.group(1))
-            total = int(placed_match.group(2))
-            success_rate = 100.0 * placed / total if total > 0 else 0.0
-            results[algo_key][pods_count].append(success_rate)
-            continue
+        if summary_text:
+            placed_match = re.search(r"Placed:\s*(\d+)\s*/\s*(\d+)\s*pods\s*\(([-\d\.]+)%\)", summary_text)
+            if placed_match:
+                placed = int(placed_match.group(1))
+                total = int(placed_match.group(2))
+                success_rate = 100.0 * placed / total if total > 0 else 0.0
+                results[algo_key][pods_count].append(success_rate)
+                continue
 
         # Alt format in placement_summary.log: "Success rate: 156/181 = 86.2%"
-        sr_match = re.search(r"Success\s*rate:\s*(\d+)\s*/\s*(\d+)", summary_text, flags=re.IGNORECASE)
-        if sr_match:
-            placed = int(sr_match.group(1))
-            total = int(sr_match.group(2))
-            success_rate = 100.0 * placed / total if total > 0 else 0.0
-            results[algo_key][pods_count].append(success_rate)
-            continue
+        if summary_text:
+            sr_match = re.search(r"Success\s*rate:\s*(\d+)\s*/\s*(\d+)", summary_text, flags=re.IGNORECASE)
+            if sr_match:
+                placed = int(sr_match.group(1))
+                total = int(sr_match.group(2))
+                success_rate = 100.0 * placed / total if total > 0 else 0.0
+                results[algo_key][pods_count].append(success_rate)
+                continue
 
         # Fallback: compute from counts if present separately
         placed_num = None
         total_num = None
-        m_placed = re.search(r"(Unique\s+pods\s+successfully\s+placed|Total\s+unique\s+pods\s+placed):\s*(\d+)", summary_text, flags=re.IGNORECASE)
-        m_total = re.search(r"Total\s+pods\s+in\s+workloads?:\s*(\d+)", summary_text, flags=re.IGNORECASE)
+        m_placed = re.search(r"(Unique\s+pods\s+successfully\s+placed|Total\s+unique\s+pods\s+placed):\s*(\d+)", summary_text or "", flags=re.IGNORECASE)
+        m_total = re.search(r"Total\s+pods\s+in\s+workloads?:\s*(\d+)", summary_text or "", flags=re.IGNORECASE)
         if m_placed and m_total:
             placed_num = int(m_placed.group(2))
             total_num = int(m_total.group(1))
@@ -97,9 +97,12 @@ def _parse_success_rates_from_experiments(experiments_root: str):
         elif algo_key == 'heuristic':
             candidate_names = ['heuristic_placements_session.csv']
         elif algo_key == 'vanilla':
+            # Prefer bind-based placement CSVs by default (our bind generator writes vanilla_placement_session.csv)
             candidate_names = [
-                'vanilla_placement_session_fixed.csv',
                 'vanilla_placement_session.csv',
+                'vanilla_placement_session_bind.csv',
+                'vanilla_placement_session_presence.csv',
+                'vanilla_placement_session_fixed.csv',
                 'vanilla_placements.csv',
             ]
         else:

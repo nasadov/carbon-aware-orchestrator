@@ -250,7 +250,10 @@ def _find_placement_csv(algo: str, dir_path: str):
         p = os.path.join(dir_path, 'heuristic_placements_session.csv')
         return p if os.path.exists(p) else None
     if algo == 'vanilla':
+        # Prefer presence/bind reconstructed CSVs for accurate durations
         for name in (
+            'vanilla_placement_session_presence.csv',
+            'vanilla_placement_session_bind.csv',
             'vanilla_placement_session_fixed.csv',
             'vanilla_placement_session.csv',
             'vanilla_placements.csv',
