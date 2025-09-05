@@ -558,101 +558,184 @@ def generate_timeslot_files(config: Dict[str, Any]):
     print(f"Will generate {total_services} total microservices across {num_timeslots} timeslots")
     print(f"All pods will use normal naming pattern: {base_name}000, {base_name}001, etc.")
 
-    for slot_id in range(num_timeslots):
-        # Filenames for both custom and vanilla scheduler
-        timeslot_filename = os.path.join(output_dir, f"timeslot_{slot_id}.yaml")
-        vanilla_timeslot_filename = os.path.join(vanilla_output_dir, f"timeslot_{slot_id}.yaml")
-        microservices_per_slot = service_counts[slot_id]
-        
-        custom_deployments = []
-        vanilla_deployments = []
-        
-        for _ in range(microservices_per_slot):
-            # Make two new deployments (one for each scheduler)
+    # Two approaches to assign pods to timeslots:
+    # - For Poisson: keep existing per-slot generation (random counts per slot)
+    # - For exact_total: assign pod i to slot (i % num_timeslots) to keep stable mapping across totals
+    if generation_strategy == "poisson":
+        for slot_id in range(num_timeslots):
+            # Filenames for both custom and vanilla scheduler
+            timeslot_filename = os.path.join(output_dir, f"timeslot_{slot_id}.yaml")
+            vanilla_timeslot_filename = os.path.join(vanilla_output_dir, f"timeslot_{slot_id}.yaml")
+            microservices_per_slot = service_counts[slot_id]
+            
+            custom_deployments = []
+            vanilla_deployments = []
+            
+            for _ in range(microservices_per_slot):
+                # Make two new deployments (one for each scheduler)
+                import copy
+                custom_dep = copy.deepcopy(DEPLOYMENT_TEMPLATE)
+                vanilla_dep = copy.deepcopy(DEPLOYMENT_TEMPLATE)
+                
+                # Remove the custom scheduler from the vanilla deployment
+                # The default scheduler will be used if schedulerName is not specified
+                if "schedulerName" in vanilla_dep["spec"]["template"]["spec"]:
+                    del vanilla_dep["spec"]["template"]["spec"]["schedulerName"]
+
+                # Generate the core microservice name using normal naming pattern
+                ms_name = f"{base_name}{ms_counter:03d}"  # e.g. "m000", "m001", etc.
+                ms_counter += 1
+
+                # Pick CPU/mem from our lists
+                cpu_req = random.choice(cpu_options)
+                mem_req = random.choice(mem_options)
+                
+                # Get duration based on assignment method
+                if duration_assignment_method == "cycle":
+                    duration_hours = durations[duration_counter % len(durations)]
+                    duration_counter += 1
+                else:  # random
+                    duration_hours = random.choice(durations)
+                
+                # Calculate deadline based on strategy
+                if deadline_strategy == "tight":
+                    # Tight deadlines - exact same as duration (no flexibility)
+                    deadline_hours = duration_hours
+                elif deadline_strategy == "exact":
+                    # Exact deadlines - use the duration times a specific multiplier
+                    deadline_hours = duration_hours * 2  # 2x the duration
+                elif deadline_strategy == "mixed":
+                    # Mixed strategy - sometimes tight, sometimes flexible
+                    if random.random() < 0.3:  # 30% chance of tight deadline
+                        deadline_hours = duration_hours
+                    else:
+                        flexibility = random.choice(deadline_flexibility_hours)
+                        deadline_hours = duration_hours + flexibility
+                else:  # flexible (default)
+                    flexibility = random.choice(deadline_flexibility_hours)
+                    deadline_hours = duration_hours + flexibility
+                
+                # Format duration and deadline as strings with units
+                duration_str = format_duration(duration_hours)
+                deadline_str = format_duration(deadline_hours)
+                
+                # Create the full name with both duration and deadline
+                full_name = f"{ms_name}-duration-{duration_str}-deadline-{deadline_str}"
+                
+                # Apply the same configuration to both deployments
+                for dep in [custom_dep, vanilla_dep]:
+                    # Fill in the deployment template
+                    dep["metadata"]["name"] = full_name
+                    dep["metadata"]["labels"]["app"] = full_name
+
+                    # Add duration and deadline labels 
+                    dep["metadata"]["labels"]["duration"] = f"duration-{duration_str}"
+                    dep["metadata"]["labels"]["deadline"] = f"deadline-{deadline_str}"
+
+                    # Update selector and pod labels
+                    dep["spec"]["selector"]["matchLabels"]["name"] = ms_name
+                    dep["spec"]["template"]["metadata"]["labels"]["name"] = ms_name
+
+                    # Fill CPU/mem
+                    container = dep["spec"]["template"]["spec"]["containers"][0]
+                    container["resources"]["requests"]["cpu"] = cpu_req
+                    container["resources"]["requests"]["memory"] = mem_req
+                
+                custom_deployments.append(custom_dep)
+                vanilla_deployments.append(vanilla_dep)
+
+            # Write custom scheduler deployments
+            with open(timeslot_filename, "w") as f:
+                for doc in custom_deployments:
+                    yaml.safe_dump(doc, f, sort_keys=False)
+                    f.write("---\n")
+            
+            # Write vanilla scheduler deployments
+            with open(vanilla_timeslot_filename, "w") as f:
+                for doc in vanilla_deployments:
+                    yaml.safe_dump(doc, f, sort_keys=False)
+                    f.write("---\n")
+
+            print(f"Generated timeslot {slot_id} with {microservices_per_slot} microservices in both directories.")
+    else:
+        # exact_total: assign pod i to timeslot (i % num_timeslots) for stable mapping across different totals
+        slot_custom_deployments = [[] for _ in range(num_timeslots)]
+        slot_vanilla_deployments = [[] for _ in range(num_timeslots)]
+
+        for i in range(total_services):
             import copy
             custom_dep = copy.deepcopy(DEPLOYMENT_TEMPLATE)
             vanilla_dep = copy.deepcopy(DEPLOYMENT_TEMPLATE)
-            
+
             # Remove the custom scheduler from the vanilla deployment
-            # The default scheduler will be used if schedulerName is not specified
             if "schedulerName" in vanilla_dep["spec"]["template"]["spec"]:
                 del vanilla_dep["spec"]["template"]["spec"]["schedulerName"]
 
-            # Generate the core microservice name using normal naming pattern
-            ms_name = f"{base_name}{ms_counter:03d}"  # e.g. "m000", "m001", etc.
+            # Microservice name
+            ms_name = f"{base_name}{ms_counter:03d}"
             ms_counter += 1
 
-            # Pick CPU/mem from our lists
+            # Resource requests
             cpu_req = random.choice(cpu_options)
             mem_req = random.choice(mem_options)
-            
-            # Get duration based on assignment method
+
+            # Duration assignment
             if duration_assignment_method == "cycle":
                 duration_hours = durations[duration_counter % len(durations)]
                 duration_counter += 1
-            else:  # random
+            else:
                 duration_hours = random.choice(durations)
-            
-            # Calculate deadline based on strategy
+
+            # Deadline assignment
             if deadline_strategy == "tight":
-                # Tight deadlines - exact same as duration (no flexibility)
                 deadline_hours = duration_hours
             elif deadline_strategy == "exact":
-                # Exact deadlines - use the duration times a specific multiplier
-                deadline_hours = duration_hours * 2  # 2x the duration
+                deadline_hours = duration_hours * 2
             elif deadline_strategy == "mixed":
-                # Mixed strategy - sometimes tight, sometimes flexible
-                if random.random() < 0.3:  # 30% chance of tight deadline
+                if random.random() < 0.3:
                     deadline_hours = duration_hours
                 else:
                     flexibility = random.choice(deadline_flexibility_hours)
                     deadline_hours = duration_hours + flexibility
-            else:  # flexible (default)
+            else:
                 flexibility = random.choice(deadline_flexibility_hours)
                 deadline_hours = duration_hours + flexibility
-            
-            # Format duration and deadline as strings with units
+
             duration_str = format_duration(duration_hours)
             deadline_str = format_duration(deadline_hours)
-            
-            # Create the full name with both duration and deadline
             full_name = f"{ms_name}-duration-{duration_str}-deadline-{deadline_str}"
-            
-            # Apply the same configuration to both deployments
+
             for dep in [custom_dep, vanilla_dep]:
-                # Fill in the deployment template
                 dep["metadata"]["name"] = full_name
                 dep["metadata"]["labels"]["app"] = full_name
-
-                # Add duration and deadline labels 
                 dep["metadata"]["labels"]["duration"] = f"duration-{duration_str}"
                 dep["metadata"]["labels"]["deadline"] = f"deadline-{deadline_str}"
-
-                # Update selector and pod labels
                 dep["spec"]["selector"]["matchLabels"]["name"] = ms_name
                 dep["spec"]["template"]["metadata"]["labels"]["name"] = ms_name
-
-                # Fill CPU/mem
                 container = dep["spec"]["template"]["spec"]["containers"][0]
                 container["resources"]["requests"]["cpu"] = cpu_req
                 container["resources"]["requests"]["memory"] = mem_req
-            
-            custom_deployments.append(custom_dep)
-            vanilla_deployments.append(vanilla_dep)
 
-        # Write custom scheduler deployments
-        with open(timeslot_filename, "w") as f:
-            for doc in custom_deployments:
-                yaml.safe_dump(doc, f, sort_keys=False)
-                f.write("---\n")
-        
-        # Write vanilla scheduler deployments
-        with open(vanilla_timeslot_filename, "w") as f:
-            for doc in vanilla_deployments:
-                yaml.safe_dump(doc, f, sort_keys=False)
-                f.write("---\n")
+            slot_id = i % num_timeslots
+            slot_custom_deployments[slot_id].append(custom_dep)
+            slot_vanilla_deployments[slot_id].append(vanilla_dep)
 
-        print(f"Generated timeslot {slot_id} with {microservices_per_slot} microservices in both directories.")
+        # Write files per timeslot using the round-robin assignment
+        for slot_id in range(num_timeslots):
+            timeslot_filename = os.path.join(output_dir, f"timeslot_{slot_id}.yaml")
+            vanilla_timeslot_filename = os.path.join(vanilla_output_dir, f"timeslot_{slot_id}.yaml")
+
+            with open(timeslot_filename, "w") as f:
+                for doc in slot_custom_deployments[slot_id]:
+                    yaml.safe_dump(doc, f, sort_keys=False)
+                    f.write("---\n")
+
+            with open(vanilla_timeslot_filename, "w") as f:
+                for doc in slot_vanilla_deployments[slot_id]:
+                    yaml.safe_dump(doc, f, sort_keys=False)
+                    f.write("---\n")
+
+            print(f"Generated timeslot {slot_id} with {len(slot_custom_deployments[slot_id])} microservices in both directories.")
         
     # Report duration distribution
     if duration_assignment_method == "cycle" and total_services > 0:

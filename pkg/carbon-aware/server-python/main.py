@@ -18,40 +18,29 @@ placed_pods = set()
 
 def get_total_pod_count(workloads_dir):
     """
-    Extract total pod count by finding the last pod name in the last timeslot file.
-    
-    Args:
-        workloads_dir: Directory containing timeslot_*.yaml files
-        
-    Returns:
-        Total number of pods (int), or None if unable to determine
+    Compute total pod count by summing Deployments across all timeslot files.
+    This works correctly with round-robin timeslot assignment.
     """
     try:
-        # Find all timeslot files and get the highest numbered one
         timeslot_files = glob.glob(os.path.join(workloads_dir, "timeslot_*.yaml"))
         if not timeslot_files:
             return None
-            
-        # Sort to get the last timeslot file
-        timeslot_files.sort(key=lambda x: int(re.search(r'timeslot_(\d+)\.yaml', x).group(1)))
-        last_timeslot_file = timeslot_files[-1]
-        
-        # Read the last timeslot file and find the last pod name
-        with open(last_timeslot_file, 'r') as f:
-            content = f.read()
-            
-        # Find all pod names (pattern: name: m###)
-        pod_names = re.findall(r'name: m(\d+)', content)
-        if not pod_names:
+
+        total = 0
+        for path in timeslot_files:
+            try:
+                with open(path, 'r') as f:
+                    content = f.read()
+                # Count occurrences of kind: Deployment at start of YAML docs
+                total += len(re.findall(r'^kind:\s*Deployment\b', content, flags=re.M))
+            except Exception:
+                continue
+
+        if total == 0:
             return None
-            
-        # Get the highest pod number and add 1 for total count
-        last_pod_number = max(int(num) for num in pod_names)
-        total_pods = last_pod_number + 1
-        
-        logging.info(f"📊 Detected {total_pods} total pods in workload (last pod: m{last_pod_number:03d})")
-        return total_pods
-        
+
+        logging.info(f"📊 Detected {total} total pods in workload (summed across {len(timeslot_files)} files)")
+        return total
     except Exception as e:
         logging.warning(f"Could not determine pod count from workloads: {e}")
         return None

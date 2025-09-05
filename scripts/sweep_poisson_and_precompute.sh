@@ -91,11 +91,12 @@ files=glob.glob(os.path.join(wd, "timeslot_*.yaml"))
 if not files:
     print(0)
     raise SystemExit
-files.sort(key=lambda x:int(re.search(r"timeslot_(\d+)\.yaml", x).group(1)))
-last=files[-1]
-with open(last) as f:
-    names=re.findall(r'name: m(\d+)', f.read())
-print((max(map(int, names))+1) if names else 0)
+total=0
+for path in files:
+    with open(path) as f:
+        # Count Deployments per file; each Deployment corresponds to one pod spec
+        total += len(re.findall(r'^kind:\s*Deployment\b', f.read(), flags=re.M))
+print(total)
 PY
 }
 
