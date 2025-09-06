@@ -13,50 +13,37 @@ from datetime import datetime
 
 def get_total_pods_from_workloads(workloads_dir=None):
     """
-    Dynamically calculate the total number of pods by scanning the last timeslot file.
-    
-    Args:
-        workloads_dir (str): Path to workloads directory. If None, uses relative path.
-    
-    Returns:
-        int: Total number of pods (highest pod number + 1)
+    Dynamically calculate the total number of pods by summing Deployments across all timeslot files.
+    Works with round-robin assignment and avoids undercounting.
     """
     try:
         # Determine workloads directory
         if workloads_dir is None:
-            # Default to relative path from placement_summary.py location
-            # placement_summary.py is in carbon_aware/, workloads is in ../../workloads
             current_dir = os.path.dirname(os.path.abspath(__file__))
             workloads_dir = os.path.join(current_dir, "..", "..", "workloads")
-        
-        # Look for timeslot_11.yaml (the last timeslot file)
-        timeslot_11_path = os.path.join(workloads_dir, "timeslot_11.yaml")
-        
-        if not os.path.exists(timeslot_11_path):
-            logging.warning(f"⚠️ Could not find timeslot_11.yaml at {timeslot_11_path}, falling back to total=47")
-            return 47
-        
-        # Read the file and extract pod numbers
-        with open(timeslot_11_path, "r") as f:
-            content = f.read()
-        
-        # Find all pod numbers (pattern: m followed by digits)
-        pod_numbers = re.findall(r"m(\d+)", content)
-        
-        if not pod_numbers:
-            logging.warning(f"⚠️ No pod numbers found in {timeslot_11_path}, falling back to total=47")
-            return 47
-        
-        # Convert to integers and find the maximum
-        max_pod_number = max(int(num) for num in pod_numbers)
-        total_pods = max_pod_number + 1  # +1 because pod numbering starts from 0
-        
-        logging.info(f"📊 Dynamically calculated total pods: {total_pods} (highest pod: m{max_pod_number:03d})")
-        return total_pods
-        
+
+        import glob
+        pattern = os.path.join(workloads_dir, "timeslot_*.yaml")
+        files = glob.glob(pattern)
+        if not files:
+            logging.warning(f"⚠️ No timeslot files found in {workloads_dir}, falling back to total=0")
+            return 0
+
+        total = 0
+        for path in files:
+            try:
+                with open(path, "r") as f:
+                    content = f.read()
+                total += len(re.findall(r'^kind:\s*Deployment\b', content, flags=re.M))
+            except Exception as e:
+                logging.warning(f"⚠️ Failed to read {path}: {e}")
+                continue
+
+        logging.info(f"📊 Dynamically calculated total pods: {total} (summed across {len(files)} timeslot files)")
+        return total
     except Exception as e:
-        logging.warning(f"⚠️ Error calculating total pods: {e}, falling back to total=47")
-        return 47
+        logging.warning(f"⚠️ Error calculating total pods: {e}, falling back to total=0")
+        return 0
 
 
 def generate_placement_summary(csv_path, experiment_type, output_dir=None):
@@ -92,8 +79,25 @@ def generate_placement_summary(csv_path, experiment_type, output_dir=None):
         # Count node distribution 
         node_distribution = df['node_id'].value_counts().sort_index()
         
-        # Total pods in workloads (from our analysis - could be made dynamic)
-        total_workload_pods = get_total_pods_from_workloads()
+        # Total pods in workloads
+        # Prefer per-experiment pods.txt marker if present; otherwise, sum across current workloads dir
+        total_workload_pods = None
+        try:
+            session_dir = output_dir if output_dir else os.path.dirname(csv_path)
+            pods_marker = os.path.join(session_dir, 'pods.txt')
+            if os.path.exists(pods_marker):
+                with open(pods_marker, 'r') as pf:
+                    content = pf.read()
+                import re as _re
+                m = _re.search(r"pods\s*=\s*(\d+)", content)
+                if m:
+                    total_workload_pods = int(m.group(1))
+                    logging.info(f"📌 Using pods.txt marker for total pods: {total_workload_pods} ({pods_marker})")
+        except Exception as _e:
+            logging.warning(f"⚠️ Could not read pods.txt marker: {_e}")
+
+        if total_workload_pods is None:
+            total_workload_pods = get_total_pods_from_workloads()
         
         # Calculate success rate
         pods_not_placed = total_workload_pods - unique_pods
