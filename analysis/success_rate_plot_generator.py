@@ -16,6 +16,25 @@ import re
 import csv
 from collections import defaultdict
 
+
+def _read_pods_txt_if_present(session_dir: str, pods_count_from_dir: int) -> int | None:
+    pods_marker = os.path.join(session_dir, 'pods.txt')
+    if os.path.exists(pods_marker):
+        try:
+            with open(pods_marker, 'r') as pf:
+                content = pf.read()
+            m = re.search(r"pods\s*=\s*(\d+)", content)
+            if m:
+                marker_val = int(m.group(1))
+                # Sanity check: ignore clearly stale markers (e.g., 200 written into an 80pods dir)
+                if marker_val != pods_count_from_dir:
+                    # If difference is more than small tolerance, treat as stale and ignore
+                    return None
+                return marker_val
+        except Exception:
+            pass
+    return None
+
 def _parse_success_rates_from_experiments(experiments_root: str):
     """Scan experiments_root for runs and parse success rates per algorithm and pod count.
 
@@ -47,49 +66,7 @@ def _parse_success_rates_from_experiments(experiments_root: str):
         except Exception:
             continue
 
-        summary_text = None
-        summary_path = os.path.join(entry_path, "placement_summary.log")
-        if os.path.exists(summary_path):
-            try:
-                with open(summary_path, 'r') as f:
-                    summary_text = f.read()
-            except Exception:
-                summary_text = None
-
-        # Parse success from a line like: "📈 Placed: 156/181 pods (86.2%)"
-        if summary_text:
-            placed_match = re.search(r"Placed:\s*(\d+)\s*/\s*(\d+)\s*pods\s*\(([-\d\.]+)%\)", summary_text)
-            if placed_match:
-                placed = int(placed_match.group(1))
-                total = int(placed_match.group(2))
-                success_rate = 100.0 * placed / total if total > 0 else 0.0
-                results[algo_key][pods_count].append(success_rate)
-                continue
-
-        # Alt format in placement_summary.log: "Success rate: 156/181 = 86.2%"
-        if summary_text:
-            sr_match = re.search(r"Success\s*rate:\s*(\d+)\s*/\s*(\d+)", summary_text, flags=re.IGNORECASE)
-            if sr_match:
-                placed = int(sr_match.group(1))
-                total = int(sr_match.group(2))
-                success_rate = 100.0 * placed / total if total > 0 else 0.0
-                results[algo_key][pods_count].append(success_rate)
-                continue
-
-        # Fallback: compute from counts if present separately
-        placed_num = None
-        total_num = None
-        m_placed = re.search(r"(Unique\s+pods\s+successfully\s+placed|Total\s+unique\s+pods\s+placed):\s*(\d+)", summary_text or "", flags=re.IGNORECASE)
-        m_total = re.search(r"Total\s+pods\s+in\s+workloads?:\s*(\d+)", summary_text or "", flags=re.IGNORECASE)
-        if m_placed and m_total:
-            placed_num = int(m_placed.group(2))
-            total_num = int(m_total.group(1))
-        if placed_num is not None and total_num is not None and total_num > 0:
-            results[algo_key][pods_count].append(100.0 * placed_num / total_num)
-            continue
-
-        # Last resort: if no summary present or parse failed, try placement CSV directly
-        # Compute success rate as (unique pods placed) / (target pods from folder name)
+        # Compute success rate directly from placement CSVs to avoid stale summaries
         placement_csv = None
         candidate_names = []
         if algo_key == 'global-optimal':
@@ -130,7 +107,9 @@ def _parse_success_rates_from_experiments(experiments_root: str):
                         if pid:
                             unique_pods.add(pid)
                 placed = len(unique_pods)
-                total = pods_count
+                # Derive total pods: prefer pods.txt only if it matches the folder pods_count
+                total_from_marker = _read_pods_txt_if_present(entry_path, pods_count)
+                total = total_from_marker if total_from_marker is not None else pods_count
                 if total > 0:
                     results[algo_key][pods_count].append(100.0 * placed / total)
             except Exception:

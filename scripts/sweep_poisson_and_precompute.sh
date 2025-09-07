@@ -208,9 +208,9 @@ PY
     [[ -n "$dir" ]] && echo "pods=$P" > "$dir/pods.txt"
   fi
 
-  # Tag the most recent experiment directories with pods in a marker file
+  # Tag the latest per‑algo pods directory with current P (sort by mtime, restrict to *pods* dirs)
   for algo in heuristic global-optimal; do
-    dir=$(ls -d "$SERVER_DIR/experiments/$algo"* 2>/dev/null | tail -n 1 || true)
+    dir=$(ls -dt "$SERVER_DIR/experiments/${algo}_*pods_*" 2>/dev/null | head -n 1 || true)
     if [[ -n "$dir" ]]; then
       echo "pods=$P" > "$dir/pods.txt"
     fi

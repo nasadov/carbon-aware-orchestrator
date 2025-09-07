@@ -8,6 +8,7 @@ import os
 import re
 import logging
 from datetime import datetime
+import yaml
 
 
 
@@ -34,12 +35,18 @@ def get_total_pods_from_workloads(workloads_dir=None):
             try:
                 with open(path, "r") as f:
                     content = f.read()
-                total += len(re.findall(r'^kind:\s*Deployment\b', content, flags=re.M))
+                # Sum replicas per Deployment (default to 1 if unspecified)
+                for doc in yaml.safe_load_all(content):
+                    if not doc or doc.get('kind') != 'Deployment':
+                        continue
+                    spec = doc.get('spec', {})
+                    replicas = int(spec.get('replicas', 1) or 1)
+                    total += replicas
             except Exception as e:
                 logging.warning(f"⚠️ Failed to read {path}: {e}")
                 continue
 
-        logging.info(f"📊 Dynamically calculated total pods: {total} (summed across {len(files)} timeslot files)")
+        logging.info(f"📊 Dynamically calculated total pods (sum of replicas): {total} (across {len(files)} timeslot files)")
         return total
     except Exception as e:
         logging.warning(f"⚠️ Error calculating total pods: {e}, falling back to total=0")

@@ -520,9 +520,43 @@ The oracle's exponential complexity justifies the heuristic algorithm's polynomi
 
 \section{Results and Analysis}  % nice to have: stat confidence or repeated runs; sensitivity to forecast error
 
-\subsection{Carbon Reduction}
+\subsection{Carbon Reduction: Inclusive and Matched-Set}\label{subsec:carbon-reduction}
+% Bind figures to latest generated PDFs (define before input)
+\newcommand{\EmissionsVsPodsInclusive}{../../figures/EmissionsVsPods/emissions_vs_pods_20250904_124253.pdf}
+\newcommand{\EmissionsVsPodsCommon}{../../figures/EmissionsVsPods/emissions_vs_pods_common_pods_20250906_101828.pdf}
+\newcommand{\EmissionsPerPodCommon}{../../figures/EmissionsVsPods/emissions_per_pod_vs_pods_common_pods_20250906_101828.pdf}
 
-\subsection{Performance}
+% Unified carbon reduction subsection with fairness framing and common-pods insights
+\input{results.tex}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\EmissionsPerPodCommon}
+  \caption{Emissions per common pod (kg CO\textsubscript{2}e/pod) vs. pod count. Lower values indicate higher placement quality for identical work.}
+  \label{fig:emissions-per-pod-common}
+\end{figure}
+
+\subsection{Placement Success Rate}\label{subsec:success-rate}
+% Update to newest success-rate plot (computed from per-run CSVs; ignores stale pods.txt)
+\renewcommand{\SuccessRateVsPods}{../../figures/SuccessRate/success_rate_comparison_20250907_131839.pdf}
+Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At low load, all three methods are near 100\%; as load increases, the heuristic remains above the vanilla baseline and close to the MILP oracle. We use this figure alongside the inclusive-emissions and matched-set results to separate feasibility (who gets placed) from carbon efficiency (how those pods are placed).
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\SuccessRateVsPods}
+  \caption{Scheduling success rate vs. pod count. Higher is better. Used jointly with inclusive emissions to disambiguate feasibility from carbon efficiency.}
+  \label{fig:success-rate}
+\end{figure}
+
+\subsection{Runtime Cost: Time Complexity}\label{subsec:time-complexity}
+Figure~\ref{fig:time-vs-pods} shows the precomputation/runtime cost of the heuristic as a function of pod count, measured using our precompute mode on the same hardware. Runtime grows with workload size but remains practical for the evaluated scales, supporting deployability. By contrast, MILP precomputation for the oracle is substantially heavier and sensitive to solver time limits (not plotted for clarity), which motivates the heuristic for online scheduling while using the oracle primarily as a benchmarking bound.
+% Use heuristic time complexity plots as representative runtime cost
+\newcommand{\TimeVsPods}{../../figures/TimeComplexity/heuristic_time_vs_pods_20250904_131546.pdf}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\TimeVsPods}
+  \caption{Precompute/runtime cost vs. pod count for the heuristic scheduler. Error bars (if present) show variability across runs.}
+  \label{fig:time-vs-pods}
+\end{figure}
 
 \subsection{Scalability}
 
