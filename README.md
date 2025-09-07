@@ -12,6 +12,7 @@ This work builds upon the original scheduler plugin developed by Fondazione Brun
 - [Carbon-Aware Algorithm](#carbon-aware-algorithm)
     - [Heuristic Algorithm](#heuristic-algorithm)
     - [MILP Global Optimizer](#milp-global-optimizer)
+    - [Carbon-Agnostic (vanilla k8s-like) Baseline](#carbon-agnostic-vanilla-k8s-like-baseline)
     - [Constraints Handling](#constraints-handling)
 - [Carbon-Aware Data Model](#carbon-aware-data-model)
 - [Node Metadata](#node-metadata)
@@ -151,6 +152,38 @@ python test_lexicographic_optimization.py
 ```
 
 The MILP optimizer is also available in `tests/milp_global_optimizer.py` for standalone testing and generates experiment results for comparison with heuristic approaches. Please note that this is an experimental feature and may require significant computational resources for larger problems.
+
+### Carbon-Agnostic (vanilla k8s-like) Baseline
+
+The carbon-agnostic baseline (vanilla k8s-like) simulates a Kubernetes-default-inspired scheduler to provide a robust, apples-to-apples comparison against carbon-aware methods.
+
+Key properties:
+
+1. **Filter → Score → Select**: mirrors kube-scheduler structure.
+2. **Feasibility**: CPU/RAM must be available across the pod's labeled duration on a node for a chosen start slot.
+3. **Scoring (LeastAllocated-like)**: prefers nodes with higher free CPU and RAM fractions (equal weights).
+4. **Earliest timeslot respected**: pods from `timeslot_X.yaml` can only start at or after X.
+5. **No carbon signals**: ignores carbon intensity and embodied emissions; returns 0.0 emissions in placements.
+
+Run precompute (offline, capacity-safe):
+
+```bash
+python3 pkg/carbon-aware/server-python/main.py \
+  --algorithm vanilla \
+  --precompute \
+  --workloads-dir pkg/carbon-aware/workloads \
+  --nodes-file pkg/carbon-aware/nodes.yaml \
+  --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
+  --experiment-dir pkg/carbon-aware/server-python/experiments \
+  --loglevel INFO
+```
+
+Outputs: a timestamped directory under `experiments/vanilla_*` with `vanilla_placements_session.csv`.
+
+Notes and caveats:
+
+- Real kube-scheduler is instantaneous (no time horizon), and can consider many plugins (taints/tolerations, affinity, topology spread, volumes), priorities, and preemption. The simulator focuses on CPU/RAM feasibility with a simple LeastAllocated-like score to create a consistent baseline over the same timeslot horizon used by heuristic and MILP.
+- For higher fidelity, we can incrementally add plugin-like filters (taints, affinity), spread constraints, and weighted multi-plugin scoring.
 
 ### Constraints Handling
 

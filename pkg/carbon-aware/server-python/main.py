@@ -122,8 +122,8 @@ def main() -> None:
     parser.add_argument(
         '--algorithm',
         default='heuristic',
-        choices=['heuristic', 'global-optimal'],
-        help='Scheduling algorithm to use: heuristic (fast, local optimization) or global-optimal (MILP, considers all pods simultaneously) (default: heuristic)'
+        choices=['heuristic', 'global-optimal', 'vanilla'],
+        help='Scheduling algorithm to use: heuristic (carbon-aware), global-optimal (MILP), or vanilla (K8s-like, carbon-unaware)'
     )
     parser.add_argument(
         '--workloads-dir',
@@ -295,8 +295,8 @@ def main() -> None:
     
     # Check if precompute mode is requested
     if args.precompute:
-        if args.algorithm not in ['heuristic', 'global-optimal']:
-            logging.error(f"Precompute mode is only supported for 'heuristic' and 'global-optimal' algorithms, got: {args.algorithm}")
+        if args.algorithm not in ['heuristic', 'global-optimal', 'vanilla']:
+            logging.error(f"Precompute mode is only supported for 'heuristic', 'global-optimal', and 'vanilla' algorithms, got: {args.algorithm}")
             sys.exit(1)
         
         logging.info(f"🧮 Running precomputation mode for {args.algorithm} algorithm")
@@ -317,6 +317,17 @@ def main() -> None:
         elif args.algorithm == 'global-optimal':
             from carbon_aware.precompute_global_optimal import run_global_optimal_precomputation
             success = run_global_optimal_precomputation(
+                workloads_dir=args.workloads_dir,
+                nodes_file=args.nodes_file,
+                forecasts_file=args.forecasts_file,
+                session_log_dir=session_log_dir,
+                perf_logger=perf_logger,
+                prioritize_efficiency=args.prioritize_efficiency,
+                operational_only=args.operational_only
+            )
+        elif args.algorithm == 'vanilla':
+            from carbon_aware.precompute_vanilla import run_vanilla_precomputation
+            success = run_vanilla_precomputation(
                 workloads_dir=args.workloads_dir,
                 nodes_file=args.nodes_file,
                 forecasts_file=args.forecasts_file,

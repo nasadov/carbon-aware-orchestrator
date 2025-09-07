@@ -256,6 +256,7 @@ def _find_placement_csv(algo: str, dir_path: str):
             'vanilla_placement_session_bind.csv',
             'vanilla_placement_session_fixed.csv',
             'vanilla_placement_session.csv',
+            'vanilla_placement_session.csv',
             'vanilla_placements.csv',
         ):
             p = os.path.join(dir_path, name)
