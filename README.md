@@ -66,7 +66,7 @@ The interface definition is in the `./pkg/idl/idl.proto` file. It models a snaps
     - `carbon_emissions_comparison.py`: Comprehensive analysis comparing carbon emissions across algorithms
     - `emissions_vs_pods_plot_generator.py`: Plot total and per‑pod emissions vs. pod count (Vanilla/Heuristic/Global‑Optimal)
     - `success_rate_plot_generator.py`: Plot scheduling success rate vs. pod count (multi‑algorithm)
-    - `heuristic_time_complexity_plot_generator.py`: Plot heuristic precompute time vs. pods and vs. nodes
+    - `time_complexity_plot_generator.py`: Plot precompute time vs. pods/nodes for heuristic, global‑optimal, and vanilla
     - `fix_start_slots.py`: Tool for fixing timeslot inconsistencies in placement data for vanilla algorithm
 - `figures/`: Generated visualization outputs organized by experiment
     - `Comparison/Carbon_Emissions_Analysis_TIMESTAMP/`: Carbon emissions comparison results with automatic timestamping
@@ -534,11 +534,24 @@ Visualization outputs are saved to the `figures/` directory in a timestamped fol
   ```
   Outputs saved under `figures/SuccessRate/`.
 
-- Heuristic Time Complexity (runtime vs pods and vs nodes):
+- Time Complexity (runtime vs pods and vs nodes):
   ```bash
-  python analysis/heuristic_time_complexity_plot_generator.py
+  # Default: latest-only, all three algorithms
+  python analysis/time_complexity_plot_generator.py
+
+  # Aggregate across all runs
+  python analysis/time_complexity_plot_generator.py --all
+
+  # Subset of algorithms
+  python analysis/time_complexity_plot_generator.py --all --algorithms heuristic global-optimal
   ```
   Consumes precompute timing CSVs from `pkg/carbon-aware/server-python/experiments/` named like `precompute_timing_<START>-<HHMMSS>.csv`; outputs saved under `figures/TimeComplexity/`.
+  Also produces a combined overlay plot `time_vs_pods_all_algorithms_<timestamp>.pdf` comparing heuristic, global-optimal, and vanilla in one figure.
+
+  To generate fresh timing data for all three algorithms across pod counts (20..200 step 20):
+  ```bash
+  bash scripts/sweep_podcounts_and_precompute.sh
+  ```
 
 **3. CSV Tracking and Output Details:**
 

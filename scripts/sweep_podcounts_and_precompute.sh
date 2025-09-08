@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # Prevent concurrent runs (best-effort lock)
-exec 9>/tmp/sweep_poisson_and_precompute.lock
+exec 9>/tmp/sweep_podcounts_and_precompute.lock
 if ! flock -n 9; then
-  echo "Another sweep_poisson_and_precompute.sh run is already active. Exiting." >&2
+  echo "Another sweep_podcounts_and_precompute.sh run is already active. Exiting." >&2
   exit 0
 fi
 
@@ -17,10 +17,6 @@ GENERATOR="$REPO_ROOT/pkg/carbon-aware/infra_workload_gen.py"
 SERVER_MAIN="$REPO_ROOT/pkg/carbon-aware/server-python/main.py"
 SERVER_DIR="$REPO_ROOT/pkg/carbon-aware/server-python"
 FORECASTS_FILE="$SERVER_DIR/all_forecasts.json"
-
-# Optional: run vanilla benchmark via external script (requires cluster)
-RUN_VANILLA_BENCHMARK=${RUN_VANILLA_BENCHMARK:-false}
-CARBON_BENCH_SCRIPT="/root/carbon/scripts/run_benchmark.sh"
 
 # Run identifiers and timing
 RUN_START_ID=$(date +%Y%m%d_%H%M%S)
@@ -35,8 +31,7 @@ cleanup() {
   rm -f "$ORIG_TMP" || true
   # Stamp end time in CSV filename to avoid overwriting and identify runs
   if [[ -f "$SUMMARY_CSV" ]]; then
-    local run_end_full run_end_hms
-    run_end_full=$(date +%Y%m%d_%H%M%S)
+    local run_end_hms
     run_end_hms=$(date +%H%M%S)
     mv "$SUMMARY_CSV" "$SERVER_DIR/experiments/precompute_timing_${RUN_START_ID}-${run_end_hms}.csv" || true
   fi
@@ -85,7 +80,7 @@ PY
 # Function to count pods in workloads directory
 count_pods() {
   python3 - <<'PY'
-import os, re, glob
+import os, re, glob, yaml
 wd="/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads"
 files=glob.glob(os.path.join(wd, "timeslot_*.yaml"))
 if not files:
@@ -93,9 +88,15 @@ if not files:
     raise SystemExit
 total=0
 for path in files:
-    with open(path) as f:
-        # Count Deployments per file; each Deployment corresponds to one pod spec
-        total += len(re.findall(r'^kind:\s*Deployment\b', f.read(), flags=re.M))
+    try:
+        with open(path) as f:
+            docs=list(yaml.safe_load_all(f))
+        for d in docs:
+            if isinstance(d, dict) and d.get('kind')=='Deployment':
+                spec=d.get('spec',{})
+                total += int(spec.get('replicas',1))
+    except Exception:
+        pass
 print(total)
 PY
 }
@@ -135,7 +136,7 @@ for P in "${POD_VALUES[@]}"; do
   PODS=$(count_pods)
   NODES=$(count_nodes)
 
-  # Precompute heuristic with timing
+  # Heuristic
   echo "-- heuristic precompute (pods=$P) --"
   begin_h="$(date +%Y-%m-%dT%H:%M:%S)"
   start_h=$(date +%s%N)
@@ -157,7 +158,7 @@ PY
 )
   echo "$RUN_ID,$begin_h,$end_iso_h,$P,heuristic,$PODS,$NODES,$elapsed_h" >> "$SUMMARY_CSV"
 
-  # Precompute global-optimal with timing
+  # Global-optimal
   echo "-- global-optimal precompute (pods=$P) --"
   begin_g="$(date +%Y-%m-%dT%H:%M:%S)"
   start_g=$(date +%s%N)
@@ -179,37 +180,30 @@ PY
 )
   echo "$RUN_ID,$begin_g,$end_iso_g,$P,global-optimal,$PODS,$NODES,$elapsed_g" >> "$SUMMARY_CSV"
 
-  # Optional vanilla benchmark (cluster-based)
-  if [[ "$RUN_VANILLA_BENCHMARK" == "true" ]]; then
-    echo "-- vanilla benchmark (pods=$P) --"
-    EXP_NAME="vanilla_${PODS}pods_${RUN_START_ID}_P${P}"
-    begin_v="$(date +%Y-%m-%dT%H:%M:%S)"
-    # Determine metrics collection interval: default to ceil(3600/SHRINK_FACTOR) with a minimum of 1 second
-    SF="${SHRINK_FACTOR:-3600}"
-    if [[ -z "${INTERVAL:-}" ]]; then
-      METRICS_INTERVAL=$(( (3600 + SF - 1) / SF ))
-      if [[ $METRICS_INTERVAL -lt 1 ]]; then METRICS_INTERVAL=1; fi
-    else
-      METRICS_INTERVAL="${INTERVAL}"
-    fi
-    bash "$CARBON_BENCH_SCRIPT" \
-      -n "$EXP_NAME" \
-      -a vanilla \
-      -f "${SHRINK_FACTOR:-3600}" \
-      --call-interval 3600 \
-      -o "$SERVER_DIR/experiments" \
-      -F "$FORECASTS_FILE" \
-      -i "$METRICS_INTERVAL" \
-      --auto-stop \
-      --non-interactive | sed -u 's/.*/[vanilla] &/' || echo "vanilla benchmark failed"
-    end_v="$(date +%Y-%m-%dT%H:%M:%S)"
-    # Tag the vanilla result dir with pods
-    dir=$(ls -d "$SERVER_DIR/experiments/${EXP_NAME}_vanilla" 2>/dev/null | tail -n 1 || true)
-    [[ -n "$dir" ]] && echo "pods=$P" > "$dir/pods.txt"
-  fi
+  # Vanilla
+  echo "-- vanilla precompute (pods=$P) --"
+  begin_v="$(date +%Y-%m-%dT%H:%M:%S)"
+  start_v=$(date +%s%N)
+  python3 "$SERVER_MAIN" \
+    --algorithm vanilla \
+    --precompute \
+    --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
+    --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
+    --forecasts-file "$FORECASTS_FILE" \
+    --experiment-dir "$SERVER_DIR/experiments" \
+    --loglevel INFO | sed -u 's/.*/[vanilla] &/'
+  end_v=$(date +%s%N)
+  end_iso_v="$(date +%Y-%m-%dT%H:%M:%S)"
+  elapsed_v=$(python3 - "$start_v" "$end_v" <<'PY'
+import sys
+s=int(sys.argv[1]); e=int(sys.argv[2])
+print(f"{(e-s)/1e9:.3f}")
+PY
+)
+  echo "$RUN_ID,$begin_v,$end_iso_v,$P,vanilla,$PODS,$NODES,$elapsed_v" >> "$SUMMARY_CSV"
 
-  # Tag the latest per‑algo pods directory with current P (sort by mtime, restrict to *pods* dirs)
-  for algo in heuristic global-optimal; do
+  # Tag latest per-algo with pods.txt
+  for algo in heuristic global-optimal vanilla; do
     dir=$(ls -dt "$SERVER_DIR/experiments/${algo}_*pods_*" 2>/dev/null | head -n 1 || true)
     if [[ -n "$dir" ]]; then
       echo "pods=$P" > "$dir/pods.txt"
@@ -218,4 +212,6 @@ PY
 
 done
 
-echo "Sweep complete. Results CSV: $(basename "$SUMMARY_CSV") in $SERVER_DIR/experiments/ (will be renamed to include end time on exit)"
+echo "Sweep complete. Results CSV: $(basename "$SUMMARY_CSV") in $SERVER_DIR/experiments/ (renamed with end time on exit)"
+
+
