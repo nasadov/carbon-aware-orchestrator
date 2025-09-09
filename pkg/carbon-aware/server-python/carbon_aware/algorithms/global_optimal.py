@@ -41,6 +41,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         # Load configuration
         self.config = self._load_config()
         use_lexicographic = self.config.get('optimization', {}).get('use_lexicographic', True)
+        self.use_lexicographic = use_lexicographic
         logging.info(f"🔧 Configuration loaded: use_lexicographic={use_lexicographic}")
         
         # Add experiment logger and tracking properties
@@ -637,23 +638,444 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     # If no feasible placements exist for this pod, force it to be unplaced
                     prob += (s[pod_id] == 1), f"ASSIGN_NOPLACE_{pod_id}"
             
+            # Lexicographic two-phase solve (if enabled): Phase 1 maximize placements, Phase 2 minimize emissions
+            if getattr(self, 'use_lexicographic', False):
+                logging.info("🔀 Using lexicographic optimization: Phase 1 (maximize placements), Phase 2 (minimize emissions)")
+
+                # -----------------
+                # Phase 1: minimize number of unplaced pods (sum s)
+                # -----------------
+                prob1 = pulp.LpProblem("CarbonAwareScheduling_Phase1", pulp.LpMinimize)
+
+                # Add assignment constraints to prob1
+                for cname, c in list(prob.constraints.items()):
+                    # Recreate assignment constraints for prob1 from stored definitions above
+                    # Note: rebuild from s/x since constraints were added to 'prob'; reconstruct them explicitly
+                    pass
+
+                # Rebuild assignment constraints for prob1
+                for pod_id, pod_placements in placements.items():
+                    if pod_placements:
+                        prob1 += (
+                            pulp.lpSum([x[(pod_id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]) + s[pod_id] == 1
+                        ), f"ASSIGN_{pod_id}_P1"
+                    else:
+                        prob1 += (s[pod_id] == 1), f"ASSIGN_NOPLACE_{pod_id}_P1"
+
+                # Build resource capacity expressions once
+                cpu_usage = {}
+                ram_usage = {}
+                for pod_id, pod_placements in placements.items():
+                    pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                    if not pod_obj:
+                        continue
+                    for flv_id, ts_id, _ in pod_placements:
+                        for offset in range(int(pod_obj.duration)):
+                            slot = ts_id + offset
+                            if slot >= max_time_slots:
+                                break
+                            cpu_key = (flv_id, slot)
+                            ram_key = (flv_id, slot)
+                            cpu_usage.setdefault(cpu_key, []).append(pod_obj.cpuRequest * x[(pod_id, flv_id, ts_id)])
+                            ram_usage.setdefault(ram_key, []).append(pod_obj.ramRequest * x[(pod_id, flv_id, ts_id)])
+
+                # Add capacity constraints to prob1
+                for (flv_id, ts_id), usage_expressions in cpu_usage.items():
+                    if flv_id in leftover_cpu and ts_id in leftover_cpu[flv_id]:
+                        cpu_limit = leftover_cpu[flv_id][ts_id]
+                        prob1 += pulp.lpSum(usage_expressions) <= cpu_limit, f"CPU_{flv_id}_{ts_id}_P1"
+                for (flv_id, ts_id), usage_expressions in ram_usage.items():
+                    if flv_id in leftover_ram and ts_id in leftover_ram[flv_id]:
+                        ram_limit = leftover_ram[flv_id][ts_id]
+                        prob1 += pulp.lpSum(usage_expressions) <= ram_limit, f"RAM_{flv_id}_{ts_id}_P1"
+
+                # Objective phase 1: minimize number of unplaced pods
+                prob1 += pulp.lpSum([s[pod_id] for pod_id in s])
+
+                # Solve Phase 1
+                solver_cfg = self.config.get('optimization', {}).get('solver', {}) if hasattr(self, 'config') else {}
+                time_limit_cfg = solver_cfg.get('time_limit', 60)
+                gap_tolerance_cfg = solver_cfg.get('gap_tolerance', 0.05)
+                threads_cfg = 4
+                logging.info(f"  - [Phase 1] CBC settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
+                solver_start_time = time.time()
+                primary_solver = pulp.PULP_CBC_CMD(
+                    msg=True,
+                    timeLimit=time_limit_cfg,
+                    gapRel=gap_tolerance_cfg,
+                    threads=threads_cfg
+                )
+                prob1.solve(primary_solver)
+                phase1_time = time.time() - solver_start_time
+                status1 = pulp.LpStatus[prob1.status]
+                logging.info(f"  - [Phase 1] completed in {phase1_time:.3f}s, status={status1}")
+                if status1 not in ("Optimal", "OptimalInfeasible"):
+                    logging.warning("  - [Phase 1] did not find optimal solution; proceeding with found placement count")
+
+                # Identify exact unplaced set from Phase 1 to shrink Phase 2 search space
+                unplaced_phase1 = {pod_id for pod_id in s if s[pod_id].value() and s[pod_id].value() > 0.5}
+                placed_phase1 = set(s.keys()) - unplaced_phase1
+                opt_unplaced = len(unplaced_phase1)
+                logging.info(f"  - [Phase 1] Optimal unplaced pods: {opt_unplaced} (placed={len(s)-opt_unplaced}/{len(s)})")
+
+                # -----------------
+                # Phase 2: minimize emissions with fixed number of unplaced pods
+                # -----------------
+                prob2 = pulp.LpProblem("CarbonAwareScheduling_Phase2", pulp.LpMinimize)
+
+                # Recreate assignment constraints for prob2
+                for pod_id, pod_placements in placements.items():
+                    if pod_placements:
+                        prob2 += (
+                            pulp.lpSum([x[(pod_id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]) + s[pod_id] == 1
+                        ), f"ASSIGN_{pod_id}_P2"
+                    else:
+                        prob2 += (s[pod_id] == 1), f"ASSIGN_NOPLACE_{pod_id}_P2"
+
+                # Build activation variables for prob2
+                y = {}
+                for flv in flavours:
+                    for ts in timeslots:
+                        y[(flv.id, ts.id)] = pulp.LpVariable(f"y_{flv.id}_{ts.id}", cat=pulp.LpBinary)
+
+                # Capacity constraints and activation linking for prob2
+                for (flv_id, ts_id), usage_expressions in cpu_usage.items():
+                    if flv_id in leftover_cpu and ts_id in leftover_cpu[flv_id]:
+                        cpu_limit = leftover_cpu[flv_id][ts_id]
+                        prob2 += pulp.lpSum(usage_expressions) <= cpu_limit, f"CPU_{flv_id}_{ts_id}_P2"
+                        M_cpu = cpu_limit if cpu_limit > 0 else 1.0
+                        prob2 += pulp.lpSum(usage_expressions) <= M_cpu * y[(flv_id, ts_id)], f"ACTIVATION_CPU_LINK_{flv_id}_{ts_id}_P2"
+                for (flv_id, ts_id), usage_expressions in ram_usage.items():
+                    if flv_id in leftover_ram and ts_id in leftover_ram[flv_id]:
+                        ram_limit = leftover_ram[flv_id][ts_id]
+                        prob2 += pulp.lpSum(usage_expressions) <= ram_limit, f"RAM_{flv_id}_{ts_id}_P2"
+
+                # Fix the exact unplaced set from Phase 1 (stronger than fixing only the count)
+                for pod_id in unplaced_phase1:
+                    prob2 += (s[pod_id] == 1), f"FIX_S_UNPLACED_{pod_id}"
+                for pod_id in placed_phase1:
+                    prob2 += (s[pod_id] == 0), f"FIX_S_PLACED_{pod_id}"
+
+                # Objective Phase 2: emissions only (dynamic + idle + embodied)
+                dynamic_terms = []
+                for pod_id, pod_placements in placements.items():
+                    pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                    if not pod_obj:
+                        continue
+                    for flv_id, ts_id, _ in pod_placements:
+                        flv_obj = next((f for f in flavours if f.id == flv_id), None)
+                        if not flv_obj:
+                            continue
+                        k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+                        total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
+                        u_pod = pod_obj.cpuRequest / total_cpu
+                        for offset in range(int(pod_obj.duration)):
+                            slot = ts_id + offset
+                            if slot >= max_time_slots:
+                                break
+                            intensity = get_carbon_intensity(flv_obj, slot)
+                            coef_g = intensity * (k_watts * u_pod / 1000.0)
+                            dynamic_terms.append(coef_g * x[(pod_id, flv_id, ts_id)])
+                idle_embodied_terms = []
+                for flv in flavours:
+                    idle_w = flv.power.get('idle', 0.0)
+                    embodied_per_h = compute_embodied_per_hour_g(flv)
+                    for ts in timeslots:
+                        intensity = get_carbon_intensity(flv, ts.id)
+                        idle_oper_g = intensity * (idle_w / 1000.0)
+                        idle_embodied_terms.append((idle_oper_g + embodied_per_h) * y[(flv.id, ts.id)])
+
+                emissions_objective = pulp.lpSum(dynamic_terms) + pulp.lpSum(idle_embodied_terms)
+                prob2 += emissions_objective
+
+                # Optional warm start from Phase 1 values (best-effort; supported by some solvers)
+                try:
+                    for pod_id in s:
+                        if hasattr(s[pod_id], 'setInitialValue'):
+                            s[pod_id].setInitialValue(1.0 if pod_id in unplaced_phase1 else 0.0)
+                    for (pod_id, flv_id, ts_id), var in x.items():
+                        if hasattr(var, 'setInitialValue') and var.value() is not None:
+                            var.setInitialValue(1.0 if var.value() > 0.5 else 0.0)
+                except Exception:
+                    pass
+
+                # Solve Phase 2
+                logging.info(f"  - [Phase 2] CBC settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
+                solver_start_time = time.time()
+                prob2.solve(primary_solver)
+                solution_time = time.time() - solver_start_time
+                self.status = pulp.LpStatus[prob2.status]
+                self.iterations = prob2.solverModel.Iterations if hasattr(prob2.solverModel, 'Iterations') else 0
+                logging.info(f"  - [Phase 2] completed in {solution_time:.3f}s, status={self.status}")
+
+                # Extract placements and emissions as in standard flow, but use values from x/s/y
+                logging.info(f"🔍 STEP 5: Processing solution and recording results")
+                if prob2.status == pulp.LpStatusOptimal:
+                    solution = {}
+                    total_emissions_objective = 0.0
+
+                    pending_pods_dict = {p.id: p for p in self.pending_pods}
+                    placements_saved_to_csv = 0
+
+                    # Extract placed pods
+                    solution_dict = {}
+                    unplaced_pods = []
+                    for pod_id, slack_var in s.items():
+                        if slack_var.value() and slack_var.value() > 0.5:
+                            unplaced_pods.append(pod_id)
+                    for var_name, var in x.items():
+                        if var.value() and var.value() > 0.5:
+                            pod_id, flv_id, ts_id = var_name
+                            solution_dict[pod_id] = (flv_id, ts_id, 0.0)
+
+                    # Compute per-pod emissions using allocation
+                    occupancy = {}
+                    for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
+                        pod_obj = pending_pods_dict.get(pod_id_sol)
+                        if not pod_obj:
+                            continue
+                        flv_obj = next((f for f in flavours if f.id == flv_id_sol), None)
+                        if not flv_obj:
+                            continue
+                        total_cpu = max(flv_obj.totalCpu, 1e-6)
+                        u_i = pod_obj.cpuRequest / total_cpu
+                        for offset in range(int(pod_obj.duration)):
+                            slot = ts_id_sol + offset
+                            if slot >= max_time_slots:
+                                break
+                            occupancy.setdefault((flv_id_sol, slot), []).append((pod_id_sol, u_i))
+
+                    pod_total_g = {pid: 0.0 for pid in solution_dict.keys()}
+                    for (flv_id, slot), items in occupancy.items():
+                        flv_obj = next((f for f in flavours if f.id == flv_id), None)
+                        if not flv_obj:
+                            continue
+                        intensity = get_carbon_intensity(flv_obj, slot)
+                        k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+                        idle_w = flv_obj.power.get('idle', 0.0)
+                        embodied_per_h = compute_embodied_per_hour_g(flv_obj)
+                        U = sum(u for _, u in items)
+                        if U <= 0:
+                            continue
+                        for pid, u in items:
+                            pod_total_g[pid] += intensity * (k_watts * u / 1000.0)
+                        idle_embodied_g = intensity * (idle_w / 1000.0) + embodied_per_h
+                        for pid, u in items:
+                            share = u / U
+                            pod_total_g[pid] += idle_embodied_g * share
+
+                    for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
+                        current_pod = pending_pods_dict.get(pod_id_sol)
+                        if not current_pod:
+                            continue
+                        emissions_sol_g = pod_total_g.get(pod_id_sol, 0.0)
+                        if self.is_precomputation_mode:
+                            try:
+                                self._write_placement_to_csv(
+                                    pod_id=current_pod.id,
+                                    node_id=flv_id_sol,
+                                    start_slot=ts_id_sol,
+                                    duration=current_pod.duration,
+                                    cpu_request=current_pod.cpuRequest,
+                                    ram_request=current_pod.ramRequest,
+                                    total_carbon_emissions=emissions_sol_g / 1000.0,
+                                    solver_status=str(self.status),
+                                    solver_iterations=self.iterations,
+                                    solution_time_seconds=solution_time
+                                )
+                                placements_saved_to_csv += 1
+                            except Exception:
+                                pass
+                        solution[pod_id_sol] = (flv_id_sol, ts_id_sol, emissions_sol_g)
+                        total_emissions_objective += emissions_sol_g
+
+                    placement_penalty = 0.0
+                    total_objective = prob2.objective.value() if prob2.objective.value() else 0.0
+                    logging.info(f"✅ Lexicographic solution found: emissions={total_emissions_objective/1000.0:.6f}kgCO2e, placed={len(solution)}/{len(self.pending_pods)}")
+
+                    self.global_solution.update(solution)
+                    for pod_id in solution.keys():
+                        self._processed_pods.add(pod_id)
+                    self.pending_pods = [p for p in self.pending_pods if p.id not in solution]
+                    self.has_solved = True
+                else:
+                    logging.warning(f"❌ Lexicographic Phase 2 failed, status: {self.status}")
+                    # Fallback: try dynamic-only emissions (drop activation variables and idle/embodied terms)
+                    logging.info("🔁 Attempting Phase 2 fallback: dynamic-only objective without activation variables")
+                    prob2_dyn = pulp.LpProblem("CarbonAwareScheduling_Phase2_DynamicOnly", pulp.LpMinimize)
+
+                    # Recreate assignment constraints with fixed s from Phase 1
+                    for pod_id, pod_placements in placements.items():
+                        if pod_placements:
+                            prob2_dyn += (
+                                pulp.lpSum([x[(pod_id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]) + s[pod_id] == 1
+                            ), f"ASSIGN_{pod_id}_P2D"
+                        else:
+                            prob2_dyn += (s[pod_id] == 1), f"ASSIGN_NOPLACE_{pod_id}_P2D"
+                    for pod_id in unplaced_phase1:
+                        prob2_dyn += (s[pod_id] == 1), f"FIX_S_UNPLACED_{pod_id}_P2D"
+                    for pod_id in placed_phase1:
+                        prob2_dyn += (s[pod_id] == 0), f"FIX_S_PLACED_{pod_id}_P2D"
+
+                    # Capacity constraints only (no activation linking)
+                    for (flv_id, ts_id), usage_expressions in cpu_usage.items():
+                        if flv_id in leftover_cpu and ts_id in leftover_cpu[flv_id]:
+                            cpu_limit = leftover_cpu[flv_id][ts_id]
+                            prob2_dyn += pulp.lpSum(usage_expressions) <= cpu_limit, f"CPU_{flv_id}_{ts_id}_P2D"
+                    for (flv_id, ts_id), usage_expressions in ram_usage.items():
+                        if flv_id in leftover_ram and ts_id in leftover_ram[flv_id]:
+                            ram_limit = leftover_ram[flv_id][ts_id]
+                            prob2_dyn += pulp.lpSum(usage_expressions) <= ram_limit, f"RAM_{flv_id}_{ts_id}_P2D"
+
+                    # Dynamic-only objective
+                    dynamic_terms_only = []
+                    for pod_id, pod_placements in placements.items():
+                        pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                        if not pod_obj:
+                            continue
+                        for flv_id, ts_id, _ in pod_placements:
+                            flv_obj = next((f for f in flavours if f.id == flv_id), None)
+                            if not flv_obj:
+                                continue
+                            k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+                            total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
+                            u_pod = pod_obj.cpuRequest / total_cpu
+                            for offset in range(int(pod_obj.duration)):
+                                slot = ts_id + offset
+                                if slot >= max_time_slots:
+                                    break
+                                intensity = get_carbon_intensity(flv_obj, slot)
+                                coef_g = intensity * (k_watts * u_pod / 1000.0)
+                                dynamic_terms_only.append(coef_g * x[(pod_id, flv_id, ts_id)])
+                    prob2_dyn += pulp.lpSum(dynamic_terms_only)
+
+                    # Warm start again (best-effort)
+                    try:
+                        for pod_id in s:
+                            if hasattr(s[pod_id], 'setInitialValue'):
+                                s[pod_id].setInitialValue(1.0 if pod_id in unplaced_phase1 else 0.0)
+                        for (pod_id, flv_id, ts_id), var in x.items():
+                            if hasattr(var, 'setInitialValue') and var.value() is not None:
+                                var.setInitialValue(1.0 if var.value() > 0.5 else 0.0)
+                    except Exception:
+                        pass
+
+                    # Solve dynamic-only fallback
+                    solver_start_time = time.time()
+                    prob2_dyn.solve(primary_solver)
+                    solution_time = time.time() - solver_start_time
+                    status_dyn = pulp.LpStatus[prob2_dyn.status]
+                    logging.info(f"  - [Phase 2 Dynamic-Only] completed in {solution_time:.3f}s, status={status_dyn}")
+
+                    if prob2_dyn.status == pulp.LpStatusOptimal:
+                        solution = {}
+                        total_emissions_objective = 0.0
+                        pending_pods_dict = {p.id: p for p in self.pending_pods}
+                        placements_saved_to_csv = 0
+
+                        # Extract placed pods from x
+                        solution_dict = {}
+                        unplaced_pods = list(unplaced_phase1)
+                        for var_name, var in x.items():
+                            if var.value() and var.value() > 0.5:
+                                pod_id, flv_id, ts_id = var_name
+                                if pod_id in placed_phase1:
+                                    solution_dict[pod_id] = (flv_id, ts_id, 0.0)
+
+                        # Compute per-pod emissions using allocation (still count idle/embodied for reporting)
+                        occupancy = {}
+                        for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
+                            pod_obj = pending_pods_dict.get(pod_id_sol)
+                            if not pod_obj:
+                                continue
+                            flv_obj = next((f for f in flavours if f.id == flv_id_sol), None)
+                            if not flv_obj:
+                                continue
+                            total_cpu = max(flv_obj.totalCpu, 1e-6)
+                            u_i = pod_obj.cpuRequest / total_cpu
+                            for offset in range(int(pod_obj.duration)):
+                                slot = ts_id_sol + offset
+                                if slot >= max_time_slots:
+                                    break
+                                occupancy.setdefault((flv_id_sol, slot), []).append((pod_id_sol, u_i))
+
+                        pod_total_g = {pid: 0.0 for pid in solution_dict.keys()}
+                        for (flv_id, slot), items in occupancy.items():
+                            flv_obj = next((f for f in flavours if f.id == flv_id), None)
+                            if not flv_obj:
+                                continue
+                            intensity = get_carbon_intensity(flv_obj, slot)
+                            k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+                            idle_w = flv_obj.power.get('idle', 0.0)
+                            embodied_per_h = compute_embodied_per_hour_g(flv_obj)
+                            U = sum(u for _, u in items)
+                            if U <= 0:
+                                continue
+                            for pid, u in items:
+                                pod_total_g[pid] += intensity * (k_watts * u / 1000.0)
+                            idle_embodied_g = intensity * (idle_w / 1000.0) + embodied_per_h
+                            for pid, u in items:
+                                share = u / U
+                                pod_total_g[pid] += idle_embodied_g * share
+
+                        for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
+                            current_pod = pending_pods_dict.get(pod_id_sol)
+                            if not current_pod:
+                                continue
+                            emissions_sol_g = pod_total_g.get(pod_id_sol, 0.0)
+                            if self.is_precomputation_mode:
+                                try:
+                                    self._write_placement_to_csv(
+                                        pod_id=current_pod.id,
+                                        node_id=flv_id_sol,
+                                        start_slot=ts_id_sol,
+                                        duration=current_pod.duration,
+                                        cpu_request=current_pod.cpuRequest,
+                                        ram_request=current_pod.ramRequest,
+                                        total_carbon_emissions=emissions_sol_g / 1000.0,
+                                        solver_status=str(status_dyn),
+                                        solver_iterations=self.iterations,
+                                        solution_time_seconds=solution_time
+                                    )
+                                    placements_saved_to_csv += 1
+                                except Exception:
+                                    pass
+                            solution[pod_id_sol] = (flv_id_sol, ts_id_sol, emissions_sol_g)
+                            total_emissions_objective += emissions_sol_g
+
+                        logging.info(f"✅ Lexicographic dynamic-only solution: emissions={total_emissions_objective/1000.0:.6f}kgCO2e, placed={len(solution)}/{len(self.pending_pods)}")
+                        self.global_solution.update(solution)
+                        for pod_id in solution.keys():
+                            self._processed_pods.add(pod_id)
+                        self.pending_pods = [p for p in self.pending_pods if p.id not in solution]
+                        self.has_solved = True
+                    else:
+                        logging.warning(f"❌ Phase 2 dynamic-only fallback failed, status: {status_dyn}")
+                self.last_solve_time = time.time()
+                logging.info(f"====== GLOBAL OPTIMIZATION (LEXICOGRAPHIC) END ======")
+                if self.has_solved:
+                    logging.critical(f"💡 GLOBAL OPTIMIZATION SUCCESS! Placed {len(self.global_solution)} pods.")
+                else:
+                    logging.critical(f"💡 GLOBAL OPTIMIZATION FAILED! No solution found.")
+                return
+
             # Multi-objective: Minimize (penalty for unplaced pods + total emissions)
             # Get penalty weight from config, default to 10000 (prioritizes placement over emissions)
             penalty_for_unplaced = self.config.get('optimization', {}).get('unplaced_penalty', 10000)
             logging.info(f"  - Setting multi-objective: penalty for unplaced pods ({penalty_for_unplaced}) + minimize emissions")
             logging.info(f"    * Higher penalty = prioritize placement over emissions")
             logging.info(f"    * Lower penalty = allow more unplaced pods for better emissions")
-            
+
             # Build node-aware objective with activation variables
             y = {}
             for flv in flavours:
                 for ts in timeslots:
                     y[(flv.id, ts.id)] = pulp.LpVariable(f"y_{flv.id}_{ts.id}", cat=pulp.LpBinary)
-            
+
             objective_terms = []
             # Penalty term
             objective_terms.append(pulp.lpSum([penalty_for_unplaced * s[pod_id] for pod_id in s]))
-            
+
             # Dynamic emissions terms (gCO2)
             dynamic_terms = []
             for pod_id, pod_placements in placements.items():
@@ -676,7 +1098,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         dynamic_terms.append(coef_g * x[(pod_id, flv_id, ts_id)])
             if dynamic_terms:
                 objective_terms.append(pulp.lpSum(dynamic_terms))
-            
+
             # Idle + embodied terms per (node,slot)
             idle_embodied_terms = []
             for flv in flavours:
@@ -688,9 +1110,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     idle_embodied_terms.append((idle_oper_g + embodied_per_h) * y[(flv.id, ts.id)])
             if idle_embodied_terms:
                 objective_terms.append(pulp.lpSum(idle_embodied_terms))
-            
+
             prob += pulp.lpSum(objective_terms)
-            
+
             logging.info(f"  - Setting up resource capacity constraints and activation linking")
             # Build per-(node,timeslot) resource usage expressions for constraints and activation linking
             cpu_usage = {}
@@ -721,7 +1143,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     prob += pulp.lpSum(usage_expressions) <= M_cpu * y[(flv_id, ts_id)], f"ACTIVATION_CPU_LINK_{flv_id}_{ts_id}"
                 else:
                     logging.warning(f"     - Missing CPU capacity data for node {flv_id}, timeslot {ts_id}")
-            
+
             # Add RAM capacity constraints
             for (flv_id, ts_id), usage_expressions in ram_usage.items():
                 if flv_id in leftover_ram and ts_id in leftover_ram[flv_id]:
@@ -730,7 +1152,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     prob += pulp.lpSum(usage_expressions) <= ram_limit, f"RAM_{flv_id}_{ts_id}"
                 else:
                     logging.warning(f"     - Missing RAM capacity data for node {flv_id}, timeslot {ts_id}")
-            
+
             logging.info(f"  - Created {constraint_count} resource capacity constraints")
             logging.info(f"  - Final problem size: {len(x)} variables, {len(prob.constraints)} constraints")
 
@@ -789,10 +1211,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     self.status = "Solver_Error"
                     self.iterations = 0
                     return
-            
+
             self.status = pulp.LpStatus[prob.status]
             self.iterations = prob.solverModel.Iterations if hasattr(prob.solverModel, 'Iterations') else 0
-            
+
             logging.info(f"  - Global optimization completed in {solution_time:.3f}s")
             logging.info(f"  - Solver status: {self.status}")
             logging.info(f"  - Solver iterations: {self.iterations}")

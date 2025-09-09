@@ -5,11 +5,15 @@ optimization:
   # Use lexicographic optimization: first maximize placements, then minimize emissions
   # This ensures all feasible pods are placed while optimizing carbon footprint
   use_lexicographic: true
+  # Penalty applied per unplaced pod in single-phase mode (gCO2e-equivalent units)
+  # Larger values prioritize placing pods over emissions; smaller values allow skipping high-cost pods.
+  # Ignored when use_lexicographic is true.
+  unplaced_penalty: 10000
   
   # Solver configuration
   solver:
-    time_limit: 60  # seconds per phase for lexicographic, total for standard
-    gap_tolerance: 0.0  # No gap tolerance - enforce strict feasibility
+    time_limit: 240  # seconds per phase for lexicographic, total for standard
+    gap_tolerance: 0.05  # No gap tolerance - enforce strict feasibility
 
 nodes:
   # Filename for the generated nodes
