@@ -43,6 +43,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         use_lexicographic = self.config.get('optimization', {}).get('use_lexicographic', True)
         self.use_lexicographic = use_lexicographic
         logging.info(f"🔧 Configuration loaded: use_lexicographic={use_lexicographic}")
+        # Cache solver name
+        solver_cfg = self.config.get('optimization', {}).get('solver', {})
+        self.solver_name = solver_cfg.get('name', 'cp_sat')
+        logging.info(f"🔧 Solver configured: name={self.solver_name}")
         
         # Add experiment logger and tracking properties
         self.experiment_logger = None
@@ -171,6 +175,166 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
     def set_base_log_dir(self, base_dir: str):
         """Sets the base directory for session logs."""
         self._session_log_dir = base_dir
+
+    def _get_pulp_solver(self, solver_cfg: Dict, time_limit: int, gap: float, threads: int):
+        """Return a PuLP solver instance based on config and availability.
+        Tries HiGHS, Gurobi, CPLEX, then CBC as a fallback.
+        """
+        import pulp
+        name = (solver_cfg.get('name') or self.solver_name or 'cbc').lower()
+        msg = True
+        # Try explicit name first
+        if name == 'highs':
+            try:
+                return pulp.apis.HiGHS_CMD(msg=msg, timeLimit=time_limit, mip_rel_gap=gap, threads=threads)
+            except Exception:
+                pass
+        if name == 'gurobi':
+            try:
+                return pulp.GUROBI_CMD(msg=msg, timeLimit=time_limit, mipgap=gap, threads=threads)
+            except Exception:
+                pass
+        if name == 'cplex':
+            try:
+                return pulp.CPLEX_CMD(msg=msg, timelimit=time_limit, epgap=gap, threads=threads)
+            except Exception:
+                pass
+        if name == 'cbc':
+            try:
+                return pulp.PULP_CBC_CMD(msg=msg, timeLimit=time_limit, gapRel=gap, threads=threads)
+            except Exception:
+                pass
+        # Auto-detect best available
+        try:
+            return pulp.apis.HiGHS_CMD(msg=msg, timeLimit=time_limit, mip_rel_gap=gap, threads=threads)
+        except Exception:
+            try:
+                return pulp.GUROBI_CMD(msg=msg, timeLimit=time_limit, mipgap=gap, threads=threads)
+            except Exception:
+                try:
+                    return pulp.CPLEX_CMD(msg=msg, timelimit=time_limit, epgap=gap, threads=threads)
+                except Exception:
+                    return pulp.PULP_CBC_CMD(msg=msg, timeLimit=time_limit, gapRel=gap, threads=threads)
+
+    def _solve_phase2_with_cpsat(self, placements, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots,
+                                 unplaced_phase1, placed_phase1, time_limit_sec: int):
+        """Solve Phase 2 with OR-Tools CP-SAT. Returns (ok, solution_dict, elapsed_sec)."""
+        import time
+        start = time.time()
+        try:
+            from ortools.sat.python import cp_model
+        except Exception:
+            return False, {}, time.time() - start
+
+        model = cp_model.CpModel()
+
+        # Index helpers
+        flv_by_id = {f.id: f for f in flavours}
+        ts_ids = set(ts.id for ts in timeslots)
+
+        # Decision variables: X for placements, Y for activation
+        X = {}
+        for pod_id, pod_placements in placements.items():
+            for flv_id, ts_id, _ in pod_placements:
+                X[(pod_id, flv_id, ts_id)] = model.NewBoolVar(f"x_{pod_id}_{flv_id}_{ts_id}")
+
+        Y = {}
+        for flv in flavours:
+            for ts in timeslots:
+                Y[(flv.id, ts.id)] = model.NewBoolVar(f"y_{flv.id}_{ts.id}")
+
+        # Assignment constraints with fixed unplaced set
+        for pod_id, pod_placements in placements.items():
+            if pod_id in unplaced_phase1:
+                # Force unplaced: sum X = 0
+                placement_vars = [X[(pod_id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]
+                if placement_vars:
+                    model.Add(sum(placement_vars) == 0)
+            else:
+                placement_vars = [X[(pod_id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]
+                if placement_vars:
+                    model.Add(sum(placement_vars) == 1)
+
+        # Capacity and activation linking
+        # Build per (flv,slot) usage
+        cpu_usage = {}
+        ram_usage = {}
+        for pod_id, pod_placements in placements.items():
+            if pod_id in unplaced_phase1:
+                continue
+            pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+            if not pod_obj:
+                continue
+            for flv_id, ts_id, _ in pod_placements:
+                for offset in range(int(pod_obj.duration)):
+                    slot = ts_id + offset
+                    if slot >= max_time_slots:
+                        break
+                    key = (flv_id, slot)
+                    cpu_usage.setdefault(key, []).append((pod_obj.cpuRequest, X[(pod_id, flv_id, ts_id)]))
+                    ram_usage.setdefault(key, []).append((pod_obj.ramRequest, X[(pod_id, flv_id, ts_id)]))
+
+        # Add constraints
+        for (flv_id, slot), terms in cpu_usage.items():
+            if flv_id in leftover_cpu and slot in leftover_cpu[flv_id]:
+                cpu_limit = leftover_cpu[flv_id][slot]
+                model.Add(sum(int(coeff * 1000) * var for coeff, var in terms) <= int(cpu_limit * 1000))
+                # Activation linking: if any CPU used then y=1 (via big-M style)
+                M = int(cpu_limit * 1000)
+                model.Add(sum(int(coeff * 1000) * var for coeff, var in terms) <= M * Y[(flv_id, slot)])
+
+        for (flv_id, slot), terms in ram_usage.items():
+            if flv_id in leftover_ram and slot in leftover_ram[flv_id]:
+                ram_limit = leftover_ram[flv_id][slot]
+                # Keep RAM in MB; assume requests already MB
+                model.Add(sum(int(coeff) * var for coeff, var in terms) <= int(ram_limit))
+
+        # Objective: dynamic + idle+embodied
+        obj_terms = []
+        for pod_id, pod_placements in placements.items():
+            if pod_id in unplaced_phase1:
+                continue
+            pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+            if not pod_obj:
+                continue
+            for flv_id, ts_id, _ in pod_placements:
+                flv_obj = flv_by_id.get(flv_id)
+                if not flv_obj:
+                    continue
+                k_watts = (flv_obj.power.get('max', 0.0) - flv_obj.power.get('active', 0.0))
+                total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
+                u = pod_obj.cpuRequest / total_cpu
+                for offset in range(int(pod_obj.duration)):
+                    slot = ts_id + offset
+                    if slot >= max_time_slots:
+                        break
+                    intensity = flv_obj.forecast.get(slot, 200.0)
+                    coef_milli = int(round(intensity * (k_watts * u) / 1000.0 * 1000))  # milli-grams
+                    obj_terms.append(coef_milli * X[(pod_id, flv_id, ts_id)])
+
+        for flv in flavours:
+            idle_w = flv.power.get('idle', 0.0)
+            emb_per_h = (flv.embodiedCarbon / flv.lifetime) if flv.lifetime else 0.0
+            for ts in timeslots:
+                intensity = flv.forecast.get(ts.id, 200.0)
+                coef_milli = int(round((intensity * (idle_w / 1000.0) + emb_per_h) * 1000))
+                obj_terms.append(coef_milli * Y[(flv.id, ts.id)])
+
+        model.Minimize(sum(obj_terms))
+
+        # Time limit
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = float(time_limit_sec)
+        solver.parameters.num_search_workers = 8
+
+        status = solver.Solve(model)
+        ok = status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+        solution = {}
+        if ok:
+            for (pod_id, flv_id, ts_id), var in X.items():
+                if solver.BooleanValue(var):
+                    solution[pod_id] = (flv_id, ts_id, 0.0)
+        return ok, solution, time.time() - start
 
     def setup_session_placement_log(self):
         """Initializes the session-wide CSV file for logging placements."""
@@ -696,15 +860,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 solver_cfg = self.config.get('optimization', {}).get('solver', {}) if hasattr(self, 'config') else {}
                 time_limit_cfg = solver_cfg.get('time_limit', 60)
                 gap_tolerance_cfg = solver_cfg.get('gap_tolerance', 0.05)
-                threads_cfg = 4
-                logging.info(f"  - [Phase 1] CBC settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
+                threads_cfg = int(solver_cfg.get('threads', 4))
+                logging.info(f"  - [Phase 1] settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
                 solver_start_time = time.time()
-                primary_solver = pulp.PULP_CBC_CMD(
-                    msg=True,
-                    timeLimit=time_limit_cfg,
-                    gapRel=gap_tolerance_cfg,
-                    threads=threads_cfg
-                )
+                primary_solver = self._get_pulp_solver(solver_cfg, time_limit_cfg, gap_tolerance_cfg, threads_cfg)
                 prob1.solve(primary_solver)
                 phase1_time = time.time() - solver_start_time
                 status1 = pulp.LpStatus[prob1.status]
@@ -799,18 +958,43 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 except Exception:
                     pass
 
-                # Solve Phase 2
-                logging.info(f"  - [Phase 2] CBC settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
-                solver_start_time = time.time()
-                prob2.solve(primary_solver)
-                solution_time = time.time() - solver_start_time
-                self.status = pulp.LpStatus[prob2.status]
-                self.iterations = prob2.solverModel.Iterations if hasattr(prob2.solverModel, 'Iterations') else 0
-                logging.info(f"  - [Phase 2] completed in {solution_time:.3f}s, status={self.status}")
+                # Solve Phase 2 using selected solver; try CP-SAT when configured
+                solver_cfg = self.config.get('optimization', {}).get('solver', {}) if hasattr(self, 'config') else {}
+                time_limit_cfg = solver_cfg.get('time_limit', 60)
+                gap_tolerance_cfg = solver_cfg.get('gap_tolerance', 0.05)
+                threads_cfg = int(solver_cfg.get('threads', 4))
+                if self.solver_name.lower() == 'cp_sat':
+                    logging.info(f"  - [Phase 2] Using OR-Tools CP-SAT with time_limit={time_limit_cfg}s")
+                    cpsat_ok, cpsat_solution_dict, solution_time = self._solve_phase2_with_cpsat(
+                        placements=placements,
+                        flavours=flavours,
+                        timeslots=timeslots,
+                        leftover_cpu=leftover_cpu,
+                        leftover_ram=leftover_ram,
+                        max_time_slots=max_time_slots,
+                        unplaced_phase1=unplaced_phase1,
+                        placed_phase1=placed_phase1,
+                        time_limit_sec=time_limit_cfg
+                    )
+                    self.status = 'Optimal' if cpsat_ok else 'Not Solved'
+                    self.iterations = 0
+                    logging.info(f"  - [Phase 2] completed in {solution_time:.3f}s, status={self.status}")
+                    # Propagate solution dict for post-processing
+                    if cpsat_ok:
+                        solution_dict = cpsat_solution_dict
+                else:
+                    logging.info(f"  - [Phase 2] PuLP settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
+                    solver_start_time = time.time()
+                    primary_solver = self._get_pulp_solver(solver_cfg, time_limit_cfg, gap_tolerance_cfg, threads_cfg)
+                    prob2.solve(primary_solver)
+                    solution_time = time.time() - solver_start_time
+                    self.status = pulp.LpStatus[prob2.status]
+                    self.iterations = prob2.solverModel.Iterations if hasattr(prob2.solverModel, 'Iterations') else 0
+                    logging.info(f"  - [Phase 2] completed in {solution_time:.3f}s, status={self.status}")
 
                 # Extract placements and emissions as in standard flow, but use values from x/s/y
                 logging.info(f"🔍 STEP 5: Processing solution and recording results")
-                if prob2.status == pulp.LpStatusOptimal:
+                if (self.solver_name.lower() == 'cp_sat' and self.status == 'Optimal') or (self.solver_name.lower() != 'cp_sat' and prob2.status == pulp.LpStatusOptimal):
                     solution = {}
                     total_emissions_objective = 0.0
 
@@ -818,15 +1002,19 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     placements_saved_to_csv = 0
 
                     # Extract placed pods
-                    solution_dict = {}
+                    # Note: for CP-SAT path, solution_dict is already returned from the solver
                     unplaced_pods = []
-                    for pod_id, slack_var in s.items():
-                        if slack_var.value() and slack_var.value() > 0.5:
-                            unplaced_pods.append(pod_id)
-                    for var_name, var in x.items():
-                        if var.value() and var.value() > 0.5:
-                            pod_id, flv_id, ts_id = var_name
-                            solution_dict[pod_id] = (flv_id, ts_id, 0.0)
+                    if self.solver_name.lower() == 'cp_sat':
+                        unplaced_pods = list(unplaced_phase1)
+                        # solution_dict already built by CP-SAT path
+                    else:
+                        for pod_id, slack_var in s.items():
+                            if slack_var.value() and slack_var.value() > 0.5:
+                                unplaced_pods.append(pod_id)
+                        for var_name, var in x.items():
+                            if var.value() and var.value() > 0.5:
+                                pod_id, flv_id, ts_id = var_name
+                                solution_dict[pod_id] = (flv_id, ts_id, 0.0)
 
                     # Compute per-pod emissions using allocation
                     occupancy = {}
@@ -1164,19 +1352,14 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             solver_cfg = self.config.get('optimization', {}).get('solver', {}) if hasattr(self, 'config') else {}
             time_limit_cfg = solver_cfg.get('time_limit', 60)
             gap_tolerance_cfg = solver_cfg.get('gap_tolerance', 0.05)
-            threads_cfg = 4
+            threads_cfg = int(solver_cfg.get('threads', 4))
 
-            logging.info(f"  - CBC settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
+            logging.info(f"  - Solver settings: name={self.solver_name}, time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
 
             solver_start_time = time.time()
             try:
                 # Primary attempt: config-driven time limit and gap tolerance
-                primary_solver = pulp.PULP_CBC_CMD(
-                    msg=True,
-                    timeLimit=time_limit_cfg,
-                    gapRel=gap_tolerance_cfg,
-                    threads=threads_cfg
-                )
+                primary_solver = self._get_pulp_solver(solver_cfg, time_limit_cfg, gap_tolerance_cfg, threads_cfg)
 
                 # Warn if CBC is not available in this environment
                 try:
@@ -1196,12 +1379,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     # Fallback attempt with longer time and looser gap to obtain a feasible solution
                     fallback_time_limit = max(int(time_limit_cfg * 2), 120)
                     fallback_gap = max(float(gap_tolerance_cfg), 0.2)
-                    fallback_solver = pulp.PULP_CBC_CMD(
-                        msg=True,
-                        timeLimit=fallback_time_limit,
-                        gapRel=fallback_gap,
-                        threads=threads_cfg
-                    )
+                    fallback_solver = self._get_pulp_solver(solver_cfg, fallback_time_limit, fallback_gap, threads_cfg)
                     prob.solve(fallback_solver)
                     solution_time = time.time() - solver_start_time
                     logging.info(f"  - Fallback solver completed in {solution_time:.3f}s")

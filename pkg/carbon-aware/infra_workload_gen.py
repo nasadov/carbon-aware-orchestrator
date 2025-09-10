@@ -306,27 +306,56 @@ def generate_nodes_file(config: Dict[str, Any]):
     if hardware_counts is None:
         hardware_types = list(hardware_subcategories.keys())
     
-    # Calculate total number of nodes based on assignment method
-    if assignment_method == "exact_counts" and region_counts:
-        if hardware_assignment_method == "exact_counts" and hardware_counts:
-            # Both exact counts - they must match
-            total_regions = sum(region_counts.values())
-            total_hardware = sum(hardware_counts.values())
-            if total_regions != total_hardware:
-                print(f"Warning: Region count total ({total_regions}) doesn't match hardware count total ({total_hardware})")
-                print("Using the larger of the two totals")
-                num_nodes = max(total_regions, total_hardware)
-            else:
-                num_nodes = total_regions
+    # ------------------------------------------------------------------
+    # NEW: Support explicit region-to-hardware assignments
+    # Accept either a dict mapping region -> {hardware: count} or
+    # a list of {region, hardware, count} objects.
+    # When provided, this overrides region/hardware assignment methods.
+    # ------------------------------------------------------------------
+    explicit_cfg = config.get("explicit_assignments") or config.get("region_hardware_map")
+    use_explicit = explicit_cfg is not None
+    explicit_node_assignments = []
+    if use_explicit:
+        if isinstance(explicit_cfg, dict):
+            for region, hw_map in explicit_cfg.items():
+                if isinstance(hw_map, dict):
+                    for hw_type, count in hw_map.items():
+                        for _ in range(int(count)):
+                            explicit_node_assignments.append({"region": region, "hardware": hw_type})
+        elif isinstance(explicit_cfg, list):
+            for item in explicit_cfg:
+                region = item.get("region")
+                hw_type = item.get("hardware")
+                count = int(item.get("count", 1))
+                for _ in range(count):
+                    explicit_node_assignments.append({"region": region, "hardware": hw_type})
         else:
-            # Only regions exact count
-            num_nodes = sum(region_counts.values())
-    elif hardware_assignment_method == "exact_counts" and hardware_counts:
-        # Only hardware exact count
-        num_nodes = sum(hardware_counts.values())
-    else:
-        # Legacy: use num_nodes from config
-        num_nodes = config.get("num_nodes", 4)
+            raise ValueError("explicit_assignments must be dict or list of {region, hardware, count}")
+        # Number of nodes is driven by explicit mapping
+        num_nodes = len(explicit_node_assignments)
+    
+    # Calculate total number of nodes based on assignment method (unless explicit mapping provided)
+    if not use_explicit:
+        if assignment_method == "exact_counts" and region_counts:
+            if hardware_assignment_method == "exact_counts" and hardware_counts:
+                # Both exact counts - they must match
+                total_regions = sum(region_counts.values())
+                total_hardware = sum(hardware_counts.values())
+                if total_regions != total_hardware:
+                    print(f"Warning: Region count total ({total_regions}) doesn't match hardware count total ({total_hardware})")
+                    print("Using the larger of the two totals")
+                    num_nodes = max(total_regions, total_hardware)
+                else:
+                    num_nodes = total_regions
+            else:
+                # Only regions exact count
+                num_nodes = sum(region_counts.values())
+        elif hardware_assignment_method == "exact_counts" and hardware_counts:
+            # Only hardware exact count
+            num_nodes = sum(hardware_counts.values())
+        else:
+            # Legacy: use num_nodes from config
+            num_nodes = config.get("num_nodes", 4)
     
     print(f"Generating {num_nodes} total nodes")
     
@@ -334,61 +363,64 @@ def generate_nodes_file(config: Dict[str, Any]):
     random.seed(random_seed)
     
     # Generate node assignments
-    node_assignments = []
-    
-    if assignment_method == "exact_counts" and region_counts:
-        # Create exact assignments for regions
-        for region, count in region_counts.items():
-            for _ in range(count):
+    if use_explicit:
+        node_assignments = list(explicit_node_assignments)
+        print("Using explicit region-to-hardware assignments")
+    else:
+        node_assignments = []
+        if assignment_method == "exact_counts" and region_counts:
+            # Create exact assignments for regions
+            for region, count in region_counts.items():
+                for _ in range(count):
+                    node_assignments.append({"region": region})
+        else:
+            # Legacy region assignment
+            for i in range(num_nodes):
+                if assignment_method == "cycle":
+                    region = regions_list[i % len(regions_list)]
+                else:  # random
+                    region = random.choice(regions_list)
                 node_assignments.append({"region": region})
-    else:
-        # Legacy region assignment
-        for i in range(num_nodes):
-            if assignment_method == "cycle":
-                region = regions_list[i % len(regions_list)]
-            else:  # random
-                region = random.choice(regions_list)
-            node_assignments.append({"region": region})
-    
-    # Assign hardware to nodes
-    if hardware_assignment_method == "exact_counts" and hardware_counts:
-        # Create exact assignments for hardware
-        hardware_assignments = []
-        for hw_type, count in hardware_counts.items():
-            for _ in range(count):
-                hardware_assignments.append(hw_type)
         
-        # If we have fewer hardware assignments than nodes, cycle through them
-        while len(hardware_assignments) < len(node_assignments):
-            for hw_type in hardware_types:
-                if len(hardware_assignments) >= len(node_assignments):
-                    break
-                hardware_assignments.append(hw_type)
-        
-        # Assign hardware to each node
-        for i, assignment in enumerate(node_assignments):
-            if i < len(hardware_assignments):
-                assignment["hardware"] = hardware_assignments[i]
-            else:
-                # Fallback to cycling if we somehow don't have enough
-                assignment["hardware"] = hardware_types[i % len(hardware_types)]
-    else:
-        # Legacy hardware assignment
-        for i, assignment in enumerate(node_assignments):
-            if hardware_assignment_method == "cycle":
-                subcategory = hardware_types[i % len(hardware_types)]
-            elif hardware_assignment_method == "shifted_cycle":
-                # Calculate the region cycle and region position within the cycle
-                region_cycle = i // len(regions_list)
-                region_position = i % len(regions_list)
-                
-                # Calculate the hardware position with an offset that increases with each cycle
-                hardware_position = (region_position + (region_cycle * hardware_cycle_offset)) % len(hardware_types)
-                subcategory = hardware_types[hardware_position]
-            else:  # random
-                subcategory = random.choice(hardware_types)
+        # Assign hardware to nodes
+        if hardware_assignment_method == "exact_counts" and hardware_counts:
+            # Create exact assignments for hardware
+            hardware_assignments = []
+            for hw_type, count in hardware_counts.items():
+                for _ in range(count):
+                    hardware_assignments.append(hw_type)
             
-            assignment["hardware"] = subcategory
+            # If we have fewer hardware assignments than nodes, cycle through them
+            while len(hardware_assignments) < len(node_assignments):
+                for hw_type in hardware_types:
+                    if len(hardware_assignments) >= len(node_assignments):
+                        break
+                    hardware_assignments.append(hw_type)
+            
+            # Assign hardware to each node
+            for i, assignment in enumerate(node_assignments):
+                if i < len(hardware_assignments):
+                    assignment["hardware"] = hardware_assignments[i]
+                else:
+                    # Fallback to cycling if we somehow don't have enough
+                    assignment["hardware"] = hardware_types[i % len(hardware_types)]
+        else:
+            # Legacy hardware assignment
+            for i, assignment in enumerate(node_assignments):
+                if hardware_assignment_method == "cycle":
+                    subcategory = hardware_types[i % len(hardware_types)]
+                elif hardware_assignment_method == "shifted_cycle":
+                    # Calculate the region cycle and region position within the cycle
+                    region_cycle = i // len(regions_list)
+                    region_position = i % len(regions_list)
+                    
+                    # Calculate the hardware position with an offset that increases with each cycle
+                    hardware_position = (region_position + (region_cycle * hardware_cycle_offset)) % len(hardware_types)
+                    subcategory = hardware_types[hardware_position]
+                else:  # random
+                    subcategory = random.choice(hardware_types)
+                
+                assignment["hardware"] = subcategory
     
     # Log assignment methods
     print(f"Using {assignment_method} region assignment with seed: {random_seed}")

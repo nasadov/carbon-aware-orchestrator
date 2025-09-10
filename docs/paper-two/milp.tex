@@ -33,16 +33,15 @@ We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Progr
 & d_i \in \mathbb{N}^+ & \text{Duration of pod $i$ (in timeslots)} \\
 & w_i \in \mathbb{N}^+ & \text{Temporal slack for pod $i$} \\
 & T_{max} \in \mathbb{N}^+ & \text{Maximum available timeslot index} \\
-& c_{i} \in \mathbb{R}^+ & \text{CPU request of pod $i$} \\
-& r_{i} \in \mathbb{R}^+ & \text{RAM request of pod $i$} \\
-& C_{jt} \in \mathbb{R}^+ & \text{Available CPU of node $j$ in timeslot $t$} \\
-& R_{jt} \in \mathbb{R}^+ & \text{Available RAM of node $j$ in timeslot $t$} \\
-& p_{ij} \in \mathbb{R}^+ & \text{Power consumption of pod $i$ on node $j$} \\
-& \text{CI}_{j,t} \in \mathbb{R}^+ & \text{Carbon intensity of node $j$ in timeslot $t$} \\
-& \text{EC}_j \in \mathbb{R}^+ & \text{Embodied carbon of node $j$} \\
-& L_j \in \mathbb{R}^+ & \text{Expected lifetime of node $j$} \\
-& u_j \in \mathbb{R}^+ & \text{Utilization factor of node $j$} \\
-& e_{ijt} \in \mathbb{R}^+ & \text{Carbon emissions of pod $i$ on node $j$ at timeslot $t$}
+& c_{i} \in \mathbb{R}^+ & \text{CPU request of pod $i$ (cores)} \\
+& r_{i} \in \mathbb{R}^+ & \text{RAM request of pod $i$ (MB)} \\
+& C_{jt} \in \mathbb{R}^+ & \text{Available CPU of node $j$ in timeslot $t$ (cores)} \\
+& R_{jt} \in \mathbb{R}^+ & \text{Available RAM of node $j$ in timeslot $t$ (MB)} \\
+& \text{CI}_{j,t} \in \mathbb{R}^+ & \text{Carbon intensity of node $j$ in timeslot $t$ (g/kWh)} \\
+& P^{\text{idle}}_j,\;P^{\text{active}}_j,\;P^{\text{max}}_j \in \mathbb{R}^+ & \text{Idle, active, and max power of node $j$ (W)} \\
+& \text{CPU}^{\text{tot}}_j \in \mathbb{R}^+ & \text{Total CPU capacity of node $j$ (cores)} \\
+& \text{EC}_j \in \mathbb{R}^+ & \text{Embodied carbon of node $j$ (g CO$_2$e)} \\
+& L_j \in \mathbb{R}^+ & \text{Lifetime of node $j$ (hours)} 
 \end{align}
 
 The carbon emissions $e_{ijt}$ are calculated considering:
@@ -54,11 +53,13 @@ The carbon emissions $e_{ijt}$ are calculated considering:
 \subsection{Decision Variables}
 
 \begin{align}
-x_{ijt} = 
+x_{ijt} &= 
 \begin{cases} 
 1 & \text{if pod $i$ is placed on node $j$ starting at timeslot $t$} \\
 0 & \text{otherwise}
-\end{cases}
+\end{cases} \\
+s_i &\in \{0,1\} \quad \text{unplaced indicator for pod $i$ (1 if unplaced)} \\
+y_{jt} &\in \{0,1\} \quad \text{activation of node $j$ in timeslot $t$}
 \end{align}
 
 \subsection{Feasible Placements}
@@ -81,17 +82,35 @@ where the deadline includes the pod's execution duration and temporal slack for 
 
 \subsection{Mathematical Model}
 
-\subsubsection{Objective Function}
-Minimize total carbon emissions:
+\subsubsection{Lexicographic Objective}
+We solve the problem in two phases.
+
+\paragraph{Phase 1 (Placement Feasibility).}
 \begin{align}
-\text{Minimize} \quad Z = \sum_{i \in \mathcal{P}} \sum_{(j,t) \in \mathcal{V}_i} e_{ijt} \cdot x_{ijt}
+\text{Minimize}\quad & Z_1 = \sum_{i \in \mathcal{P}} s_i \\
+\text{s.t.}\quad & \sum_{(j,t) \in \mathcal{V}_i} x_{ijt} + s_i = 1 \quad \forall i \in \mathcal{P} \\
+& \text{Capacity constraints (CPU/RAM) as in (\ref{eq:cpu})-(\ref{eq:ram})}
 \end{align}
+
+\paragraph{Phase 2 (Emissions Minimization).}
+Fix the set of unplaced pods to the Phase 1 optimum (i.e., each $s_i$ is fixed to its Phase 1 value) and minimize total emissions:
+\begin{align}
+\text{Minimize}\quad Z_2 &= \sum_{i \in \mathcal{P}} \sum_{(j,t) \in \mathcal{V}_i} \left( \sum_{k=0}^{d_i-1} \text{CI}_{j,t+k}\; \frac{(P^{\max}_j - P^{\text{active}}_j)}{1000}\; \frac{c_i}{\text{CPU}^{\text{tot}}_j} \right) x_{ijt} \\
+&\quad + \sum_{j \in \mathcal{F}} \sum_{t \in \mathcal{T}} \left( \text{CI}_{j,t}\; \frac{P^{\text{idle}}_j}{1000} + \frac{\text{EC}_j}{L_j} \right) y_{jt}
+\end{align}
+subject to the Phase 1 assignment equations, fixed $s_i$, capacity constraints, and activation linking (big-$M$):
+\begin{align}
+\sum_{i \in \mathcal{P}} \sum_{t' \in \mathcal{T}_{it}} c_i\, x_{ijt'} &\le C_{jt} &&\forall j, t \label{eq:cpu} \\
+\sum_{i \in \mathcal{P}} \sum_{t' \in \mathcal{T}_{it}} r_i\, x_{ijt'} &\le R_{jt} &&\forall j, t \label{eq:ram} \\
+\sum_{i \in \mathcal{P}} \sum_{t' \in \mathcal{T}_{it}} c_i\, x_{ijt'} &\le M_{jt}\, y_{jt} &&\forall j, t
+\end{align}
+where $M_{jt}$ can be chosen as $C_{jt}$ (or another valid upper bound on CPU usage).
 
 \subsubsection{Constraints}
 
-\textbf{Assignment constraint:} Each pod must be placed exactly once:
+\textbf{Assignment constraint (Phase 1 and Phase 2):}
 \begin{align}
-\sum_{(j,t) \in \mathcal{V}_i} x_{ijt} = 1 \quad \forall i \in \mathcal{P}
+\sum_{(j,t) \in \mathcal{V}_i} x_{ijt} + s_i = 1 \quad \forall i \in \mathcal{P}
 \end{align}
 
 \textbf{CPU capacity constraints:} The total CPU usage in each node and timeslot must not exceed capacity:
@@ -112,30 +131,16 @@ x_{ijt} \in \{0,1\} \quad \forall i \in \mathcal{P}, \forall (j,t) \in \mathcal{
 
 \subsection{Emissions Calculation}
 
-The carbon emissions parameter $e_{ijt}$ for running pod $i$ on node $j$ starting at timeslot $t$ is calculated as:
-
-\begin{align}
-e_{ijt} = \sum_{k=0}^{d_i-1} \left( op_{ijt+k} + emb_{ij} \right)
-\end{align}
-
-where:
+The Phase 2 objective decomposes emissions into:
 \begin{itemize}
-\item $op_{ijt+k}$ is the operational carbon emissions in timeslot $t+k$:
-\begin{align}
-op_{ijt+k} = p_{ij} \cdot \text{CI}_{j,t+k}
-\end{align}
-with $p_{ij}$ being the power consumption of pod $i$ on node $j$ and $\text{CI}_{j,t+k}$ being the carbon intensity forecast for the region of node $j$ in timeslot $t+k$.
-
-\item $emb_{ij}$ is the embodied carbon emissions attributed to pod $i$ on node $j$ for one timeslot:
-\begin{align}
-emb_{ij} = \frac{\text{EC}_j}{L_j \cdot u_j}
-\end{align}
-with $\text{EC}_j$ being the total embodied carbon of node $j$, $L_j$ being the node's expected lifetime in hours, and $u_j$ representing the pod's resource usage as a fraction of the node's total capacity.
+  \item \textbf{Dynamic (per pod)}: For each placement $(i,j,t)$, and each offset $k \in \{0,\ldots,d_i-1\}$, the marginal power is $(P^{\max}_j - P^{\text{active}}_j)\, (c_i/\text{CPU}^{\text{tot}}_j)$ (W). Operational emissions (g) are $\text{CI}_{j,t+k}\, \frac{(P^{\max}_j - P^{\text{active}}_j)}{1000}\, \frac{c_i}{\text{CPU}^{\text{tot}}_j}$.
+  \item \textbf{Idle + embodied (per node,slot)}: Paid once via $y_{jt}$ with emissions $\text{CI}_{j,t}\, \frac{P^{\text{idle}}_j}{1000} + \frac{\text{EC}_j}{L_j}$.
 \end{itemize}
+Post‑solve reporting can allocate the idle+embodied term proportionally to each pod's CPU share in an active slot.
 
-\subsection{Relaxation Methods for Infeasible MILP Instances}
+\subsection{Solver Fallback for Large Instances}
 
-The carbon-aware scheduling MILP formulation may become infeasible when resource constraints are over-subscribed or when pod deadlines are incompatible with available scheduling windows. To address this fundamental challenge, we develop a hierarchy of relaxation techniques that systematically transform the problem to ensure feasibility while preserving solution quality.
+For large instances where the full Phase 2 with activation variables times out, we employ a dynamic‑only fallback: remove $y_{jt}$ and the activation linking constraints, and minimize only the dynamic part of $Z_2$. This preserves lexicographic feasibility (the exact unplaced set from Phase 1) while providing a tractable emissions minimization.
 
 \subsubsection{Theoretical Foundation}
 
@@ -147,6 +152,33 @@ Let $\mathcal{M}$ denote the original MILP formulation. The feasibility of $\mat
 \item Minimizes carbon emissions: Among solutions with equal placement counts, prefer lower emissions
 \item Maintains computational tractability: Relaxation overhead should be minimal
 \end{enumerate}
+
+\section*{Appendix: Solver Backends and Implementation Notes}
+
+\paragraph{Backends.} We support two complementary solving paths:
+\begin{itemize}
+  \item \textbf{PuLP-based MIP backends} for both phases (CBC/HiGHS/Gurobi/CPLEX). Phase~1 uses PuLP by default. Phase~2 can also use PuLP when configured.
+  \item \textbf{OR-Tools CP-SAT} for Phase~2 (recommended for large 0--1 models). Phase~1 remains PuLP to quickly identify the exact unplaced set, which is then fixed in Phase~2.
+\end{itemize}
+
+\paragraph{Parameter mapping.} Configuration parameters are translated per solver:
+\begin{itemize}
+  \item Time limit: \texttt{time\_limit} (seconds) \,$\to$\, PuLP backends (\texttt{timeLimit}), CP-SAT (\texttt{max\_time\_in\_seconds}).
+  \item Gap tolerance: \texttt{gap\_tolerance} \,$\to$\, CBC (\texttt{gapRel}), HiGHS (\texttt{mip\_rel\_gap}), Gurobi (\texttt{mipgap}), CPLEX (\texttt{epgap}).
+  \item Threads: \texttt{threads} \,$\to$\, backend-specific thread parameter (CP-SAT: \texttt{num\_search\_workers}).
+\end{itemize}
+
+\paragraph{Integer scaling for CP-SAT.} CP-SAT minimizes integer linear expressions. We scale emission coefficients to integers (e.g., milli-grams) before adding them to the objective. This preserves linearity and unit consistency while keeping coefficients in a numerically friendly range.
+
+\paragraph{Activation linking.} The ``node active'' decision $y_{jt}$ is linked to per-slot CPU usage with a big-$M$ form. In CP-SAT, we keep the same linear linking and benefits from strong cutting/propagation on 0--1 variables. Where available, indicator constraints could replace big-$M$ in MIP backends.
+
+\paragraph{Hints and warm starts.} Phase~2 is warm-started where supported (MIP backends). CP-SAT also supports variable hints (\texttt{AddHint}), which can be enabled to seed $x_{ijt}$ using Phase~1 or heuristic solutions.
+
+\paragraph{Backend selection.} A configuration key (\texttt{solver.name}) selects the backend: \texttt{cp\_sat|highs|gurobi|cplex|cbc}. By default we use CP-SAT for Phase~2 and PuLP for Phase~1, balancing robustness with performance on large 0--1 instances.
+
+\paragraph{Reproducibility.} Solvers can be non-deterministic with multiple threads. To improve reproducibility, fix seeds (e.g., CP-SAT \texttt{random\_seed}) and set \texttt{threads=1} when comparisons require bitwise-stable runs.
+
+\paragraph{When to use which.} For small to medium instances, any MIP backend is sufficient. For larger 0--1 models with activation variables, CP-SAT typically provides stronger performance. If a strict MIP workflow is required (e.g., for callback features), HiGHS or commercial MIP solvers are good alternatives.
 
 \subsubsection{Multi-Objective Optimization with Penalty Functions}
 
@@ -263,16 +295,14 @@ The penalty weight $\lambda$ is a critical parameter that balances placement pri
 
 \subsection{Implementation Details}
 
-In practice, the problem is solved using the PuLP library with the following approach:
+We implement the model in PuLP/CBC as follows:
 \begin{enumerate}
-\item Determine the earliest timeslot ($s_i$) for each pod based on its source file
-\item Precompute all valid placements for each pod, respecting the earliest timeslot constraint
-\item Create binary decision variables for each valid placement
-\item Define the objective function to minimize total carbon emissions
-\item Add constraints ensuring each pod is placed exactly once
-\item Add resource capacity constraints for CPU and RAM
-\item Solve the MILP problem using the CBC solver with a time limit
-\item Extract the solution from the decision variables
+\item Precompute valid placements $\mathcal{V}_i$ (respecting earliest times and deadlines).
+\item Create $x_{ijt}$ for $(j,t) \in \mathcal{V}_i$, $s_i$ for all pods, and $y_{jt}$ (Phase 2).
+\item \textbf{Phase 1}: Solve $\min \sum_i s_i$ subject to assignment and capacity constraints.
+\item \textbf{Phase 2}: Fix $s_i$ to Phase 1 values; warm‑start $x_{ijt}$; add activation variables and linking; solve emissions objective.
+\item If Phase 2 times out, retry with the dynamic‑only fallback objective.
+\item Post‑process placements to compute per‑pod emissions (including allocation of idle+embodied for reporting) and write results.
 \end{enumerate}
 
 \end{document}

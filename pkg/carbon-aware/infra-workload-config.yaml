@@ -12,8 +12,10 @@ optimization:
   
   # Solver configuration
   solver:
-    time_limit: 240  # seconds per phase for lexicographic, total for standard
-    gap_tolerance: 0.05  # No gap tolerance - enforce strict feasibility
+    name: cp_sat
+    time_limit: 60  # seconds per phase for lexicographic, total for standard
+    gap_tolerance: 0.05
+    threads: 8
 
 nodes:
   # Filename for the generated nodes
@@ -23,22 +25,35 @@ nodes:
   regions:
     region_counts:
       DE: 1
-      FR: 1
+      FR: 2
       ES: 1
       IT-NO: 1
   
   # Method to assign regions to nodes
   assignment_method: exact_counts
   
-  # Hardware assignment configuration with exact counts
+  # Explicit region-to-hardware assignments override auto assignment
+  # Each region -> hardware -> count
+  explicit_assignments:
+    DE:
+      IoT: 1
+    FR:
+      Smartphone: 1
+      Laptop: 1
+    ES:
+      Smartphone: 1
+    IT-NO:
+      Laptop: 1
+  
+  # Hardware assignment configuration (kept for backward compatibility; ignored when explicit_assignments is set)
   hardware_assignment:
     hardware_counts:
       IoT: 1
       Smartphone: 2
-      Laptop: 1
+      Laptop: 2
       Server: 0
   
-  # Method to assign hardware types to nodes
+  # Method to assign hardware types to nodes (ignored when explicit_assignments is set)
   hardware_assignment_method: exact_counts
   
   # Hardware subcategories configuration

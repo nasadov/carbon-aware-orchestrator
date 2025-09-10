@@ -104,15 +104,17 @@ The MILP optimizer supports two optimization approaches:
 
 #### Lexicographic Optimization (Recommended)
 
-**New feature**: The global optimizer now uses **lexicographic optimization** by default, which solves the pod placement problem in two phases:
+The global optimizer uses a robust **lexicographic two‑phase** method by default:
 
-1. **Phase 1**: Maximize the number of placed pods (ensuring feasibility first)
-2. **Phase 2**: Minimize carbon emissions while maintaining the optimal placement count
+1. **Phase 1 (Placement Feasibility)**: Minimize the number of unplaced pods. This yields the exact set of pods that cannot be placed under constraints (CPU/RAM, earliest start, deadline, duration across slots).
+2. **Phase 2 (Emissions Minimization)**: Minimize total emissions among all solutions with the same optimal unplaced set found in Phase 1.
 
-This approach ensures that:
-- **All feasible pods are placed** (no pods are left unplaced due to solver optimization)
-- **Carbon footprint is minimized** among all optimal placement solutions
-- **Academic rigor** is maintained for research publications
+Key details of Phase 2 objective and constraints:
+- **Dynamic emissions**: Linear in CPU share with coefficient `(P_max - P_active)` and per‑slot carbon intensity.
+- **Idle + embodied emissions**: Paid once per `(node, slot)` activation via binary `y[node, slot]` and linked with big‑M to CPU usage.
+- **Exact unplaced set fixed**: The set `s[pod] ∈ {0,1}` from Phase 1 is fixed in Phase 2 to reduce search space and ensure feasibility.
+- **Warm start**: Phase 2 is warm‑started from Phase 1 decisions when supported by the solver.
+- **Dynamic‑only fallback**: If the full Phase 2 (with activations) times out, a lighter Phase 2 variant that minimizes dynamic emissions only (no `y` activation terms) is attempted to ensure progress on larger instances while still optimizing carbon.
 
 #### Standard Optimization
 
@@ -125,14 +127,15 @@ The optimization approach can be configured in `infra-workload-config.yaml`:
 ```yaml
 # Global optimization algorithm configuration
 optimization:
-  # Use lexicographic optimization: first maximize placements, then minimize emissions
-  # This ensures all feasible pods are placed while optimizing carbon footprint
+  # Use lexicographic optimization (Phase 1: placements, Phase 2: emissions)
   use_lexicographic: true
   
   # Solver configuration
   solver:
-    time_limit: 20  # seconds per phase for lexicographic, total for standard
-    gap_tolerance: 0.0  # No gap tolerance - enforce strict feasibility
+    name: cp_sat     # cp_sat|highs|gurobi|cplex|cbc
+    time_limit: 60   # seconds per phase
+    gap_tolerance: 0.05
+    threads: 8
 ```
 
 #### Running MILP Global Optimizer
