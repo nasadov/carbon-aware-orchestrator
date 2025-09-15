@@ -234,20 +234,32 @@ def _discover_experiments(experiments_root: str):
         dir_path = os.path.join(experiments_root, entry)
         if not os.path.isdir(dir_path):
             continue
-        m = re.match(r"^(?P<algo>[^_]+?)(?:_op)?_(?P<pods>\d+)pods_", entry)
+        m = re.match(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_", entry)
         if not m:
             continue
         algo = m.group('algo')
         pods = int(m.group('pods'))
+        mode = m.group('mode') or ''
+        if mode:
+            algo = f"{algo}-{mode}"
         yield algo, pods, dir_path
 
 
 def _find_placement_csv(algo: str, dir_path: str):
-    if algo == 'global-optimal':
+    if algo.startswith('global-optimal'):
         p = os.path.join(dir_path, 'global_optimal_placements_session.csv')
         return p if os.path.exists(p) else None
-    if algo == 'heuristic':
-        p = os.path.join(dir_path, 'heuristic_placements_session.csv')
+    if algo.startswith('heuristic'):
+        # try mode-specific file first
+        candidates = [
+            'heuristic_prop_placements_session.csv',
+            'heuristic_uniform_placements_session.csv',
+            'heuristic_placements_session.csv',
+        ]
+        for name in candidates:
+            p = os.path.join(dir_path, name)
+            if os.path.exists(p):
+                return p
         return p if os.path.exists(p) else None
     if algo == 'vanilla':
         # Prefer presence/bind reconstructed CSVs for accurate durations
@@ -324,17 +336,29 @@ def create_emissions_plot():
     colors = {
         'vanilla': '#2ca02c',
         'heuristic': '#ff7f0e',
+        'heuristic-proportional': '#ff7f0e',
+        'heuristic-uniform': '#ffbb78',
         'global-optimal': '#d62728',
+        'global-optimal-proportional': '#d62728',
+        'global-optimal-uniform': '#ff9896',
     }
     markers = {
         'vanilla': '^',
         'heuristic': 's',
+        'heuristic-proportional': 's',
+        'heuristic-uniform': 'D',
         'global-optimal': 'o',
+        'global-optimal-proportional': 'o',
+        'global-optimal-uniform': '^',
     }
     labels = {
         'vanilla': 'Vanilla (Baseline)',
         'heuristic': 'Heuristic (Carbon-Aware)',
+        'heuristic-proportional': 'Heuristic (Proportional)',
+        'heuristic-uniform': 'Heuristic (Uniform)',
         'global-optimal': 'Global-Optimal (MILP Oracle)',
+        'global-optimal-proportional': 'Global-Optimal (Proportional)',
+        'global-optimal-uniform': 'Global-Optimal (Uniform)',
     }
 
     algos_order = [a for a in ('vanilla', 'heuristic', 'global-optimal') if a in totals.keys()] + [a for a in totals.keys() if a not in ('vanilla', 'heuristic', 'global-optimal')]

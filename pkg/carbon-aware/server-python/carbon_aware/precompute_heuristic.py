@@ -28,7 +28,8 @@ def run_heuristic_precomputation(
     session_log_dir: Optional[str] = None,
     perf_logger: Optional[PerformanceLogger] = None,
     prioritize_efficiency: bool = False,
-    operational_only: bool = False
+    operational_only: bool = False,
+    embodied_mode: str = "proportional"
 ) -> bool:
     """
     Run heuristic algorithm precomputation on all timeslot files.
@@ -81,8 +82,10 @@ def run_heuristic_precomputation(
             algorithm.set_operational_only(operational_only)
         if hasattr(algorithm, 'set_workloads_dir'):
             algorithm.set_workloads_dir(workloads_dir)  # Fix hardcoded path bug!
+        if hasattr(algorithm, 'set_embodied_allocation_mode'):
+            algorithm.set_embodied_allocation_mode(embodied_mode)
         
-        # Set the log directory for placement CSV
+        # Use provided session_log_dir as-is; main.py now includes the mode suffix
         if session_log_dir:
             algorithm.set_base_log_dir(session_log_dir)
             

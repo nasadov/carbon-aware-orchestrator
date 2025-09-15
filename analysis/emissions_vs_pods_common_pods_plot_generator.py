@@ -151,23 +151,34 @@ def _discover_experiments(experiments_root: str):
         dir_path = os.path.join(experiments_root, entry)
         if not os.path.isdir(dir_path):
             continue
-        m = re.match(r"^(?P<algo>[^_]+?)(?:_op)?_(?P<pods>\d+)pods_", entry)
+        m = re.match(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_", entry)
         if not m:
             continue
         algo = m.group('algo')
         pods = int(m.group('pods'))
+        mode = m.group('mode') or ''
+        if mode:
+            algo = f"{algo}-{mode}"
         yield algo, pods, dir_path
 
 
 def _find_placement_csv(algo: str, dir_path: str):
-    if algo == 'global-optimal':
+    if algo.startswith('global-optimal'):
         p = os.path.join(dir_path, 'global_optimal_placements_session.csv')
         return p if os.path.exists(p) else None
-    if algo == 'heuristic':
-        p = os.path.join(dir_path, 'heuristic_placements_session.csv')
-        return p if os.path.exists(p) else None
+    if algo.startswith('heuristic'):
+        for name in (
+            'heuristic_prop_placements_session.csv',
+            'heuristic_uniform_placements_session.csv',
+            'heuristic_placements_session.csv',
+        ):
+            p = os.path.join(dir_path, name)
+            if os.path.exists(p):
+                return p
+        return None
     if algo == 'vanilla':
         for name in (
+            'vanilla_placements_session.csv',
             'vanilla_placement_session_presence.csv',
             'vanilla_placement_session_bind.csv',
             'vanilla_placement_session_fixed.csv',
@@ -284,35 +295,62 @@ def create_common_pods_emissions_plot():
         by_pods[pods][algo].append(dir_path)
 
     for pods, alg_map in by_pods.items():
-        # Need presence of all three
-        if not all(a in alg_map for a in ('vanilla', 'heuristic', 'global-optimal')):
+        # Require vanilla presence
+        if 'vanilla' not in alg_map:
             continue
 
-        # Use latest directory for each algo (name has timestamp, so lexicographic works)
-        latest_dirs = {a: sorted(alg_map[a])[-1] for a in ('vanilla', 'heuristic', 'global-optimal')}
-        csvs = {}
-        for a, d in latest_dirs.items():
-            p = _find_placement_csv(a, d)
-            if not p:
-                csvs = {}
-                break
-            csvs[a] = p
-        if len(csvs) < 3:
+        # Build mode-indexed keys for heuristic and global-optimal
+        def _mode_of(key: str) -> str:
+            parts = key.split('-', 1)
+            return parts[1] if len(parts) == 2 else ''
+
+        heur_keys = [k for k in alg_map.keys() if k.startswith('heuristic')]
+        glob_keys = [k for k in alg_map.keys() if k.startswith('global-optimal')]
+        if not heur_keys or not glob_keys:
             continue
 
-        # Intersect pod ids
-        pod_sets = {a: _collect_pod_sets(p) for a, p in csvs.items()}
-        common_pods = set.intersection(*pod_sets.values())
-        if not common_pods:
+        heur_by_mode = { _mode_of(k): k for k in heur_keys }
+        glob_by_mode = { _mode_of(k): k for k in glob_keys }
+        modes = sorted(set(heur_by_mode.keys()) & set(glob_by_mode.keys()))
+        if not modes:
             continue
 
-        # Compute emissions restricted to common pods for each algo
-        for a in ('vanilla', 'heuristic', 'global-optimal'):
-            total_kg, rows = _compute_total_emissions_for_common_pods(csvs[a], nodes_dict, common_pods)
-            if rows == 0:
+        for mode in modes:
+            vanilla_key = 'vanilla'
+            heur_key = heur_by_mode[mode]
+            glob_key = glob_by_mode[mode]
+
+            # Pick latest directory for each
+            latest_dirs = {
+                vanilla_key: sorted(alg_map[vanilla_key])[-1],
+                heur_key: sorted(alg_map[heur_key])[-1],
+                glob_key: sorted(alg_map[glob_key])[-1],
+            }
+
+            # Resolve CSVs
+            csvs = {}
+            for a, d in latest_dirs.items():
+                p = _find_placement_csv(a, d)
+                if not p:
+                    csvs = {}
+                    break
+                csvs[a] = p
+            if len(csvs) < 3:
                 continue
-            totals[a][pods].append(total_kg)
-            per_pod[a][pods].append(total_kg / len(common_pods))
+
+            # Intersect pod ids across the three for this mode
+            pod_sets = {a: _collect_pod_sets(p) for a, p in csvs.items()}
+            common_pods = set.intersection(*pod_sets.values())
+            if not common_pods:
+                continue
+
+            # Compute emissions for each algo restricted to common pods
+            for a in (vanilla_key, heur_key, glob_key):
+                total_kg, rows = _compute_total_emissions_for_common_pods(csvs[a], nodes_dict, common_pods)
+                if rows == 0:
+                    continue
+                totals[a][pods].append(total_kg)
+                per_pod[a][pods].append(total_kg / len(common_pods))
 
     if not totals:
         print(f"⚠️ No common-pods emissions data found in experiments: {EXPERIMENTS_ROOT}")
@@ -344,20 +382,33 @@ def create_common_pods_emissions_plot():
     colors = {
         'vanilla': '#2ca02c',
         'heuristic': '#ff7f0e',
+        'heuristic-proportional': '#ff7f0e',
+        'heuristic-uniform': '#ffbb78',
         'global-optimal': '#d62728',
+        'global-optimal-proportional': '#d62728',
+        'global-optimal-uniform': '#ff9896',
     }
     markers = {
         'vanilla': '^',
         'heuristic': 's',
+        'heuristic-proportional': 's',
+        'heuristic-uniform': 'D',
         'global-optimal': 'o',
+        'global-optimal-proportional': 'o',
+        'global-optimal-uniform': '^',
     }
     labels = {
         'vanilla': 'Vanilla (Common Pods)',
         'heuristic': 'Heuristic (Common Pods)',
+        'heuristic-proportional': 'Heuristic (Common Pods, Proportional)',
+        'heuristic-uniform': 'Heuristic (Common Pods, Uniform)',
         'global-optimal': 'Global-Optimal (Common Pods)',
+        'global-optimal-proportional': 'Global-Optimal (Common Pods, Proportional)',
+        'global-optimal-uniform': 'Global-Optimal (Common Pods, Uniform)',
     }
 
-    algos_order = [a for a in ('vanilla', 'heuristic', 'global-optimal') if a in totals.keys()] + [a for a in totals.keys() if a not in ('vanilla', 'heuristic', 'global-optimal')]
+    preferred = ['vanilla', 'heuristic-proportional', 'heuristic-uniform', 'global-optimal-proportional', 'global-optimal-uniform']
+    algos_order = [a for a in preferred if a in totals.keys()] + [a for a in totals.keys() if a not in preferred]
 
     for algo in algos_order:
         x_vals, y_vals, y_errs = [], [], []

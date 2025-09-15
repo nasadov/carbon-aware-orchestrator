@@ -18,6 +18,7 @@ This work builds upon the original scheduler plugin developed by Fondazione Brun
 - [Node Metadata](#node-metadata)
 - [Workload Specifications](#workload-specifications)
 - [Carbon Emissions Model](#carbon-emissions-model)
+- [Embodied Carbon Allocation Modes](#embodied-carbon-allocation-modes)
 - [Carbon Units Documentation](docs/carbon_units.md)
 - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
@@ -238,6 +239,74 @@ Updated (co-location aware) allocation:
 - The MILP objective mirrors this: dynamic terms per placement and a binary `y[node,slot]` to pay idle+embodied once per active slot.
 
 **Important**: All embodied carbon values in configuration files are specified in whole grams (g CO2e), not kilograms. For detailed information about units and calculation methods, see the [Carbon Units Documentation](docs/carbon_units.md).
+
+## Embodied Carbon Allocation Modes
+
+We support two embodied-carbon allocation modes for per‑pod attribution, selectable at runtime. The default is proportional.
+
+- **Mode (CLI flag)**: `--embodied-mode {proportional|uniform}` (default: `proportional`)
+  - Applies to `--algorithm heuristic` and `--algorithm global-optimal` execution paths.
+  - For convenience, the sweep script runs both modes for comparison.
+
+- **Proportional (default)**:
+  - Per active node‑hour, idle power and embodied emissions are paid once at the node and then attributed to pods in proportion to their CPU share u_i/U during that hour.
+  - Dynamic power remains linear in each pod’s CPU share.
+
+- **Uniform**:
+  - Per active node‑hour, idle power and embodied emissions are still paid once at the node, but the marginal accounting for the first pod that activates an otherwise idle node‑hour is the full node‑hour idle+embodied amount; co‑located pods during that hour only bear their dynamic share.
+  - This emphasizes reuse/consolidation by making “turning on” a node‑hour more expensive for the first pod.
+
+- **Idle power allocation policy** (both modes):
+  - A node pays idle power once per hour if any workload is present during that hour.
+  - Dynamic power is `(P_max − P_active) * U` where \(U = \sum_i u_i\) is aggregate CPU utilization fraction.
+
+- **Totals vs attribution**:
+  - Node‑hour totals (idle + dynamic + embodied) are invariant to the allocation mode. Allocation only changes how that total is split across pods.
+  - Heuristic uses the mode in its marginal decision cost; MILP minimizes node‑hour totals directly (objective unaffected by the attribution rule), but outputs are still organized per mode for analysis.
+
+- **Outputs and naming**:
+  - New experiment directories include the mode suffix up front, for example:
+    - `heuristic_proportional_80pods_YYYYMMDD_HHMMSS/`
+    - `heuristic_uniform_120pods_YYYYMMDD_HHMMSS/`
+    - `global-optimal_proportional_200pods_YYYYMMDD_HHMMSS/`
+    - `global-optimal_uniform_.../`
+  - Heuristic placement CSVs: `heuristic_prop_placements_session.csv` or `heuristic_uniform_placements_session.csv`.
+  - Global‑optimal placement CSV: `global_optimal_placements_session.csv` (mode indicated by directory name).
+  - Vanilla is allocation‑agnostic for totals and remains `vanilla_*`.
+
+Example runs:
+
+```bash
+# Heuristic, proportional (default)
+python3 pkg/carbon-aware/server-python/main.py \
+  --algorithm heuristic --precompute \
+  --workloads-dir pkg/carbon-aware/workloads \
+  --nodes-file pkg/carbon-aware/nodes.yaml \
+  --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
+  --experiment-dir pkg/carbon-aware/server-python/experiments \
+  --embodied-mode proportional --loglevel INFO
+
+# Heuristic, uniform
+python3 pkg/carbon-aware/server-python/main.py \
+  --algorithm heuristic --precompute \
+  --workloads-dir pkg/carbon-aware/workloads \
+  --nodes-file pkg/carbon-aware/nodes.yaml \
+  --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
+  --experiment-dir pkg/carbon-aware/server-python/experiments \
+  --embodied-mode uniform --loglevel INFO
+
+# Global-optimal (proportional shown here)
+python3 pkg/carbon-aware/server-python/main.py \
+  --algorithm global-optimal --precompute \
+  --workloads-dir pkg/carbon-aware/workloads \
+  --nodes-file pkg/carbon-aware/nodes.yaml \
+  --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
+  --experiment-dir pkg/carbon-aware/server-python/experiments \
+  --embodied-mode proportional --loglevel INFO
+```
+
+Visualization note:
+- `analysis/emissions_vs_pods_plot_generator.py` detects the mode from directory names and plots separate series (e.g., heuristic‑proportional vs heuristic‑uniform). Vanilla appears once as allocation‑agnostic baseline.
 
 ## Getting Started
 

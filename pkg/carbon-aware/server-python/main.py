@@ -172,6 +172,12 @@ def main() -> None:
         help='Use only operational emissions (omit embodied emissions) when using heuristic algorithm'
     )
     parser.add_argument(
+        '--embodied-mode',
+        default='proportional',
+        choices=['proportional','uniform'],
+        help='Embodied allocation mode for heuristic/global-optimal precompute runs'
+    )
+    parser.add_argument(
         '--precompute',
         action='store_true',
         help='Run precomputation mode: process all timeslot files sequentially and save placements to CSV without starting server (heuristic algorithm only)'
@@ -208,8 +214,12 @@ def main() -> None:
     # Set up session directory for logging
     if args.experiment:
         session_type_prefix = "experiment_session"
-        # Use short "op" suffix for operational-only mode
-        algo_mode = f"{args.algorithm}_op" if args.operational_only else args.algorithm
+        # Include mode suffix: 'op' for operational-only, else embodied mode for supported algos
+        if args.operational_only:
+            algo_mode = f"{args.algorithm}_op"
+        else:
+            mode_suffix = args.embodied_mode if args.algorithm in ('heuristic', 'global-optimal') else None
+            algo_mode = f"{args.algorithm}_{mode_suffix}" if mode_suffix else args.algorithm
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         logging.info(f"🧪 Experiment mode: {session_log_dir}")
@@ -222,8 +232,12 @@ def main() -> None:
         else:
             session_type_prefix = "perf_log_session"  # Fallback
             
-        # Use short "op" suffix for operational-only mode
-        algo_mode = f"{args.algorithm}_op" if args.operational_only else args.algorithm
+        # Include mode suffix: 'op' for operational-only, else embodied mode for supported algos
+        if args.operational_only:
+            algo_mode = f"{args.algorithm}_op"
+        else:
+            mode_suffix = args.embodied_mode if args.algorithm in ('heuristic', 'global-optimal') else None
+            algo_mode = f"{args.algorithm}_{mode_suffix}" if mode_suffix else args.algorithm
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         
@@ -312,7 +326,8 @@ def main() -> None:
                 session_log_dir=session_log_dir,
                 perf_logger=perf_logger,
                 prioritize_efficiency=args.prioritize_efficiency,
-                operational_only=args.operational_only
+                operational_only=args.operational_only,
+                embodied_mode=args.embodied_mode
             )
         elif args.algorithm == 'global-optimal':
             from carbon_aware.precompute_global_optimal import run_global_optimal_precomputation
@@ -323,7 +338,8 @@ def main() -> None:
                 session_log_dir=session_log_dir,
                 perf_logger=perf_logger,
                 prioritize_efficiency=args.prioritize_efficiency,
-                operational_only=args.operational_only
+                operational_only=args.operational_only,
+                embodied_mode=args.embodied_mode
             )
         elif args.algorithm == 'vanilla':
             from carbon_aware.precompute_vanilla import run_vanilla_precomputation

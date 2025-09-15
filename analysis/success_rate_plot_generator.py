@@ -55,12 +55,15 @@ def _parse_success_rates_from_experiments(experiments_root: str):
 
         # Extract algorithm and pod count from the directory name
         # Pattern: ^<algo>(?:_op)?_<pods>pods_
-        m = re.match(r"^(?P<algo>[^_]+?)(?:_op)?_(?P<pods>\d+)pods_", entry)
+        m = re.match(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_", entry)
         if not m:
             # Skip directories that don't encode pod count (e.g., experiment_session)
             continue
 
         algo_key = m.group('algo')
+        mode = m.group('mode') or ''
+        if mode:
+            algo_key = f"{algo_key}-{mode}"
         try:
             pods_count = int(m.group('pods'))
         except Exception:
@@ -69,10 +72,14 @@ def _parse_success_rates_from_experiments(experiments_root: str):
         # Compute success rate directly from placement CSVs to avoid stale summaries
         placement_csv = None
         candidate_names = []
-        if algo_key == 'global-optimal':
+        if algo_key.startswith('global-optimal'):
             candidate_names = ['global_optimal_placements_session.csv']
-        elif algo_key == 'heuristic':
-            candidate_names = ['heuristic_placements_session.csv']
+        elif algo_key.startswith('heuristic'):
+            candidate_names = [
+                'heuristic_prop_placements_session.csv',
+                'heuristic_uniform_placements_session.csv',
+                'heuristic_placements_session.csv',
+            ]
         elif algo_key == 'vanilla':
             # Prefer bind-based placement CSVs by default (our bind generator writes vanilla_placement_session.csv)
             candidate_names = [
@@ -139,9 +146,14 @@ def _aggregate_results(results):
     pod_counts_sorted = sorted(pod_counts)
 
     # Stable order for known algos; unknown algos appended at end
-    known_order = ["vanilla", "heuristic", "global-optimal"]
+    preferred = [
+        "vanilla",
+        "heuristic-proportional", "heuristic-uniform",
+        "global-optimal-proportional", "global-optimal-uniform",
+        "heuristic", "global-optimal",
+    ]
     algos_present = list(results.keys())
-    algos_order = [a for a in known_order if a in algos_present] + [a for a in algos_present if a not in known_order]
+    algos_order = [a for a in preferred if a in algos_present] + [a for a in algos_present if a not in preferred]
 
     for algo, by_pods in results.items():
         for pods, rates in by_pods.items():
@@ -174,20 +186,32 @@ def create_success_rate_plot():
     # Define colors and markers for consistency
     colors = {
         'vanilla': '#2ca02c',
-        'heuristic': '#ff7f0e', 
-        'global-optimal': '#d62728'
+        'heuristic': '#ff7f0e',
+        'heuristic-proportional': '#ff7f0e',
+        'heuristic-uniform': '#ffbb78',
+        'global-optimal': '#d62728',
+        'global-optimal-proportional': '#d62728',
+        'global-optimal-uniform': '#ff9896',
     }
 
     markers = {
         'vanilla': '^',
         'heuristic': 's',
-        'global-optimal': 'o'
+        'heuristic-proportional': 's',
+        'heuristic-uniform': 'D',
+        'global-optimal': 'o',
+        'global-optimal-proportional': 'o',
+        'global-optimal-uniform': '^',
     }
 
     labels = {
         'vanilla': 'Vanilla (Baseline)',
         'heuristic': 'Heuristic (Carbon-Aware)',
-        'global-optimal': 'Global-Optimal (MILP Oracle)'
+        'heuristic-proportional': 'Heuristic (Proportional)',
+        'heuristic-uniform': 'Heuristic (Uniform)',
+        'global-optimal': 'Global-Optimal (MILP Oracle)',
+        'global-optimal-proportional': 'Global-Optimal (Proportional)',
+        'global-optimal-uniform': 'Global-Optimal (Uniform)',
     }
 
     # Plot each algorithm

@@ -4,6 +4,7 @@ Precomputation module for global-optimal algorithm
 """
 
 import logging
+import os
 from carbon_aware.algorithms.global_optimal import GlobalOptimalAlgorithm
 
 
@@ -14,7 +15,8 @@ def run_global_optimal_precomputation(
     session_log_dir: str = None,
     perf_logger=None,
     prioritize_efficiency: bool = False,
-    operational_only: bool = False
+    operational_only: bool = False,
+    embodied_mode: str = "proportional"
 ) -> bool:
     """
     Run global-optimal algorithm in precomputation mode
@@ -38,7 +40,7 @@ def run_global_optimal_precomputation(
         # Initialize global-optimal algorithm
         algorithm = GlobalOptimalAlgorithm()
         
-        # Configure session logging if directory provided
+        # Configure session logging if directory provided (use as-is; main.py names with mode)
         if session_log_dir:
             logging.info(f"📁 Setting log directory: {session_log_dir}")
             algorithm.set_base_log_dir(session_log_dir)
@@ -49,6 +51,8 @@ def run_global_optimal_precomputation(
         if hasattr(algorithm, 'set_operational_only') and operational_only:
             algorithm.set_operational_only(operational_only)
             logging.info(f"⚙️ Operational-only mode: {operational_only}")
+        if hasattr(algorithm, 'set_embodied_allocation_mode'):
+            algorithm.set_embodied_allocation_mode(embodied_mode)
         
         logging.info("🔧 STEP 2: Starting comprehensive global optimization")
         logging.info(f"📂 Workloads directory: {workloads_dir}")

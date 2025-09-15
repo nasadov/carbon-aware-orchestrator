@@ -490,7 +490,15 @@ class GlobalOptimizer:
                         if duration_feasible:
                             # Calculate emissions for this placement
                             try:
-                                emissions = compute_emissions(flv, ts.id, pod)
+                                used_cpu_before = {}
+                                for offset in range(int(pod.duration)):
+                                    slot = ts.id + offset
+                                    used_cpu_before[slot] = 0.0
+                                emissions = compute_emissions(
+                                    flv, ts.id, pod,
+                                    used_cpu_before_by_slot=used_cpu_before,
+                                    embodied_allocation_mode="proportional",
+                                )
                                 logging.debug(f"     - Valid placement: pod={pod.id}, node={flv.id}, ts={ts.id}, emissions={emissions:.2f}kgCO2e")
                                 
                                 placement_key = (pod.id, flv.id, ts.id)

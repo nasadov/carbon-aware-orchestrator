@@ -27,7 +27,13 @@ MICROSERVICE_STATUS_MAP = {
 # Carbon Intensity & Power Utilities
 #####################################
 
-def compute_emissions(flavour: CarbonAwareFlavour, timeslot_id: int, pod: CarbonAwarePod) -> float:
+def compute_emissions(
+    flavour: CarbonAwareFlavour,
+    timeslot_id: int,
+    pod: CarbonAwarePod,
+    used_cpu_before_by_slot: Optional[Dict[int, float]] = None,
+    embodied_allocation_mode: Optional[str] = None,
+) -> float:
     """
     Compute the total carbon emissions for placing 'pod' on 'flavour' during timeslot 'timeslot_id'.
     
@@ -39,6 +45,17 @@ def compute_emissions(flavour: CarbonAwareFlavour, timeslot_id: int, pod: Carbon
     - operationalEmissions = carbon_intensity * duration * power_consumption (kW)
     - embodiedEmissions = (embodiedCarbon / (365 * lifetime * 24)) * duration
     """
+    # If an embodied allocation mode is provided, delegate to the node-aware allocator
+    if embodied_allocation_mode is not None:
+        return compute_emissions_with_allocation(
+            flavour=flavour,
+            start_slot=timeslot_id,
+            pod=pod,
+            used_cpu_before_by_slot=used_cpu_before_by_slot or {},
+            embodied_allocation_mode=embodied_allocation_mode,
+        )
+
+    # Backward-compatible default method
     # Default carbon intensity if timeslot not in forecast
     carbon_intensity = flavour.forecast.get(timeslot_id, 200.0)
 
@@ -158,6 +175,73 @@ def compute_embodied_per_hour_g(flavour: CarbonAwareFlavour) -> float:
     """Compute embodied emissions per hour (gCO2e/h) for a node."""
     hours_in_lifetime = flavour.lifetime if flavour.lifetime and flavour.lifetime > 0 else 1e-6
     return flavour.embodiedCarbon / hours_in_lifetime
+
+
+def compute_emissions_with_allocation(
+    flavour: CarbonAwareFlavour,
+    start_slot: int,
+    pod: CarbonAwarePod,
+    used_cpu_before_by_slot: Optional[Dict[int, float]] = None,
+    embodied_allocation_mode: str = "proportional",
+) -> float:
+    """Compute assigned emissions (gCO2e) for placing a pod on a node over its duration.
+
+    This function supports two embodied allocation modes:
+    - "uniform": attribute embodied per hour once per active hour (to the first pod that
+      activates an otherwise idle hour on the node).
+    - "proportional" (default): attribute embodied per hour proportionally to the pod's
+      CPU share among all work running in that hour.
+
+    Idle power allocation (operational): Idle is attributed only when the hour was
+    previously idle (no work on the node) and this pod activates the node. Dynamic power
+    is always proportional to the pod's CPU fraction.
+
+    Args:
+        flavour: Node to evaluate
+        start_slot: First hour slot id
+        pod: Pod being placed
+        used_cpu_before_by_slot: Mapping hour -> already used CPU (cores) on node BEFORE
+                                  placing this pod. If None, hours are treated as idle.
+        embodied_allocation_mode: "uniform" or "proportional"
+
+    Returns:
+        Total assigned emissions to this pod (gCO2e) across its full duration.
+    """
+    total_g = 0.0
+    dynamic_k = compute_node_dynamic_coeff_watts(flavour)
+    embodied_per_hour = compute_embodied_per_hour_g(flavour)
+    total_cpu = max(flavour.totalCpu, 1e-6)
+    u_pod = pod.cpuRequest / total_cpu
+
+    hours = int(pod.duration)
+    for offset in range(hours):
+        slot = start_slot + offset
+        used_before = 0.0
+        if used_cpu_before_by_slot is not None:
+            used_before = used_cpu_before_by_slot.get(slot, 0.0)
+        U_before = used_before / total_cpu
+
+        # Operational: idle only if this pod activates an otherwise idle hour
+        delta_power_w = 0.0
+        if U_before <= 0.0 and u_pod > 0.0:
+            delta_power_w += flavour.power["idle"]
+        # Dynamic proportional to pod's CPU share
+        delta_power_w += dynamic_k * u_pod
+
+        intensity = get_carbon_intensity(flavour, slot)
+        total_g += intensity * (delta_power_w / 1000.0) * 1.0  # 1h per slot
+
+        # Embodied allocation
+        if embodied_allocation_mode == "uniform":
+            # Charge full embodied for the hour only if activating an idle hour
+            if U_before <= 0.0 and u_pod > 0.0:
+                total_g += embodied_per_hour
+        else:  # proportional (default)
+            denom = max(U_before + u_pod, 1e-6)
+            share = u_pod / denom
+            total_g += embodied_per_hour * share
+
+    return total_g
 
 
 def compute_marginal_emissions_for_pod_over_duration(

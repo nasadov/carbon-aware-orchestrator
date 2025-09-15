@@ -10,7 +10,7 @@ from datetime import datetime
 
 from carbon_aware.algorithms.base import SchedulingAlgorithm
 from carbon_aware.models import CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot
-from carbon_aware.utils import is_timeslot_valid, compute_emissions
+from carbon_aware.utils import is_timeslot_valid, compute_emissions, compute_emissions_with_allocation
 
 
 class HeuristicAlgorithm(SchedulingAlgorithm):
@@ -24,6 +24,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         self.perf_logger = perf_logger
         self._session_log_dir: Optional[str] = None
         self._operational_only = False  # Flag for operational-only emissions mode
+        self._embodied_allocation_mode = "proportional"  # or "uniform"
         
         self._placement_csv_file_handle = None
         self._placement_csv_writer = None
@@ -203,8 +204,12 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             HeuristicAlgorithm._ensure_dir_exists(self._session_log_dir)
             logging.warning(f"Using fallback log directory for placements: {self._session_log_dir}")
 
-        # Use short "op" suffix for operational-only CSV files
-        base_filename = "heuristic_op_placements_session.csv" if self._operational_only else self._placement_csv_filename_suffix
+        # Use suffixes for operational-only and embodied allocation mode
+        if self._operational_only:
+            base_filename = "heuristic_op_placements_session.csv"
+        else:
+            suffix = "prop" if getattr(self, "_embodied_allocation_mode", "proportional") == "proportional" else "uniform"
+            base_filename = f"heuristic_{suffix}_placements_session.csv"
         self._placement_csv_path = os.path.join(self._session_log_dir, base_filename)
         
         if hasattr(self, '_placement_csv_file_handle') and self._placement_csv_file_handle:
@@ -220,7 +225,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             self._placement_csv_writer = csv.writer(self._placement_csv_file_handle)
             
             if not file_exists_and_not_empty:
-                self._placement_csv_writer.writerow(["pod_id", "node_id", "start_slot", "duration", "cpu_request", "ram_request"])
+                self._placement_csv_writer.writerow(["pod_id", "node_id", "start_slot", "duration", "cpu_request", "ram_request", "embodied_mode"])
                 self._placement_csv_file_handle.flush()
             logging.info(f"Heuristic placements will be logged to: {self._placement_csv_path}")
 
@@ -241,7 +246,8 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
     def _write_placement_to_csv(self, pod_id: str, node_id: str, start_slot: int, duration: float, cpu_request: float = 0.0, ram_request: float = 0.0):
         if self._placement_csv_writer and self._placement_csv_file_handle:
             try:
-                self._placement_csv_writer.writerow([pod_id, node_id, start_slot, duration, cpu_request, ram_request])
+                mode = "operational-only" if self._operational_only else getattr(self, "_embodied_allocation_mode", "proportional")
+                self._placement_csv_writer.writerow([pod_id, node_id, start_slot, duration, cpu_request, ram_request, mode])
                 self._placement_csv_file_handle.flush()
             except Exception as e:
                 logging.error(f"Error writing to placement CSV for heuristic: {e}")
@@ -322,6 +328,14 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         """Set whether to use operational-only emissions calculation."""
         self._operational_only = operational_only
         logging.info(f"HeuristicAlgorithm: operational_only mode set to {operational_only}")
+
+    def set_embodied_allocation_mode(self, mode: str):
+        """Set embodied allocation mode: 'proportional' (default) or 'uniform'."""
+        if mode not in ("proportional", "uniform"):
+            logging.warning(f"Unknown embodied allocation mode '{mode}', defaulting to 'proportional'")
+            mode = "proportional"
+        self._embodied_allocation_mode = mode
+        logging.info(f"HeuristicAlgorithm: embodied_allocation_mode set to {self._embodied_allocation_mode}")
         
     def set_workloads_dir(self, workloads_dir: str):
         """Set the workloads directory for YAML file lookup."""
@@ -349,7 +363,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         considered_options = len(flavours) * len(timeslots)
         
         best_node, best_slot, emissions = find_best_node_and_timeslot(
-            pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots, self._operational_only
+            pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots, self._operational_only, self._embodied_allocation_mode
         )
         
         if self.experiment_logger:
@@ -531,7 +545,8 @@ def find_best_node_and_timeslot(
     leftover_cpu: Dict[str, Dict[int, float]],
     leftover_ram: Dict[str, Dict[int, float]],
     max_time_slots: int = 48,
-    operational_only: bool = False
+    operational_only: bool = False,
+    embodied_allocation_mode: str = "proportional"
 ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
     """
     Find the best node and timeslot for a pod that minimizes carbon emissions.
@@ -584,7 +599,20 @@ def find_best_node_and_timeslot(
                     from carbon_aware.utils import compute_emissions_operational_only
                     total_emi = compute_emissions_operational_only(flv, ts.id, pod)
                 else:
-                    total_emi = compute_emissions(flv, ts.id, pod)
+                    # Build a minimal used_cpu_before map for proportional/uniform embodied
+                    used_cpu_before = {}
+                    for slot_offset in range(int(pod.duration)):
+                        slot_id = ts.id + slot_offset
+                        total_capacity = flv.totalCpu
+                        leftover = leftover_cpu[flv.id][slot_id]
+                        used_cpu_before[slot_id] = max(total_capacity - leftover, 0.0)
+                    total_emi = compute_emissions_with_allocation(
+                        flavour=flv,
+                        start_slot=ts.id,
+                        pod=pod,
+                        used_cpu_before_by_slot=used_cpu_before,
+                        embodied_allocation_mode=embodied_allocation_mode,
+                    )
                 if total_emi < minimal_emissions:
                     minimal_emissions = total_emi
                     best_node = flv

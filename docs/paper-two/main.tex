@@ -106,6 +106,21 @@ Our earlier review analyzed carbon-aware workload placement and scheduling along
 
 \textbf{Embodied Emissions:} Finally, \textsc{Aging-aware CPU Core Management} \cite{hewage2025agingaware} introduces a run-time policy that \emph{amortizes embodied emissions} by extending CPU lifetime in LLM inference clusters, quantifying when embodied-aware decisions change the operational optimum. This is directly relevant to our life-cycle axis and to reporting operational vs.\ embodied sensitivity in benchmarks.
 
+\subsection{Embodied Emissions Allocation in Carbon-aware Scheduling}
+Embodied emissions (manufacturing, logistics, and end-of-life) are increasingly recognized as a first-order term in carbon-aware scheduling, yet are often omitted or uniformly amortized over calendar time. Two broad allocation strategies appear in the literature: (i) lifetime amortization (time-based), and (ii) utilization-aware attribution that splits embodied carbon by actual time-in-use and resource share.
+
+\textbf{Standards and frameworks:} The Green Software Foundation’s Software Carbon Intensity (SCI) specification formalizes embodied allocation with
+\begin{equation*}
+M = TE \times TS \times RS,
+\end{equation*}
+where $TE$ is total device embodied emissions from LCA, $TS$ is the time share (e.g., reserved or in-use fraction of expected lifetime), and $RS$ is the resource share (e.g., vCPU, memory) attributed to the software component \cite{GreenSoftware_SCI,GSF_M_Guidance}. This structure subsumes both simple time-based amortization ($RS=1$) and finer-grained attribution when detailed utilization or reservations are available.
+
+\textbf{Recent research:} Beyond uniform amortization, several works incorporate embodied carbon into scheduling and hardware-management decisions: (i) Ji \emph{et al.} propose carbon depreciation models that allocate a larger share of embodied carbon to newly provisioned servers and recover idle-time impacts during active use, showing that traditional accounting can inadvertently favor premature refresh \cite{JiYangJonesZhou2024}; (ii) Hewage \emph{et al.} demonstrate aging-aware CPU core management that extends lifetime and reduces embodied-attributed emissions in inference clusters with minimal QoS impact \cite{hewage2025agingaware}; (iii) Zhang, Song, and Sahoo formulate joint embodied+operational objectives with heterogeneity and age in dispatch, yielding lower total emissions under utilization-aware lifetime models \cite{ZhangSongSahoo2025}; and (iv) for edge contexts, Panteleaki \emph{et al.} advocate co-optimizing embodied and operational carbon under intermittent utilization and tight resource constraints \cite{PanteleakiParamanayakamPentsos2025}.
+
+\textbf{Implications for scheduling:} (1) Pure calendar-based amortization is appropriate when only coarse information is available, but it obscures idle periods and can inflate per-workload embodied intensity. (2) With utilization traces (e.g., hourly CPU), allocating embodied emissions in proportion to time-in-use and resource share yields more faithful attribution and can shift policies toward reusing capacity, consolidating strategically, or delaying refresh. (3) Accounting for device age and heterogeneity reveals that newer hardware, despite higher performance-per-watt, carries substantial embodied carbon that must be amortized through sustained use before outperforming older devices on total emissions. (4) These effects are amplified at the edge, where intermittency and under-utilization are common.
+
+In this paper, we adopt a refined, SCI-consistent allocation: we attribute embodied emissions using time-in-use and resource share derived from hourly CPU utilization, and we report results alongside a lifetime-amortization baseline to quantify how allocation choice affects scheduler decisions and total carbon efficiency.
+
 \subsection{Takeaways}
 The 2025 literature advances the axes flagged in our review: temporally aware schedulers with measured power models (\textsc{GREEN}); spatial shifting at finer granularity with SLOs (\textsc{CarbonEdge}); forecast-driven controllers for always-on services (\textsc{Quality Time}); reproducible signal computation and guidance on actionable metrics beyond MCI (\texttt{ElectricityEmissions.jl}, \cite{wiesnerkao2025mci}); explicit accounting of network transfer CO\textsubscript{2}e (\textsc{LinTS}); and first steps toward embodied-aware \emph{operational} policies (aging-aware CPU management). These works close several gaps we highlighted and provide solid guidance for our benchmarking protocol.
 
@@ -522,9 +537,9 @@ The oracle's exponential complexity justifies the heuristic algorithm's polynomi
 
 \subsection{Carbon Reduction: Inclusive and Matched-Set}\label{subsec:carbon-reduction}
 % Bind figures to latest generated PDFs (define before input)
-\newcommand{\EmissionsVsPodsInclusive}{../../figures/EmissionsVsPods/emissions_vs_pods_20250904_124253.pdf}
-\newcommand{\EmissionsVsPodsCommon}{../../figures/EmissionsVsPods/emissions_vs_pods_common_pods_20250906_101828.pdf}
-\newcommand{\EmissionsPerPodCommon}{../../figures/EmissionsVsPods/emissions_per_pod_vs_pods_common_pods_20250906_101828.pdf}
+\newcommand{\EmissionsVsPodsInclusive}{\detokenize{../../figures/EmissionsVsPods/emissions_vs_pods_20250910_142750.pdf}}
+\newcommand{\EmissionsVsPodsCommon}{\detokenize{../../figures/EmissionsVsPods/emissions_vs_pods_common_pods_20250910_143007.pdf}}
+\newcommand{\EmissionsPerPodCommon}{\detokenize{../../figures/EmissionsVsPods/emissions_per_pod_vs_pods_common_pods_20250910_143007.pdf}}
 
 % Unified carbon reduction subsection with fairness framing and common-pods insights
 \input{results.tex}
@@ -538,7 +553,7 @@ The oracle's exponential complexity justifies the heuristic algorithm's polynomi
 
 \subsection{Placement Success Rate}\label{subsec:success-rate}
 % Update to newest success-rate plot (computed from per-run CSVs; ignores stale pods.txt)
-\renewcommand{\SuccessRateVsPods}{../../figures/SuccessRate/success_rate_comparison_20250907_131839.pdf}
+\renewcommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_20250907_131839.pdf}}
 Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At low load, all three methods are near 100\%; as load increases, the heuristic remains above the vanilla baseline and close to the MILP oracle. We use this figure alongside the inclusive-emissions and matched-set results to separate feasibility (who gets placed) from carbon efficiency (how those pods are placed).
 \begin{figure}[t]
   \centering

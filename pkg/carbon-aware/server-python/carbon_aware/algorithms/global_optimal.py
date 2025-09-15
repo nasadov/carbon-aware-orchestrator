@@ -14,7 +14,7 @@ from datetime import datetime
 
 from carbon_aware.algorithms.base import SchedulingAlgorithm
 from carbon_aware.models import CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot
-from carbon_aware.utils import is_timeslot_valid, compute_emissions, compute_node_dynamic_coeff_watts, get_carbon_intensity, compute_embodied_per_hour_g
+from carbon_aware.utils import is_timeslot_valid, compute_emissions, compute_node_dynamic_coeff_watts, get_carbon_intensity, compute_embodied_per_hour_g, compute_emissions_with_allocation
 
 
 class GlobalOptimalAlgorithm(SchedulingAlgorithm):
@@ -27,7 +27,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
     CSV_HEADERS = [
         "pod_id", "node_id", "start_slot", "duration",
         "cpu_request", "ram_request", "total_carbon_emissions",
-        "solver_status", "solver_iterations", "solution_time_seconds"
+        "solver_status", "solver_iterations", "solution_time_seconds",
+        "embodied_mode"
     ]
 
     def __init__(self):
@@ -79,6 +80,16 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         
         logging.info(f"✅ Global Optimal Algorithm instance created with CSV headers: {self.CSV_HEADERS}")
         logging.info(f"📋 This algorithm will track placements in a CSV file once set_base_log_dir is called")
+
+        # Embodied allocation mode ("proportional" or "uniform")
+        self.embodied_allocation_mode = "proportional"
+
+    def set_embodied_allocation_mode(self, mode: str):
+        if mode not in ("proportional", "uniform"):
+            logging.warning(f"Unknown embodied allocation mode '{mode}', defaulting to 'proportional'")
+            mode = "proportional"
+        self.embodied_allocation_mode = mode
+        logging.info(f"GlobalOptimalAlgorithm: embodied_allocation_mode set to {self.embodied_allocation_mode}")
 
     def _load_config(self) -> Dict:
         """Load configuration from the infra-workload-config.yaml file."""
@@ -405,7 +416,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
 
     def _write_placement_to_csv(self, pod_id: str, node_id: str, start_slot: int, duration: float,
                                 cpu_request: float, ram_request: float, total_carbon_emissions: float,
-                                solver_status: str, solver_iterations: int, solution_time_seconds: float):
+                                solver_status: str, solver_iterations: int, solution_time_seconds: float,
+                                embodied_mode: str = "proportional"):
         """
         Write a placement decision to the CSV file.
         
@@ -426,7 +438,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 row = [
                     pod_id, node_id, start_slot, duration,
                     cpu_request, ram_request, total_carbon_emissions,
-                    solver_status, solver_iterations, solution_time_seconds
+                    solver_status, solver_iterations, solution_time_seconds,
+                    embodied_mode
                 ]
                 
                 # Add detailed logging
@@ -755,7 +768,18 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         if duration_feasible:
                             # Calculate emissions for this placement
                             try:
-                                emissions = compute_emissions(flv, ts.id, pod)
+                                # Use proportional embodied allocation by default for consistency
+                                used_cpu_before = {}
+                                for slot_offset in range(int(pod.duration)):
+                                    slot_id = ts.id + slot_offset
+                                    total_capacity = flv.totalCpu
+                                    leftover = leftover_cpu[flv.id][slot_id]
+                                    used_cpu_before[slot_id] = max(total_capacity - leftover, 0.0)
+                                emissions = compute_emissions(
+                                    flv, ts.id, pod,
+                                    used_cpu_before_by_slot=used_cpu_before,
+                                    embodied_allocation_mode="proportional",
+                                )
                                 logging.debug(f"     - Valid placement: pod={pod.id}, node={flv.id}, ts={ts.id}, emissions={emissions/1000.0:.6f}kgCO2e ({emissions:.2f}gCO2e)")
                                 
                                 placement_key = (pod.id, flv.id, ts.id)
@@ -1069,7 +1093,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                     total_carbon_emissions=emissions_sol_g / 1000.0,
                                     solver_status=str(self.status),
                                     solver_iterations=self.iterations,
-                                    solution_time_seconds=solution_time
+                                    solution_time_seconds=solution_time,
+                                    embodied_mode="proportional"
                                 )
                                 placements_saved_to_csv += 1
                             except Exception:
@@ -1223,7 +1248,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                         total_carbon_emissions=emissions_sol_g / 1000.0,
                                         solver_status=str(status_dyn),
                                         solver_iterations=self.iterations,
-                                        solution_time_seconds=solution_time
+                                        solution_time_seconds=solution_time,
+                                        embodied_mode="proportional"
                                     )
                                     placements_saved_to_csv += 1
                                 except Exception:
@@ -1551,7 +1577,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                 total_carbon_emissions=emissions_sol_g / 1000.0,
                                 solver_status=str(self.status),
                                 solver_iterations=self.iterations,
-                                solution_time_seconds=solution_time
+                                solution_time_seconds=solution_time,
+                                embodied_mode="proportional"
                             )
                             placements_saved_to_csv += 1
                             logging.debug(f"  - Wrote placement for pod {current_pod.id} to CSV (precomputation mode)")
@@ -1909,7 +1936,17 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 
                 if can_place:
                     try:
-                        emissions = compute_emissions(flv, ts.id, pod)
+                        used_cpu_before = {}
+                        for slot_offset in range(int(pod.duration)):
+                            slot_id = ts.id + slot_offset
+                            total_capacity = flv.totalCpu
+                            leftover = leftover_cpu[flv.id][slot_id]
+                            used_cpu_before[slot_id] = max(total_capacity - leftover, 0.0)
+                        emissions = compute_emissions(
+                            flv, ts.id, pod,
+                            used_cpu_before_by_slot=used_cpu_before,
+                            embodied_allocation_mode="proportional",
+                        )
                         if emissions < best_emissions:
                             best_emissions = emissions
                             best_placement = (flv, ts, emissions)
