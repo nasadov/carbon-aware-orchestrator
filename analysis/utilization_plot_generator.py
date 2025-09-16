@@ -9,6 +9,10 @@ capacity from nodes.yaml.
 For CPU: avg_over_slots( sum_active_pods(cpu_request_cores) / total_cores ).
 For Memory: avg_over_slots( sum_active_pods(mem_request_bytes) / total_bytes ).
 
+Default: proportional-only (plus vanilla). Use flags to change selection:
+  --uniform  Plot only uniform (plus vanilla)
+  --both     Plot both proportional and uniform (plus vanilla)
+
 Outputs three figures under figures/Utilization:
   - CPU-only plot
   - Memory-only plot
@@ -25,6 +29,7 @@ from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import argparse
 
 
 EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments"
@@ -155,12 +160,29 @@ def parse_total_cluster_memory_bytes(nodes_yaml_path: str) -> float:
     return total_bytes
 
 
-def _placement_csv_candidates(algo: str) -> List[str]:
-    if algo == "global-optimal":
+def _placement_csv_candidates(algo_key: str) -> List[str]:
+    base = algo_key.split("-", 1)[0]
+    suffix = algo_key[len(base):]
+    if base == "global-optimal":
         return ["global_optimal_placements_session.csv"]
-    if algo == "heuristic":
-        return ["heuristic_placements_session.csv"]
-    if algo == "vanilla":
+    if base == "heuristic":
+        # Prefer mode-specific names if the algo key encodes them
+        if suffix == "-proportional":
+            return [
+                "heuristic_prop_placements_session.csv",
+                "heuristic_placements_session.csv",
+            ]
+        if suffix == "-uniform":
+            return [
+                "heuristic_uniform_placements_session.csv",
+                "heuristic_placements_session.csv",
+            ]
+        return [
+            "heuristic_prop_placements_session.csv",
+            "heuristic_uniform_placements_session.csv",
+            "heuristic_placements_session.csv",
+        ]
+    if base == "vanilla":
         return [
             "vanilla_placement_session.csv",
             "vanilla_placement_session_bind.csv",
@@ -191,15 +213,32 @@ def _find_placement_csv(entry_path: str, algo_key: str) -> Optional[str]:
 
 def _parse_experiment_name(entry: str) -> Optional[Tuple[str, int]]:
     """Return (algo_key, pods_count) from directory name or None if no match."""
-    m = re.match(r"^(?P<algo>[^_]+?)(?:_op)?_(?P<pods>\d+)pods_", entry)
+    m = re.match(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_", entry)
     if not m:
         return None
     algo_key = m.group("algo")
+    mode = m.group("mode") or ""
+    if mode:
+        algo_key = f"{algo_key}-{mode}"
     try:
         pods_count = int(m.group("pods"))
     except Exception:
         return None
     return algo_key, pods_count
+
+
+def _should_include_algo(algo_key: str, selection: str) -> bool:
+    """Return True if this algo key should be included under selection.
+
+    selection in { 'proportional', 'uniform', 'both' }
+    """
+    if algo_key == 'vanilla':
+        return True
+    if selection == 'both':
+        return algo_key.endswith('-proportional') or algo_key.endswith('-uniform')
+    if selection == 'uniform':
+        return algo_key.endswith('-uniform')
+    return algo_key.endswith('-proportional')
 
 
 def _compute_run_avg_cpu_util_percent(csv_path: str, total_cluster_cores: float) -> Optional[float]:
@@ -307,7 +346,7 @@ def _compute_run_avg_mem_util_percent(csv_path: str, total_cluster_bytes: float)
     return float(np.mean(utilizations))
 
 
-def parse_utilizations_from_experiments(experiments_root: str, nodes_yaml_path: str):
+def parse_utilizations_from_experiments(experiments_root: str, nodes_yaml_path: str, selection: str = 'proportional'):
     """Return two mappings (cpu_results, mem_results): algo -> pods -> list of utilization percent per run."""
     cpu_results: Dict[str, Dict[int, List[float]]] = defaultdict(lambda: defaultdict(list))
     mem_results: Dict[str, Dict[int, List[float]]] = defaultdict(lambda: defaultdict(list))
@@ -333,6 +372,10 @@ def parse_utilizations_from_experiments(experiments_root: str, nodes_yaml_path: 
             continue
         algo_key, pods_count = parsed
 
+        # Filter by selection (vanilla always included)
+        if not _should_include_algo(algo_key, selection):
+            continue
+
         csv_path = _find_placement_csv(entry_path, algo_key)
         if not csv_path:
             continue
@@ -357,7 +400,12 @@ def _aggregate_results(results):
         pod_counts.update(by_pods.keys())
     pod_counts_sorted = sorted(pod_counts)
 
-    known_order = ["vanilla", "heuristic", "global-optimal"]
+    known_order = [
+        "vanilla",
+        "heuristic-proportional", "heuristic-uniform",
+        "global-optimal-proportional", "global-optimal-uniform",
+        "heuristic", "global-optimal",
+    ]
     algos_present = list(results.keys())
     algos_order = [a for a in known_order if a in algos_present] + [a for a in algos_present if a not in known_order]
 
@@ -379,17 +427,29 @@ def _plot_utilization(ax, algos_order, pod_counts_sorted, mean_vals, std_errs, y
     colors = {
         'vanilla': '#2ca02c',
         'heuristic': '#ff7f0e',
+        'heuristic-proportional': '#ff7f0e',
+        'heuristic-uniform': '#ffbb78',
         'global-optimal': '#d62728',
+        'global-optimal-proportional': '#d62728',
+        'global-optimal-uniform': '#ff9896',
     }
     markers = {
         'vanilla': '^',
         'heuristic': 's',
+        'heuristic-proportional': 's',
+        'heuristic-uniform': 'D',
         'global-optimal': 'o',
+        'global-optimal-proportional': 'o',
+        'global-optimal-uniform': '^',
     }
     labels = {
         'vanilla': 'Vanilla (Baseline)',
         'heuristic': 'Heuristic (Carbon-Aware)',
+        'heuristic-proportional': 'Heuristic (Proportional)',
+        'heuristic-uniform': 'Heuristic (Uniform)',
         'global-optimal': 'Global-Optimal (MILP Oracle)',
+        'global-optimal-proportional': 'Global-Optimal (Proportional)',
+        'global-optimal-uniform': 'Global-Optimal (Uniform)',
     }
 
     for algo in algos_order:
@@ -431,8 +491,8 @@ def _plot_utilization(ax, algos_order, pod_counts_sorted, mean_vals, std_errs, y
     ax.legend(fontsize=12, loc=legend_loc, framealpha=0.9, shadow=True, fancybox=True)
 
 
-def create_utilization_plots():
-    cpu_results, mem_results = parse_utilizations_from_experiments(EXPERIMENTS_ROOT, NODES_YAML_PATH)
+def create_utilization_plots(selection: str = 'proportional'):
+    cpu_results, mem_results = parse_utilizations_from_experiments(EXPERIMENTS_ROOT, NODES_YAML_PATH, selection)
     any_results = any(cpu_results.values()) or any(mem_results.values())
     if not any_results:
         print(f"❌ No experiment results found in: {EXPERIMENTS_ROOT}")
@@ -496,6 +556,12 @@ def create_utilization_plots():
 if __name__ == "__main__":
     print("🚀 UTILIZATION PLOT GENERATOR")
     print("=" * 50)
-    create_utilization_plots()
+    parser = argparse.ArgumentParser(description="Cluster Utilization Plot Generator")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--uniform', action='store_true', help='Plot uniform embodied allocation only (plus vanilla)')
+    group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
+    args = parser.parse_args()
+    selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
+    create_utilization_plots(selection)
 
 

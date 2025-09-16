@@ -7,8 +7,13 @@ with x-axis as number of pods in the experiment and y-axis as total carbon
 emissions (kg CO2e) per experiment. Data is parsed dynamically from
 /root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments.
 
+Default behavior is to plot proportional embodied allocation only.
+Flags:
+  --uniform  Plot only uniform embodied allocation (plus vanilla)
+  --both     Plot both proportional and uniform (plus vanilla)
+
 Usage:
-    python analysis/emissions_vs_pods_plot_generator.py
+    python analysis/emissions_vs_pods_plot_generator.py [--uniform | --both]
 """
 
 import matplotlib
@@ -19,6 +24,7 @@ from datetime import datetime
 import os
 import re
 import csv
+import argparse
 from collections import defaultdict
 import json
 import yaml
@@ -245,6 +251,21 @@ def _discover_experiments(experiments_root: str):
         yield algo, pods, dir_path
 
 
+def _should_include_algo(algo: str, selection: str) -> bool:
+    """Return True if this algo key should be included under selection.
+
+    selection in { 'proportional', 'uniform', 'both' }
+    """
+    if algo == 'vanilla':
+        return True
+    if selection == 'both':
+        return algo.endswith('-proportional') or algo.endswith('-uniform')
+    if selection == 'uniform':
+        return algo.endswith('-uniform')
+    # Default: proportional-only
+    return algo.endswith('-proportional')
+
+
 def _find_placement_csv(algo: str, dir_path: str):
     if algo.startswith('global-optimal'):
         p = os.path.join(dir_path, 'global_optimal_placements_session.csv')
@@ -279,7 +300,7 @@ def _find_placement_csv(algo: str, dir_path: str):
     return None
 
 
-def create_emissions_plot():
+def create_emissions_plot(selection: str = 'proportional'):
     # Prepare nodes and forecasts for computed emissions
     nodes = _load_nodes_from_yaml(NODES_FILE)
     forecasts = _load_carbon_forecasts(FORECASTS_FILE)
@@ -295,6 +316,8 @@ def create_emissions_plot():
         return
 
     for algo, pods, dir_path in _discover_experiments(EXPERIMENTS_ROOT):
+        if not _should_include_algo(algo, selection):
+            continue
         csv_path = _find_placement_csv(algo, dir_path)
         if not csv_path:
             continue
@@ -361,7 +384,14 @@ def create_emissions_plot():
         'global-optimal-uniform': 'Global-Optimal (Uniform)',
     }
 
-    algos_order = [a for a in ('vanilla', 'heuristic', 'global-optimal') if a in totals.keys()] + [a for a in totals.keys() if a not in ('vanilla', 'heuristic', 'global-optimal')]
+    preferred = [
+        'vanilla',
+        'heuristic-proportional', 'heuristic-uniform',
+        'global-optimal-proportional', 'global-optimal-uniform',
+        'heuristic', 'global-optimal',
+    ]
+    present = list(totals.keys())
+    algos_order = [a for a in preferred if a in present] + [a for a in present if a not in preferred]
 
     for algo in algos_order:
         x_vals, y_vals, y_errs = [], [], []
@@ -454,4 +484,10 @@ def create_emissions_plot():
 if __name__ == "__main__":
     print("🚀 EMISSIONS VS PODS PLOT GENERATOR")
     print("=" * 50)
-    create_emissions_plot()
+    parser = argparse.ArgumentParser(description="Emissions vs Pods Plot Generator")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--uniform', action='store_true', help='Plot uniform embodied allocation only (plus vanilla)')
+    group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
+    args = parser.parse_args()
+    selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
+    create_emissions_plot(selection)

@@ -4,8 +4,12 @@ Success Rate Plot Generator
 
 Generates success rate comparison plots by parsing experiment results.
 
+Default: proportional-only (plus vanilla). Use flags to change selection:
+  --uniform  Plot only uniform (plus vanilla)
+  --both     Plot both proportional and uniform (plus vanilla)
+
 Usage:
-    python analysis/success_rate_plot_generator.py
+    python analysis/success_rate_plot_generator.py [--uniform | --both]
 """
 
 import matplotlib.pyplot as plt
@@ -14,6 +18,7 @@ from datetime import datetime
 import os
 import re
 import csv
+import argparse
 from collections import defaultdict
 
 
@@ -35,7 +40,21 @@ def _read_pods_txt_if_present(session_dir: str, pods_count_from_dir: int) -> int
             pass
     return None
 
-def _parse_success_rates_from_experiments(experiments_root: str):
+def _should_include_algo(algo_key: str, selection: str) -> bool:
+    """Return True if this algo key should be included under selection.
+
+    selection in { 'proportional', 'uniform', 'both' }
+    """
+    if algo_key == 'vanilla':
+        return True
+    if selection == 'both':
+        return algo_key.endswith('-proportional') or algo_key.endswith('-uniform')
+    if selection == 'uniform':
+        return algo_key.endswith('-uniform')
+    return algo_key.endswith('-proportional')
+
+
+def _parse_success_rates_from_experiments(experiments_root: str, selection: str = 'proportional'):
     """Scan experiments_root for runs and parse success rates per algorithm and pod count.
 
     Returns:
@@ -64,6 +83,9 @@ def _parse_success_rates_from_experiments(experiments_root: str):
         mode = m.group('mode') or ''
         if mode:
             algo_key = f"{algo_key}-{mode}"
+        # Filter by selection (vanilla always included)
+        if not _should_include_algo(algo_key, selection):
+            continue
         try:
             pods_count = int(m.group('pods'))
         except Exception:
@@ -169,11 +191,11 @@ def _aggregate_results(results):
     return algos_order, pod_counts_sorted, mean_rates, std_errs
 
 
-def create_success_rate_plot():
+def create_success_rate_plot(selection: str = 'proportional'):
     """Generate success rate comparison plot by parsing experiment outputs."""
     # Parse dynamic results
     experiments_root = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments"
-    parsed = _parse_success_rates_from_experiments(experiments_root)
+    parsed = _parse_success_rates_from_experiments(experiments_root, selection)
     if not parsed:
         print(f"❌ No experiment results found in: {experiments_root}")
         return
@@ -282,4 +304,10 @@ def create_success_rate_plot():
 if __name__ == "__main__":
     print("🚀 SUCCESS RATE PLOT GENERATOR")
     print("=" * 50)
-    create_success_rate_plot() 
+    parser = argparse.ArgumentParser(description="Success Rate Plot Generator")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--uniform', action='store_true', help='Plot uniform embodied allocation only (plus vanilla)')
+    group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
+    args = parser.parse_args()
+    selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
+    create_success_rate_plot(selection) 
