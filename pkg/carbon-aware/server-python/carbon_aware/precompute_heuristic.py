@@ -93,10 +93,10 @@ def run_heuristic_precomputation(
         algorithm.setup_session_placement_log()
         logging.info("📝 CSV placement logging initialized")
         
-        # Assign carbon forecast to flavours
+        # Assign carbon forecast to flavours (use 'forecast' attribute used by emissions utils)
         for flv in flavours:
             if flv.region in carbon_forecast:
-                flv.carbon_intensity_forecast = carbon_forecast[flv.region]
+                flv.forecast = carbon_forecast[flv.region]
                 logging.debug(f"✓ Assigned forecast to node {flv.id} in region {flv.region}")
             else:
                 logging.warning(f"⚠️ No forecast found for region {flv.region} (node {flv.id})")
@@ -148,11 +148,24 @@ def run_heuristic_precomputation(
                 if not pods:
                     continue
                 
-                # Process each pod
+                # Process each pod (order by tightest window first, then larger pods)
                 file_pods_placed = 0
                 file_pods_failed = 0
+
+                # Compute scheduling windows for ordering
+                now_dt = dt.fromtimestamp(time.time())
+                ordered_pods = []
+                for pod in pods:
+                    try:
+                        hours_until_deadline = (pod.deadline - now_dt).total_seconds() / 3600
+                    except Exception:
+                        hours_until_deadline = getattr(pod, 'deadline_hours', 24.0)
+                    scheduling_window = max(0.0, hours_until_deadline - pod.duration)
+                    ordered_pods.append((pod, scheduling_window, hours_until_deadline))
+                # EDF (smallest window first), then CPU desc, RAM desc, duration desc
+                ordered_pods.sort(key=lambda x: (x[1], -x[0].cpuRequest, -x[0].ramRequest, -x[0].duration))
                 
-                for pod_idx, pod in enumerate(pods):
+                for pod_idx, (pod, scheduling_window, hours_until_deadline) in enumerate(ordered_pods):
                     total_pods_processed += 1
                     
                     # Create timeslots for precomputation mode
@@ -160,9 +173,10 @@ def run_heuristic_precomputation(
                     # rather than being limited by wall-clock time deadlines
                     timeslots = build_timeslots(max_timeslots)
                     
-                    logging.info(f"  🔍 Pod {pod_idx + 1}/{len(pods)}: {pod.id}")
+                    logging.info(f"  🔍 Pod {pod_idx + 1}/{len(ordered_pods)}: {pod.id}")
                     logging.info(f"     Resources: CPU={pod.cpuRequest:.3f}, RAM={pod.ramRequest:.0f}MB")
                     logging.info(f"     Duration: {pod.duration}h, Earliest TS: {pod.earliest_timeslot}")
+                    logging.info(f"     Window: {scheduling_window:.1f}h (deadline in {hours_until_deadline:.1f}h)")
                     
 
                     

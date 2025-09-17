@@ -18,6 +18,34 @@ SERVER_MAIN="$REPO_ROOT/pkg/carbon-aware/server-python/main.py"
 SERVER_DIR="$REPO_ROOT/pkg/carbon-aware/server-python"
 FORECASTS_FILE="$SERVER_DIR/all_forecasts.json"
 
+# Embodied mode selection (default: proportional). Flags: --proportional | --uniform | --both
+MODES=("proportional")
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --both)
+      MODES=("proportional" "uniform")
+      shift
+      ;;
+    --uniform)
+      MODES=("uniform")
+      shift
+      ;;
+    --proportional)
+      MODES=("proportional")
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--proportional|--uniform|--both]" >&2
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      echo "Usage: $0 [--proportional|--uniform|--both]" >&2
+      exit 1
+      ;;
+  esac
+done
+
 # Run identifiers and timing
 RUN_START_ID=$(date +%Y%m%d_%H%M%S)
 RUN_ID="$RUN_START_ID"
@@ -136,96 +164,59 @@ for P in "${POD_VALUES[@]}"; do
   PODS=$(count_pods)
   NODES=$(count_nodes)
 
-  # Heuristic (two embodied modes)
-  echo "-- heuristic precompute (pods=$P) --"
-  begin_h="$(date +%Y-%m-%dT%H:%M:%S)"
-  start_h=$(date +%s%N)
-  python3 "$SERVER_MAIN" \
-    --algorithm heuristic \
-    --precompute \
-    --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
-    --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
-    --forecasts-file "$FORECASTS_FILE" \
-    --experiment-dir "$SERVER_DIR/experiments" \
-    --embodied-mode proportional \
-    --loglevel INFO | sed -u 's/.*/[heuristic-prop] &/'
-  end_h=$(date +%s%N)
-  end_iso_h="$(date +%Y-%m-%dT%H:%M:%S)"
-  elapsed_h=$(python3 - "$start_h" "$end_h" <<'PY'
+  # Heuristic (selected embodied modes)
+  for MODE in "${MODES[@]}"; do
+    TAG="prop"
+    [[ "$MODE" == "uniform" ]] && TAG="uniform"
+    echo "-- heuristic precompute ($MODE) (pods=$P) --"
+    begin_h="$(date +%Y-%m-%dT%H:%M:%S)"
+    start_h=$(date +%s%N)
+    python3 "$SERVER_MAIN" \
+      --algorithm heuristic \
+      --precompute \
+      --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
+      --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
+      --forecasts-file "$FORECASTS_FILE" \
+      --experiment-dir "$SERVER_DIR/experiments" \
+      --embodied-mode "$MODE" \
+      --loglevel INFO | sed -u "s/.*/[heuristic-$TAG] &/"
+    end_h=$(date +%s%N)
+    end_iso_h="$(date +%Y-%m-%dT%H:%M:%S)"
+    elapsed_h=$(python3 - "$start_h" "$end_h" <<'PY'
 import sys
 s=int(sys.argv[1]); e=int(sys.argv[2])
 print(f"{(e-s)/1e9:.3f}")
 PY
 )
-  echo "$RUN_ID,$begin_h,$end_iso_h,$P,heuristic-proportional,$PODS,$NODES,$elapsed_h" >> "$SUMMARY_CSV"
+    echo "$RUN_ID,$begin_h,$end_iso_h,$P,heuristic-$MODE,$PODS,$NODES,$elapsed_h" >> "$SUMMARY_CSV"
+  done
 
-  # Heuristic uniform mode
-  echo "-- heuristic (uniform) precompute (pods=$P) --"
-  begin_hu="$(date +%Y-%m-%dT%H:%M:%S)"
-  start_hu=$(date +%s%N)
-  python3 "$SERVER_MAIN" \
-    --algorithm heuristic \
-    --precompute \
-    --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
-    --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
-    --forecasts-file "$FORECASTS_FILE" \
-    --experiment-dir "$SERVER_DIR/experiments" \
-    --embodied-mode uniform \
-    --loglevel INFO | sed -u 's/.*/[heuristic-uniform] &/'
-  end_hu=$(date +%s%N)
-  end_iso_hu="$(date +%Y-%m-%dT%H:%M:%S)"
-  elapsed_hu=$(python3 - "$start_hu" "$end_hu" <<'PY'
+  # Global-optimal (selected embodied modes)
+  for MODE in "${MODES[@]}"; do
+    TAG="prop"
+    [[ "$MODE" == "uniform" ]] && TAG="uniform"
+    echo "-- global-optimal precompute ($MODE) (pods=$P) --"
+    begin_g="$(date +%Y-%m-%dT%H:%M:%S)"
+    start_g=$(date +%s%N)
+    python3 "$SERVER_MAIN" \
+      --algorithm global-optimal \
+      --precompute \
+      --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
+      --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
+      --forecasts-file "$FORECASTS_FILE" \
+      --experiment-dir "$SERVER_DIR/experiments" \
+      --embodied-mode "$MODE" \
+      --loglevel INFO | sed -u "s/.*/[global-$TAG] &/"
+    end_g=$(date +%s%N)
+    end_iso_g="$(date +%Y-%m-%dT%H:%M:%S)"
+    elapsed_g=$(python3 - "$start_g" "$end_g" <<'PY'
 import sys
 s=int(sys.argv[1]); e=int(sys.argv[2])
 print(f"{(e-s)/1e9:.3f}")
 PY
 )
-  echo "$RUN_ID,$begin_hu,$end_iso_hu,$P,heuristic-uniform,$PODS,$NODES,$elapsed_hu" >> "$SUMMARY_CSV"
-
-  # Global-optimal (two embodied modes)
-  echo "-- global-optimal precompute (pods=$P) --"
-  begin_g="$(date +%Y-%m-%dT%H:%M:%S)"
-  start_g=$(date +%s%N)
-  python3 "$SERVER_MAIN" \
-    --algorithm global-optimal \
-    --precompute \
-    --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
-    --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
-    --forecasts-file "$FORECASTS_FILE" \
-    --experiment-dir "$SERVER_DIR/experiments" \
-    --embodied-mode proportional \
-    --loglevel INFO | sed -u 's/.*/[global-prop] &/'
-  end_g=$(date +%s%N)
-  end_iso_g="$(date +%Y-%m-%dT%H:%M:%S)"
-  elapsed_g=$(python3 - "$start_g" "$end_g" <<'PY'
-import sys
-s=int(sys.argv[1]); e=int(sys.argv[2])
-print(f"{(e-s)/1e9:.3f}")
-PY
-)
-  echo "$RUN_ID,$begin_g,$end_iso_g,$P,global-optimal-proportional,$PODS,$NODES,$elapsed_g" >> "$SUMMARY_CSV"
-
-  echo "-- global-optimal (uniform) precompute (pods=$P) --"
-  begin_gu="$(date +%Y-%m-%dT%H:%M:%S)"
-  start_gu=$(date +%s%N)
-  python3 "$SERVER_MAIN" \
-    --algorithm global-optimal \
-    --precompute \
-    --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
-    --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
-    --forecasts-file "$FORECASTS_FILE" \
-    --experiment-dir "$SERVER_DIR/experiments" \
-    --embodied-mode uniform \
-    --loglevel INFO | sed -u 's/.*/[global-uniform] &/'
-  end_gu=$(date +%s%N)
-  end_iso_gu="$(date +%Y-%m-%dT%H:%M:%S)"
-  elapsed_gu=$(python3 - "$start_gu" "$end_gu" <<'PY'
-import sys
-s=int(sys.argv[1]); e=int(sys.argv[2])
-print(f"{(e-s)/1e9:.3f}")
-PY
-)
-  echo "$RUN_ID,$begin_gu,$end_iso_gu,$P,global-optimal-uniform,$PODS,$NODES,$elapsed_gu" >> "$SUMMARY_CSV"
+    echo "$RUN_ID,$begin_g,$end_iso_g,$P,global-optimal-$MODE,$PODS,$NODES,$elapsed_g" >> "$SUMMARY_CSV"
+  done
 
   # Vanilla
   echo "-- vanilla precompute (pods=$P) --"

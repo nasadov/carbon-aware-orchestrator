@@ -237,23 +237,29 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             placements_skipped = 0
             total_emissions = 0.0
 
-            for i, ms in enumerate(request.workload.microservices):
-                ms_start_time = time.time()
-                logging.info(f"  ➡️ ({i+1}/{len(request.workload.microservices)}) Processing: {ms.name}")
-                    
-                if hasattr(ms, "status"):
-                    if ms.status != 4:
-                        status_name = MICROSERVICE_STATUS_MAP.get(ms.status, f"Status({ms.status})")
-                        logging.info(f"    ⏩ Skipping {ms.name} with status {status_name} - only handling TO_DEPLOY")
-                        placement = self._build_fallback_placement(ms.name, f"SKIPPED_{status_name}")
-                        out_placements.placements.append(placement)
-                        placements_skipped += 1
-                        continue
+            # Build candidate list and order: tightest deadline (smallest window) first, then larger pods
+            schedule_candidates = []
+            for ms in request.workload.microservices:
+                if hasattr(ms, "status") and ms.status != 4:
+                    status_name = MICROSERVICE_STATUS_MAP.get(ms.status, f"Status({ms.status})")
+                    logging.info(f"    ⏩ Skipping {ms.name} with status {status_name} - only handling TO_DEPLOY")
+                    placement = self._build_fallback_placement(ms.name, f"SKIPPED_{status_name}")
+                    out_placements.placements.append(placement)
+                    placements_skipped += 1
+                    continue
 
                 pod = parse_microservice(ms)
                 current_time = dt.fromtimestamp(time.time())
                 hours_until_deadline = (pod.deadline - current_time).total_seconds() / 3600
-                scheduling_window = max(0, hours_until_deadline - pod.duration)
+                scheduling_window = max(0.0, hours_until_deadline - pod.duration)
+                schedule_candidates.append((ms, pod, scheduling_window, hours_until_deadline))
+
+            # EDF: smallest window first; then CPU desc, RAM desc, duration desc
+            schedule_candidates.sort(key=lambda x: (x[2], -x[1].cpuRequest, -x[1].ramRequest, -x[1].duration))
+
+            for idx, (ms, pod, scheduling_window, hours_until_deadline) in enumerate(schedule_candidates):
+                ms_start_time = time.time()
+                logging.info(f"  ➡️ ({idx+1}/{len(schedule_candidates)}) Processing: {ms.name}")
                 
                 # DETAILED POD ANALYSIS LOGGING
                 logging.info(f"    POD ANALYSIS for {ms.name}:")

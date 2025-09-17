@@ -424,11 +424,20 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         logging.info(f"    Resource requirements: CPU={pod.cpuRequest:.3f}, RAM={pod.ramRequest:.0f}MB")
         logging.info(f"    Search space: {len(flavours)} nodes × {len(timeslots)} timeslots = {len(flavours) * len(timeslots)} combinations")
         
-        candidates = []  # List of (node, timeslot, emissions) tuples
+        candidates = []  # List of (node, timeslot, emissions, pack_score) tuples
         
         # First pass: find all feasible placements and calculate their emissions
         valid_timeslots = 0
-        for ts in timeslots:
+        # Prefer lower-carbon hours first across nodes (best-effort)
+        try:
+            ordered_timeslots = sorted(
+                timeslots,
+                key=lambda t: min(flv.forecast.get(t.id, 200.0) for flv in flavours)
+            )
+        except Exception:
+            ordered_timeslots = timeslots
+        
+        for ts in ordered_timeslots:
             if not is_timeslot_valid(ts, pod):
                 logging.debug(f"[find_placement_atomic] Timeslot {ts.id} invalid for pod={pod.id} (earliest_timeslot={pod.earliest_timeslot})")
                 continue
@@ -457,27 +466,42 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                     )
                     
                     if resource_check:
-                        # Calculate marginal emissions for this candidate using node-aware model
-                        from carbon_aware.utils import compute_marginal_emissions_for_pod_over_duration
+                        # Compute emissions using proportional embodied allocation (or operational-only)
                         # Build a view of already used CPU for each slot from persistent state (cores consumed)
                         used_cpu_before = {}
+                        cpu_slack_sum = 0.0
+                        ram_slack_sum = 0.0
                         for slot_offset in range(int(pod.duration)):
                             slot_id = ts.id + slot_offset
                             # total used = total capacity - leftover
                             total_capacity = flv.totalCpu
-                            leftover = persistent_state.leftover_cpu[flv.id][slot_id]
-                            used_cpu_before[slot_id] = max(total_capacity - leftover, 0.0)
+                            leftover_cpu_now = persistent_state.leftover_cpu[flv.id][slot_id]
+                            leftover_ram_now = persistent_state.leftover_ram[flv.id][slot_id]
+                            used_cpu_before[slot_id] = max(total_capacity - leftover_cpu_now, 0.0)
+                            # Projected slack after placing this pod (clamped at 0)
+                            cpu_slack_sum += max(leftover_cpu_now - pod.cpuRequest, 0.0)
+                            ram_slack_sum += max(leftover_ram_now - pod.ramRequest, 0.0)
 
-                        total_emi = compute_marginal_emissions_for_pod_over_duration(
-                            flavour=flv,
-                            start_slot=ts.id,
-                            duration_hours=pod.duration,
-                            pod_cpu_request=pod.cpuRequest,
-                            used_cpu_before_by_slot=used_cpu_before,
-                            include_embodied=not self._operational_only,
-                        )
-                        candidates.append((flv, ts, total_emi))
-                        logging.debug(f"[find_placement_atomic] Valid candidate: pod={pod.id}, node={flv.id}, timeslot={ts.id}, emissions={total_emi:.3f}")
+                        if self._operational_only:
+                            from carbon_aware.utils import compute_emissions_operational_only
+                            total_emi = compute_emissions_operational_only(flv, ts.id, pod)
+                        else:
+                            from carbon_aware.utils import compute_emissions_with_allocation
+                            total_emi = compute_emissions_with_allocation(
+                                flavour=flv,
+                                start_slot=ts.id,
+                                pod=pod,
+                                used_cpu_before_by_slot=used_cpu_before,
+                                embodied_allocation_mode=getattr(self, "_embodied_allocation_mode", "proportional"),
+                            )
+
+                        # Packing-aware tie-breaker: prefer tighter fit (smaller slack)
+                        cpu_norm = flv.totalCpu * max(int(pod.duration), 1)
+                        ram_norm = flv.totalRam * max(int(pod.duration), 1)
+                        pack_score = (cpu_slack_sum / max(cpu_norm, 1e-6)) + (ram_slack_sum / max(ram_norm, 1e-6))
+
+                        candidates.append((flv, ts, total_emi, pack_score))
+                        logging.debug(f"[find_placement_atomic] Valid candidate: pod={pod.id}, node={flv.id}, timeslot={ts.id}, emissions={total_emi:.3f}, pack={pack_score:.6f}")
                     else:
                         failure_reason = "insufficient_resources"
                         logging.debug(f"[find_placement_atomic] Pod {pod.id} on {flv.id} at slot {ts.id}: {failure_reason}")
@@ -502,13 +526,13 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             
             return None, None, float('inf')
         
-        # Sort candidates by emissions (best first)
-        candidates.sort(key=lambda x: x[2])
-        logging.info(f"    Best candidate: node={candidates[0][0].id}, timeslot={candidates[0][1].id}, emissions={candidates[0][2]:.3f}")
+        # Sort candidates by emissions (best first), then by packing score (tighter is better)
+        candidates.sort(key=lambda x: (x[2], x[3]))
+        logging.info(f"    Best candidate: node={candidates[0][0].id}, timeslot={candidates[0][1].id}, emissions={candidates[0][2]:.3f}, pack={candidates[0][3]:.6f}")
         
         # Second pass: try to atomically allocate the best candidate
         allocation_attempts = 0
-        for flv, ts, emissions in candidates:
+        for flv, ts, emissions, _pack in candidates:
             allocation_attempts += 1
             success = persistent_state.atomic_check_and_allocate(
                 flv.id, ts.id, int(pod.duration), 
@@ -570,7 +594,16 @@ def find_best_node_and_timeslot(
     best_slot = None
     minimal_emissions = float('inf')
 
-    for ts in timeslots:
+    # Prefer lower-carbon hours first across nodes (best-effort)
+    try:
+        ordered_timeslots = sorted(
+            timeslots,
+            key=lambda t: min(flv.forecast.get(t.id, 200.0) for flv in flavours)
+        )
+    except Exception:
+        ordered_timeslots = timeslots
+
+    for ts in ordered_timeslots:
         if not is_timeslot_valid(ts, pod):
             logging.debug(f"[find_best_node_and_timeslot] Skipping timeslot={ts.id}, not valid for pod={pod.id}")
             continue
@@ -595,6 +628,16 @@ def find_best_node_and_timeslot(
                     break
 
             if duration_feasible:
+                # Pre-compute packing slacks for tie-breaker
+                cpu_slack_sum = 0.0
+                ram_slack_sum = 0.0
+                for slot_offset in range(int(pod.duration)):
+                    slot_id = ts.id + slot_offset
+                    leftover_cpu_now = leftover_cpu[flv.id][slot_id]
+                    leftover_ram_now = leftover_ram[flv.id][slot_id]
+                    cpu_slack_sum += max(leftover_cpu_now - pod.cpuRequest, 0.0)
+                    ram_slack_sum += max(leftover_ram_now - pod.ramRequest, 0.0)
+
                 if operational_only:
                     from carbon_aware.utils import compute_emissions_operational_only
                     total_emi = compute_emissions_operational_only(flv, ts.id, pod)
@@ -613,10 +656,21 @@ def find_best_node_and_timeslot(
                         used_cpu_before_by_slot=used_cpu_before,
                         embodied_allocation_mode=embodied_allocation_mode,
                     )
-                if total_emi < minimal_emissions:
+                # Apply packing-aware tie-breaker when emissions are equal (within tiny epsilon)
+                if total_emi + 1e-9 < minimal_emissions:
                     minimal_emissions = total_emi
                     best_node = flv
                     best_slot = ts
+                    best_pack = (cpu_slack_sum, ram_slack_sum, flv.totalCpu, flv.totalRam)
+                elif abs(total_emi - minimal_emissions) <= 1e-9 and best_node is not None:
+                    # Prefer the tighter fit (smaller normalized slack sum)
+                    prior_cpu_slack, prior_ram_slack, prior_cpu_cap, prior_ram_cap = best_pack
+                    prior_norm = (prior_cpu_slack / max(prior_cpu_cap * max(int(pod.duration),1), 1e-6)) + (prior_ram_slack / max(prior_ram_cap * max(int(pod.duration),1), 1e-6))
+                    curr_norm = (cpu_slack_sum / max(flv.totalCpu * max(int(pod.duration),1), 1e-6)) + (ram_slack_sum / max(flv.totalRam * max(int(pod.duration),1), 1e-6))
+                    if curr_norm < prior_norm:
+                        best_node = flv
+                        best_slot = ts
+                        best_pack = (cpu_slack_sum, ram_slack_sum, flv.totalCpu, flv.totalRam)
                     logging.debug(
                         f"[find_best_node_and_timeslot] New best found for pod={pod.id}: "
                         f"node={best_node.id}, timeslot={best_slot.id}, emissions={minimal_emissions:.3f}"

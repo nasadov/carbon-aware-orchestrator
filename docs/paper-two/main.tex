@@ -399,6 +399,8 @@ C^{emb}_{ijk} = c^{emb}_j \times \text{U}_i \times \frac{\text{P}_i}{P_{tot}}
 
 where $c^{emb}_j = \frac{C^{emb}_j}{L_j}$ is the embodied carbon rate for node $j$, $C^{emb}_j$ is its total embodied carbon, $L_j$ is its expected lifetime, and $P_{tot}$ represents the total power consumption on the node.
 
+\textit{Notation (implementation-level).} We use the following short-hands in Algorithm~\ref{alg:heuristic}: (i) $\text{window}_i = \max\{0,\, \text{deadline}_i - U_i\}$; (ii) $a_k = \min_j \, \widehat{\text{ACI}}_{j,k}$; (iii) $\text{CPU}^{free}_j(k)$ and $\text{RAM}^{free}_j(k)$ denote free CPU/RAM on node $j$ at slot $k$ before placing pod $i$; (iv) $D^{cpu}_{jk} = \max\{0,\, \text{CPU}^{free}_j(k) - \overline{\text{CPU}}_i\}$ and $D^{ram}_{jk} = \max\{0,\, \text{RAM}^{free}_j(k) - \overline{\text{RAM}}_i\}$; (v) $\pi_{jk} = \dfrac{D^{cpu}_{jk}}{\text{CPU}_j\, U_i} + \dfrac{D^{ram}_{jk}}{\text{RAM}_j\, U_i}$ is a packing tie-breaker used only when emissions are within a small tolerance; (vi) $\epsilon>0$ is a small tolerance; (vii) $\text{cpu}_i$ and $\text{ram}_i$ denote the pod's CPU/RAM requests.
+
 \begin{algorithm}[htbp]
 \caption{Carbon-Aware Spatiotemporal Shifting Algorithm}
 \label{alg:heuristic}
@@ -414,10 +416,14 @@ where $c^{emb}_j = \frac{C^{emb}_j}{L_j}$ is the embodied carbon rate for node $
     \State Add pods to priority queue $Q$ by deadline
 \EndIf
 \State
+\State Compute $\text{window}_i \leftarrow \max\{0,\, \text{deadline}_i - \text{U}_i\}$ for all pods $i$
+\State Sort $Q$ by $(\text{window}_i \uparrow,\; \text{cpu}_i \downarrow,\; \text{ram}_i \downarrow,\; \text{U}_i \downarrow)$
 \If{hourly update OR new pods arrive}
     \For{each pod $i \in Q$}
-        \State $C^* \leftarrow \infty, j^* \leftarrow -1, k^* \leftarrow -1$
+        \State $C^* \leftarrow \infty, j^* \leftarrow -1, k^* \leftarrow -1, \pi^* \leftarrow \infty$
         
+        \State For each $k\in T$, set $a_k \leftarrow \min_j \, \widehat{\text{ACI}}_{jk}$
+        \State Sort $T$ by $a_k \, \uparrow$
         \For{each timeslot $k \in T$ where $\text{End}_k \leq \text{Deadline}_i$}
             \For{each node $j \in N$}
                 \If{resource constraints satisfied}
@@ -425,9 +431,12 @@ where $c^{emb}_j = \frac{C^{emb}_j}{L_j}$ is the embodied carbon rate for node $
                         \State $C^{op}_{ijk} \leftarrow \widehat{\text{ACI}}_{jk} \times \text{U}_i \times \text{P}_i$
                         \State $P_{tot} \leftarrow \sum_{m \in S_{jk}} \text{P}_m + \text{P}_i$
                         \State $C_{tot} \leftarrow C^{op}_{ijk} + c^{emb}_j \times \text{U}_i \times \frac{\text{P}_i}{P_{tot}}$
+                        \State $D^{cpu}_{jk} \leftarrow \max\{0,\, \text{CPU}_j^{free}(k) - \overline{\text{CPU}}_i\}$
+                        \State $D^{ram}_{jk} \leftarrow \max\{0,\, \text{RAM}_j^{free}(k) - \overline{\text{RAM}}_i\}$
+                        \State $\pi_{jk} \leftarrow \dfrac{D^{cpu}_{jk}}{\text{CPU}_j\, \text{U}_i} + \dfrac{D^{ram}_{jk}}{\text{RAM}_j\, \text{U}_i}$
                         
-                        \If{$C_{tot} < C^*$}
-                            \State $C^* \leftarrow C_{tot}, j^* \leftarrow j, k^* \leftarrow k$
+                        \If{$C_{tot} < C^*$ \textbf{or} ($|C_{tot}-C^*| \leq \epsilon$ \textbf{and} $\pi_{jk} < \pi^*$)}
+                            \State $C^* \leftarrow C_{tot}, j^* \leftarrow j, k^* \leftarrow k, \pi^* \leftarrow \pi_{jk}$
                         \EndIf
                     \EndIf
                 \EndIf

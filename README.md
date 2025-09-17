@@ -90,7 +90,11 @@ The heuristic algorithm provides reasonable placement decisions by:
 2. **Constraint Filtering**: Ensuring resource requirements and timing constraints are met
 3. **Greedy Selection**: Choosing the node with lowest carbon emissions for each pod
 
-This approach is fast and practical, but may not always find the global optimum.
+This approach is fast and practical, but may not always find the global optimum. In our implementation, we added three modest refinements to improve practicality without changing the core objective:
+
+- Tightest‑window‑first ordering, then larger pods (CPU/RAM/duration), to reduce early fragmentation and deadline misses.
+- Low‑carbon timeslot ordering, checking greener hours earlier when building candidates.
+- A lightweight packing‑aware tie‑breaker: when emissions are essentially equal, prefer placements that leave less normalized leftover CPU/RAM across the pod’s active hours. The atomic path also uses proportional embodied allocation by default for consistency with the non‑atomic path.
 
 ### MILP Global Optimizer
 
@@ -307,6 +311,21 @@ python3 pkg/carbon-aware/server-python/main.py \
 
 Visualization note:
 - `analysis/emissions_vs_pods_plot_generator.py` detects the mode from directory names and plots separate series (e.g., heuristic‑proportional vs heuristic‑uniform). Vanilla appears once as allocation‑agnostic baseline.
+
+### Sweep script modes
+
+The sweep helper now defaults to proportional embodied mode and supports flags to reproduce uniform or both modes:
+
+```bash
+# Default: proportional only
+bash scripts/sweep_podcounts_and_precompute.sh
+
+# Uniform only
+bash scripts/sweep_podcounts_and_precompute.sh --uniform
+
+# Both proportional and uniform (legacy behavior)
+bash scripts/sweep_podcounts_and_precompute.sh --both
+```
 
 ## Getting Started
 
