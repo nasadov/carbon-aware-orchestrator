@@ -17,6 +17,7 @@ import json
 import argparse
 import glob
 import re
+from collections import defaultdict
 from datetime import datetime
 
 # Add carbon-aware modules to path
@@ -38,45 +39,94 @@ logging.basicConfig(level=logging.INFO,
                   format='%(asctime)s - %(levelname)s - %(message)s',
                   datefmt='%Y-%m-%d %H:%M:%S')
 
-def find_latest_experiment(algorithm_name, experiments_dir="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments"):
+def find_latest_experiment(algorithm_name,
+                           experiments_dir="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments",
+                           pod_count=None):
     """Find the latest experiment directory for a given algorithm"""
-    if algorithm_name.lower() == "heuristic":
-        pattern = "heuristic_perf_log_session_*"
-    elif algorithm_name.lower() == "global-optimal":
-        pattern = "global-optimal_perf_log_session_*"
-    elif algorithm_name.lower() == "vanilla":
-        pattern = "vanilla_*"
+    algorithm = algorithm_name.lower()
+
+    if algorithm == "heuristic":
+        patterns = ["heuristic_perf_log_session_*", "heuristic_*"]
+    elif algorithm == "global-optimal":
+        patterns = ["global-optimal_perf_log_session_*", "global-optimal_*"]
+    elif algorithm == "vanilla":
+        patterns = ["vanilla_*"]
     else:
         logging.error(f"Unknown algorithm: {algorithm_name}")
         return None
-    
-    # Find all matching directories
-    search_pattern = os.path.join(experiments_dir, pattern)
-    matching_dirs = glob.glob(search_pattern)
-    
+
+    matching_dirs = []
+    for pattern in patterns:
+        search_pattern = os.path.join(experiments_dir, pattern)
+        pattern_dirs = [d for d in glob.glob(search_pattern) if os.path.isdir(d)]
+        matching_dirs.extend(pattern_dirs)
+
+    # Deduplicate while preserving order of discovery
+    matching_dirs = list(dict.fromkeys(matching_dirs))
+
     if not matching_dirs:
-        logging.error(f"No experiment directories found for {algorithm_name} with pattern: {search_pattern}")
+        logging.error(f"No experiment directories found for {algorithm_name} in {experiments_dir}")
         return None
-    
-    # Sort by directory name (which includes timestamp) and get the latest
+
+    if pod_count is not None:
+        logging.info(f"Filtering {algorithm_name} experiments to {pod_count} pods")
+        pod_pattern = re.compile(rf"_{int(pod_count)}pods(?:_|$)", re.IGNORECASE)
+        pod_dirs = [d for d in matching_dirs if pod_pattern.search(os.path.basename(d))]
+        if not pod_dirs:
+            logging.error(f"No {algorithm_name} experiments found for {pod_count} pods in {experiments_dir}")
+            return None
+        matching_dirs = pod_dirs
+
     latest_dir = max(matching_dirs, key=lambda x: os.path.basename(x))
     logging.info(f"Found latest {algorithm_name} experiment: {os.path.basename(latest_dir)}")
-    
+
     return latest_dir
 
-def get_experiment_files(algorithm_name, experiment_dir=None):
+def get_experiment_files(algorithm_name,
+                         experiment_dir=None,
+                         experiments_dir="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments",
+                         pod_count=None):
     """Get the performance and placement file paths for an algorithm"""
     if experiment_dir is None:
-        experiment_dir = find_latest_experiment(algorithm_name)
+        experiment_dir = find_latest_experiment(algorithm_name,
+                                               experiments_dir=experiments_dir,
+                                               pod_count=pod_count)
         if experiment_dir is None:
             return None, None
     
+    if experiment_dir is not None and not os.path.isdir(experiment_dir):
+        joined_path = os.path.join(experiments_dir, experiment_dir)
+        if os.path.isdir(joined_path):
+            experiment_dir = joined_path
+
     if algorithm_name.lower() == "heuristic":
         perf_file = os.path.join(experiment_dir, "heuristic_perf_session.csv")
-        placement_file = os.path.join(experiment_dir, "heuristic_placements_session.csv")
+        placement_file = None
+        placement_candidates = [
+            "heuristic_prop_placements_session.csv",
+            "heuristic_placements_session.csv"
+        ]
+        for candidate_name in placement_candidates:
+            candidate_path = os.path.join(experiment_dir, candidate_name)
+            if os.path.exists(candidate_path):
+                placement_file = candidate_path
+                break
+        if placement_file is None:
+            placement_file = os.path.join(experiment_dir, "heuristic_placements_session.csv")
     elif algorithm_name.lower() == "global-optimal":
         perf_file = os.path.join(experiment_dir, "global-optimal_perf_session.csv")
-        placement_file = os.path.join(experiment_dir, "global_optimal_placements_session.csv")
+        placement_file = None
+        placement_candidates = [
+            "global_optimal_prop_placements_session.csv",
+            "global_optimal_placements_session.csv"
+        ]
+        for candidate_name in placement_candidates:
+            candidate_path = os.path.join(experiment_dir, candidate_name)
+            if os.path.exists(candidate_path):
+                placement_file = candidate_path
+                break
+        if placement_file is None:
+            placement_file = os.path.join(experiment_dir, "global_optimal_placements_session.csv")
     elif algorithm_name.lower() == "vanilla":
         perf_file = None  # Vanilla doesn't have performance data
         # Look for vanilla placement file (try different naming patterns)
@@ -128,6 +178,9 @@ def analyze_carbon_emissions(df, algorithm_name, placement_csv_path=None):
     """Analyze carbon emissions from performance data"""
     if df is None or df.empty:
         logging.warning(f"No data available for {algorithm_name}")
+        if placement_csv_path and os.path.exists(placement_csv_path):
+            logging.info(f"Falling back to placement-based analysis for {algorithm_name}")
+            return analyze_placement_carbon_emissions(placement_csv_path, algorithm_name)
         return {}
     
     # Calculate total emissions across all runs (already in kg)
@@ -200,15 +253,15 @@ def analyze_carbon_emissions(df, algorithm_name, placement_csv_path=None):
     
     return stats
 
-def analyze_vanilla_carbon_emissions(placement_csv_path, algorithm_name="Vanilla"):
-    """Analyze carbon emissions from vanilla placement data using the same calculation as heuristic/global-optimal"""
+def analyze_placement_carbon_emissions(placement_csv_path, algorithm_name="Vanilla"):
+    """Analyze carbon emissions from placement data using the same calculation as heuristic/global-optimal"""
     if not os.path.exists(placement_csv_path):
-        logging.error(f"Vanilla placement file not found: {placement_csv_path}")
+        logging.error(f"{algorithm_name} placement file not found: {placement_csv_path}")
         return {}
-    
+
     try:
         placement_df = pd.read_csv(placement_csv_path)
-        logging.info(f"Loaded vanilla placement data: {len(placement_df)} pods")
+        logging.info(f"Loaded {algorithm_name} placement data: {len(placement_df)} pods")
         
         # Load real node specifications and carbon intensity data (same as other algorithms)
         nodes_file = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
@@ -217,13 +270,13 @@ def analyze_vanilla_carbon_emissions(placement_csv_path, algorithm_name="Vanilla
         # Load nodes data
         nodes_data = load_nodes_from_yaml(nodes_file)
         if not nodes_data:
-            logging.error("Failed to load nodes data for vanilla calculation")
+            logging.error(f"Failed to load nodes data for {algorithm_name} calculation")
             return {}
-        
+
         # Load carbon forecasts
         carbon_forecasts = load_carbon_forecasts(forecasts_file)
         if not carbon_forecasts:
-            logging.error("Failed to load carbon forecasts for vanilla calculation")
+            logging.error(f"Failed to load carbon forecasts for {algorithm_name} calculation")
             return {}
         
         # Attach forecasts to nodes
@@ -239,64 +292,24 @@ def analyze_vanilla_carbon_emissions(placement_csv_path, algorithm_name="Vanilla
         # Create node lookup dictionary
         nodes_dict = {node.id: node for node in nodes_data}
         
-        # Calculate total emissions using the same compute_emissions function
-        total_emissions = 0.0
-        valid_placements = 0
-        
-        for _, row in placement_df.iterrows():
-            pod_id = row['pod_id']
-            node_id = row['node_id']
-            start_slot = int(row['start_slot'])
-            duration_hours = float(row['duration'])
-            cpu_request = float(row['cpu_request'])
-            ram_request = float(row['ram_request'])
-            
-            # Check if node exists in our data
-            if node_id not in nodes_dict:
-                logging.warning(f"Node {node_id} not found in nodes data, skipping pod {pod_id}")
-                continue
-            
-            node = nodes_dict[node_id]
-            
-            # Create CarbonAwarePod object with the same structure as other algorithms
-            pod = CarbonAwarePod(
-                id=pod_id,
-                deadline_hours=duration_hours + start_slot,  # Simple deadline assumption
-                duration=duration_hours,
-                powerConsumption=0.0,  # Will be calculated by compute_emissions
-                cpuRequest=cpu_request,
-                ramRequest=ram_request,
-                storageRequest=100 * 1024 * 1024,  # Default 100MB
-                reference_time=datetime.now()  # Use current time as reference
-            )
-            
-            # Calculate emissions using the same function as heuristic/global-optimal
-            try:
-                pod_emissions = compute_emissions(node, start_slot, pod)
-                pod_emissions_kg = pod_emissions / 1000.0  # Convert from g to kg
-                total_emissions += pod_emissions_kg
-                valid_placements += 1
-                
-                logging.debug(f"Pod {pod_id} on {node_id} at slot {start_slot}: {pod_emissions_kg:.6f} kg CO2")
-                
-            except Exception as e:
-                logging.error(f"Error calculating emissions for pod {pod_id}: {e}")
-                continue
-        
+        # Calculate total and per-pod emissions using node-level allocation
+        total_emissions, pod_emissions = compute_emissions_from_placements(placement_df, nodes_dict)
+        valid_placements = len(pod_emissions)
+
         if valid_placements == 0:
-            logging.error("No valid placements found for vanilla calculation")
+            logging.error(f"No valid placements found for {algorithm_name} calculation")
             return {}
-        
+
         # Create stats structure compatible with performance-based analysis
         stats = {
             'algorithm': algorithm_name,
-            'total_calls': 1,  # Vanilla is static, consider as single "call"
+            'total_calls': 1,  # Treat placement-only analysis as single "call"
             'total_emissions_kg': total_emissions,
-            'avg_emissions_per_call': total_emissions,
-            'median_emissions_per_call': total_emissions,
-            'min_emissions_per_call': total_emissions,
-            'max_emissions_per_call': total_emissions,
-            'std_emissions_per_call': 0.0,  # No variation for static placement
+            'avg_emissions_per_call': np.mean(pod_emissions),
+            'median_emissions_per_call': np.median(pod_emissions),
+            'min_emissions_per_call': np.min(pod_emissions),
+            'max_emissions_per_call': np.max(pod_emissions),
+            'std_emissions_per_call': np.std(pod_emissions, ddof=1) if len(pod_emissions) > 1 else 0.0,
             'total_pods_placed': valid_placements,
             'avg_pods_per_call': valid_placements,
             'total_execution_time_ms': 0.0,  # No execution time for static placement
@@ -309,7 +322,7 @@ def analyze_vanilla_carbon_emissions(placement_csv_path, algorithm_name="Vanilla
             'min_execution_time_ms': 0.0,
             'pods_failed': len(placement_df) - valid_placements,
             'pods_processed': len(placement_df),
-            'emissions_per_pod_kg': total_emissions / valid_placements if valid_placements > 0 else 0,
+            'emissions_per_pod_kg': np.mean(pod_emissions),
             'emissions_per_second': 0.0  # Not applicable for static placement
         }
         
@@ -432,6 +445,71 @@ def load_carbon_forecasts(forecasts_file):
     except Exception as e:
         logging.error(f"Error loading carbon forecasts from {forecasts_file}: {e}")
         return {}
+
+
+def compute_emissions_from_placements(placement_df, nodes_dict):
+    """Compute total and per-pod emissions (kg CO₂) from placement data using node-level allocation"""
+
+    # Build occupancy map: (node_id, slot) -> list of (pod_index, cpu_request)
+    occupancy = defaultdict(list)
+    for idx, row in placement_df.iterrows():
+        node_id = row.get('node_id')
+        if node_id not in nodes_dict:
+            continue
+
+        try:
+            start_slot = int(float(row.get('start_slot', 0)))
+            duration_hours = max(0, int(float(row.get('duration', 0))))
+            cpu_request = float(row.get('cpu_request', 0.0))
+        except Exception:
+            continue
+
+        for offset in range(duration_hours):
+            slot = start_slot + offset
+            occupancy[(node_id, slot)].append((idx, cpu_request))
+
+    total_emissions_g = 0.0
+    pod_emissions_g = [0.0 for _ in range(len(placement_df))]
+
+    for (node_id, slot), pod_entries in occupancy.items():
+        node = nodes_dict.get(node_id)
+        if not node:
+            continue
+
+        total_cpu = getattr(node, 'totalCpu', 0.0) or 1e-6
+        cpu_used = sum(cpu for _, cpu in pod_entries)
+        usage_ratio = cpu_used / total_cpu
+        if usage_ratio <= 0:
+            continue
+
+        idle_watts = node.power.get('idle', 0.0)
+        dynamic_coeff_watts = node.power.get('max', 0.0) - node.power.get('active', 0.0)
+        carbon_intensity = node.forecast.get(slot, 200.0)
+
+        lifetime_hours = getattr(node, 'lifetime', 0.0) or 1e-6
+        embodied_per_hour_g = getattr(node, 'embodiedCarbon', 0.0) / lifetime_hours
+
+        idle_g = carbon_intensity * (idle_watts / 1000.0)
+        dynamic_g = carbon_intensity * (dynamic_coeff_watts * usage_ratio / 1000.0)
+        embodied_g = embodied_per_hour_g
+
+        slot_total_g = idle_g + dynamic_g + embodied_g
+        total_emissions_g += slot_total_g
+
+        share_denom = cpu_used if cpu_used > 0 else len(pod_entries)
+        for pod_idx, cpu in pod_entries:
+            if pod_idx >= len(pod_emissions_g):
+                continue
+            if share_denom > 0:
+                share = cpu / share_denom
+            else:
+                share = 1.0 / len(pod_entries) if pod_entries else 0.0
+            pod_emissions_g[pod_idx] += slot_total_g * share
+
+    total_emissions_kg = total_emissions_g / 1000.0
+    pod_emissions_kg = [g / 1000.0 for g in pod_emissions_g if g > 0]
+
+    return total_emissions_kg, pod_emissions_kg
 
 def create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats, output_dir):
     """Create comparison visualizations for three algorithms"""
@@ -776,6 +854,7 @@ def main():
     parser.add_argument("--experiments-dir", 
                        default="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments",
                        help="Base experiments directory")
+    parser.add_argument("--pod-count", type=int, help="Filter experiments to a specific pod count (e.g., 80)")
     
     args = parser.parse_args()
     
@@ -806,11 +885,16 @@ def main():
                 logging.info(f"  Placement: {placement_path}")
             else:
                 experiment_dir = args.heuristic_dir
-                perf_path, placement_path = get_experiment_files(algorithm, experiment_dir)
+                perf_path, placement_path = get_experiment_files(
+                    algorithm,
+                    experiment_dir,
+                    experiments_dir=args.experiments_dir,
+                    pod_count=args.pod_count
+                )
                 if perf_path is None or placement_path is None:
                     logging.error(f"Failed to find {algorithm} experiment files")
                     return
-        
+
         elif algorithm == "global-optimal":
             if args.global_optimal_perf and args.global_optimal_placement:
                 perf_path = args.global_optimal_perf
@@ -820,11 +904,16 @@ def main():
                 logging.info(f"  Placement: {placement_path}")
             else:
                 experiment_dir = args.global_optimal_dir
-                perf_path, placement_path = get_experiment_files(algorithm, experiment_dir)
+                perf_path, placement_path = get_experiment_files(
+                    algorithm,
+                    experiment_dir,
+                    experiments_dir=args.experiments_dir,
+                    pod_count=args.pod_count
+                )
                 if perf_path is None or placement_path is None:
                     logging.error(f"Failed to find {algorithm} experiment files")
                     return
-        
+
         elif algorithm == "vanilla":
             if args.vanilla_placement:
                 perf_path = None
@@ -832,7 +921,12 @@ def main():
                 logging.info(f"Using specified vanilla placement file: {placement_path}")
             else:
                 experiment_dir = args.vanilla_dir
-                perf_path, placement_path = get_experiment_files(algorithm, experiment_dir)
+                perf_path, placement_path = get_experiment_files(
+                    algorithm,
+                    experiment_dir,
+                    experiments_dir=args.experiments_dir,
+                    pod_count=args.pod_count
+                )
                 if placement_path is None:
                     logging.error(f"Failed to find {algorithm} experiment files")
                     return
@@ -862,7 +956,7 @@ def main():
     global_optimal_stats = analyze_carbon_emissions(global_optimal_df, "Global-Optimal", file_paths["global-optimal"]["placement"])
     
     # Analyze vanilla emissions from placement data only
-    vanilla_stats = analyze_vanilla_carbon_emissions(file_paths["vanilla"]["placement"], "Vanilla")
+    vanilla_stats = analyze_placement_carbon_emissions(file_paths["vanilla"]["placement"], "Vanilla")
     
     if not vanilla_stats:
         logging.error("Failed to analyze vanilla placement data")

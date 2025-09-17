@@ -353,6 +353,26 @@ def create_emissions_plot(selection: str = 'proportional'):
             stderr_per_pod[algo][pods] = float(np.std(arr, ddof=1) / np.sqrt(arr.size)) if arr.size > 1 else 0.0
     pod_counts_sorted = sorted(all_pods)
 
+    # Compute percentage improvement vs vanilla baseline (per-pod emissions)
+    improvement_vs_vanilla = defaultdict(dict)
+    vanilla_key = None
+    for key in mean_per_pod.keys():
+        if key == 'vanilla':
+            vanilla_key = key
+            break
+    if vanilla_key is None:
+        print("⚠️ Vanilla baseline missing; skipping percentage improvement plot.")
+    else:
+        for algo, by_pods in mean_per_pod.items():
+            if algo == vanilla_key:
+                continue
+            for pods, algo_mean in by_pods.items():
+                baseline = mean_per_pod[vanilla_key].get(pods)
+                if baseline is None or baseline <= 0:
+                    continue
+                improvement = (baseline - algo_mean) / baseline * 100.0
+                improvement_vs_vanilla[algo][pods] = improvement
+
     # Plot
     plt.figure(figsize=(12, 8))
 
@@ -479,6 +499,43 @@ def create_emissions_plot(selection: str = 'proportional'):
     pdf_path_perpod = os.path.join(output_dir, base_perpod + ".pdf")
     plt.savefig(pdf_path_perpod, bbox_inches='tight', facecolor='white')
     print(f"📊 PDF saved: {pdf_path_perpod}")
+
+    # Third plot: percentage improvement relative to vanilla baseline
+    if vanilla_key and improvement_vs_vanilla:
+        plt.figure(figsize=(12, 8))
+        compare_algos = [a for a in algos_order if a in improvement_vs_vanilla]
+        if not compare_algos:
+            print("⚠️ No comparison algorithms available for percentage improvement plot.")
+        else:
+            for algo in compare_algos:
+                x_vals, y_vals = [], []
+                for pods in pod_counts_sorted:
+                    if pods in improvement_vs_vanilla[algo]:
+                        x_vals.append(pods)
+                        y_vals.append(improvement_vs_vanilla[algo][pods])
+                if not x_vals:
+                    continue
+                color = colors.get(algo, '#1f77b4')
+                marker = markers.get(algo, 'o')
+                label = labels.get(algo, algo.replace('-', ' ').title())
+                plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9)
+
+            plt.axhline(0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
+            plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
+            plt.ylabel('Emissions Improvement vs Vanilla (%)', fontsize=14, fontweight='bold')
+            plt.title('Carbon Emissions Reduction vs Vanilla Baseline', fontsize=16, fontweight='bold', pad=20)
+            plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
+            if pod_counts_sorted:
+                plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+            plt.xticks(pod_counts_sorted, fontsize=12)
+            plt.yticks(fontsize=12)
+            plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
+            plt.tight_layout()
+
+            base_improvement = f"emissions_improvement_vs_pods_{timestamp}"
+            pdf_path_improvement = os.path.join(output_dir, base_improvement + ".pdf")
+            plt.savefig(pdf_path_improvement, bbox_inches='tight', facecolor='white')
+            print(f"📊 PDF saved: {pdf_path_improvement}")
 
 
 if __name__ == "__main__":
