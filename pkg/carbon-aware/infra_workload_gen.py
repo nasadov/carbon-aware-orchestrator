@@ -19,6 +19,7 @@ import os
 import yaml
 import random
 import numpy as np
+from pathlib import Path
 from typing import Dict, List, Any
 
 # ---------------------------------------------------------------------
@@ -195,6 +196,16 @@ DEFAULT_CONFIG = {
     }
 }
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+
+def _resolve_path(path_str: str, base_dir: Path) -> Path:
+    """Resolve relative paths against the provided base directory."""
+    candidate = Path(path_str)
+    if not candidate.is_absolute():
+        candidate = base_dir / candidate
+    return candidate.resolve()
+
 # ---------------------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------------------
@@ -242,7 +253,8 @@ def generate_nodes_file(config: Dict[str, Any]):
     Args:
         config: Dictionary with node generation configuration
     """
-    filename = config.get("filename", "nodes.yaml")
+    base_dir = Path(config.get("_base_dir", SCRIPT_DIR))
+    filename = str(_resolve_path(config.get("filename", "nodes.yaml"), base_dir))
     base_node_name = config.get("base_node_name", "kwok-node-0")
     random_seed = config.get("random_seed", 42)
     
@@ -505,8 +517,9 @@ def generate_timeslot_files(config: Dict[str, Any]):
     1. With custom scheduler ("fogatlas")
     2. With default Kubernetes scheduler (no schedulerName specified)
     """
-    output_dir = config.get("output_dir", "workloads")
-    vanilla_output_dir = config.get("vanilla_output_dir", output_dir + "-vanilla")
+    base_dir = Path(config.get("_base_dir", SCRIPT_DIR))
+    output_dir = _resolve_path(config.get("output_dir", "workloads"), base_dir)
+    vanilla_output_dir = _resolve_path(config.get("vanilla_output_dir", str(output_dir) + "-vanilla"), base_dir)
     num_timeslots = config.get("num_timeslots", 5)
     generation_strategy = config.get("generation_strategy", "poisson")
     poisson_lambda = config.get("poisson_lambda", 2)
@@ -806,7 +819,9 @@ def load_config(config_file="infra-workload-config.yaml"):
     Returns:
         Complete configuration dictionary with defaults applied
     """
-    config = DEFAULT_CONFIG.copy()
+    import copy
+
+    config = copy.deepcopy(DEFAULT_CONFIG)
     
     try:
         if os.path.exists(config_file):
@@ -832,6 +847,10 @@ def load_config(config_file="infra-workload-config.yaml"):
         print(f"Error loading configuration: {e}")
         print("Using default configuration")
         
+    config["_base_dir"] = Path(config_file).resolve().parent
+    config["nodes"]["_base_dir"] = config["_base_dir"]
+    config["workload"]["_base_dir"] = config["_base_dir"]
+
     return config
 
 # ---------------------------------------------------------------------

@@ -36,12 +36,12 @@
 
 % author names and affiliations
 \author{Nasir~Asadov,
-        Vlad~C.~Coroamă,
+        Vlad~C.~Coroam\u00e3,
         Marco~Zambianco,
         Silvio~Cretti,
         and~Matthias~Finkbeiner% <-this % stops a space
-\thanks{N. Asadov, V. C. Coroamă, and M. Finkbeiner are with the Department
-of Environmental Technology, Technische Universität Berlin, Strasse des 17. Juni 135, 10623 Berlin, Germany
+\thanks{N. Asadov, V. C. Coroam\u00e3, and M. Finkbeiner are with the Department
+of Environmental Technology, Technische Universit\u00e4t Berlin, Strasse des 17. Juni 135, 10623 Berlin, Germany
 (e-mail: nasir.asadov@tu-berlin.de; coroama@tu-berlin.de; matthias.finkbeiner@tu-berlin.de).}% <-this % stops a space
 \thanks{M. Zambianco and S. Cretti are with Fondazione Bruno Kessler,
 38123 Trento, Italy (e-mail: zambianco@fbk.eu; cretti@fbk.eu).}% <-this % stops a space
@@ -134,14 +134,14 @@ Our preliminary analysis reveals that embodied emissions constitute a substantia
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.45\textwidth]{figures/comparison/operational_only_density.png}
+\includegraphics[width=0.45\textwidth]{../../figures/Heuristic/OperOnly-vs-Comprehensive/Heuristic_20250727_135236/heuristic_placements_session_density.png}
 \caption{Scheduling decisions using operational emissions only. The algorithm optimizes placement based solely on electricity carbon intensity, leading to concentrated utilization patterns that may overlook hardware embodied carbon implications.}
 \label{fig:operational-only}
 \end{figure}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.45\textwidth]{figures/comparison/comprehensive_density.png}
+\includegraphics[width=0.45\textwidth]{../../figures/Heuristic/OperOnly-vs-Comprehensive/Heuristic_20250727_135623/heuristic_placements_session_density.png}
 \caption{Scheduling decisions incorporating both operational and embodied emissions. The comprehensive approach reveals markedly different placement patterns, demonstrating how embodied carbon considerations fundamentally alter the optimization landscape.}
 \label{fig:comprehensive}
 \end{figure}
@@ -572,13 +572,13 @@ Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At
 \end{figure}
 
 \subsection{Runtime Cost: Time Complexity}\label{subsec:time-complexity}
-Figure~\ref{fig:time-vs-pods} shows the precomputation/runtime cost of the heuristic as a function of pod count, measured using our precompute mode on the same hardware. Runtime grows with workload size but remains practical for the evaluated scales, supporting deployability. By contrast, MILP precomputation for the oracle is substantially heavier and sensitive to solver time limits (not plotted for clarity), which motivates the heuristic for online scheduling while using the oracle primarily as a benchmarking bound.
+Figure~\ref{fig:time-vs-pods} summarises the wall-clock runtime collected in our 12-timeslot sweep. We swept node counts $\{8,16,32,64\}$ against pod targets $\{50,100,200,400\}$, executing three replicates per configuration with distinct seeds. Points show the replicate median while the error bars denote $\pm1\sigma$. Runtime increases roughly linearly with pod volume yet remains below eight seconds even for the 400-pod, 64-node scenario, which confirms the heuristic's suitability for online scheduling. For comparison, MILP precomputation (not plotted) remains an order of magnitude slower and highly sensitive to solver limits, reinforcing its use as a benchmarking oracle rather than a production scheduler.
 % Use heuristic time complexity plots as representative runtime cost
-\newcommand{\TimeVsPods}{../../figures/TimeComplexity/heuristic_time_vs_pods_20250904_131546.pdf}
+\newcommand{\TimeVsPods}{\detokenize{../../experiments/time_complexity/sweep_20250918_113006/heuristic_time_complexity.pdf}}
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{\TimeVsPods}
-  \caption{Precompute/runtime cost vs. pod count for the heuristic scheduler. Error bars (if present) show variability across runs.}
+  \caption{Median precompute runtime versus pod count across three replicates per configuration. Error bars denote $\pm1\sigma$ for 12-timeslot synthetic workloads.}
   \label{fig:time-vs-pods}
 \end{figure}
 
@@ -589,6 +589,24 @@ Figure~\ref{fig:time-vs-pods} shows the precomputation/runtime cost of the heuri
 \section{Discussion}
 
 \subsection{Implications and Limitations}
+\paragraph*{Time Complexity in Big-O.}
+Let $P$ denote the number of pods, $F$ the number of nodes (flavours), and $T$ the number of horizon slots considered for scheduling. The heuristic orders pods, then for each pod evaluates feasible $(j,t)$ candidates (node $j$, start slot $t$) subject to resource and window constraints, computing an emissions cost per candidate before committing. With standard feasibility pruning, this yields an overall runtime of
+\begin{equation*}
+\mathcal{O}\big(P\,\log P\big) \; + \; \mathcal{O}\big(P\,F\,\bar{T}\,\bar{D}\big),
+\end{equation*}
+where $\bar{T}$ is the average number of start slots actually eligible for a pod (tight windows reduce this below $T$) and $\bar{D}$ is the average pod duration measured in slots (a constant factor for fixed duration sets). The first term comes from sorting pods by urgency/size; the second dominates and is effectively linear in $P$ for fixed $F,\bar{T},\bar{D}$. Memory usage is $\mathcal{O}(F\,T)$ for per-node, per-slot capacity tracking plus $\mathcal{O}(P)$ for pod metadata.
+
+\paragraph*{Empirical Calibration.}
+The sweep (12-slot horizon; $F\in\{8,16,32,64\}$; $P\in\{50,100,200,400\}$; 3 replicates) exhibits near-linear scaling in $P$ for fixed $F$, and roughly linear scaling in $F$ at a given $P$, consistent with the $\mathcal{O}(P\,F\,\bar{T})$ term. Even at the largest tested point (400 pods, 64 nodes), the median runtime remained under eight seconds on our test machine, which is compatible with online or nearline admission control.
+
+\paragraph*{Implications for Deployability.}
+Because the dominant term grows with the candidate set size, two design choices keep $\bar{T}$ small in practice: (i) realistic deadlines and durations reduce eligible starts; and (ii) resource feasibility checks prune many $(j,t)$ pairs early. When service-level objectives require stricter response times, the heuristic can restrict evaluation to the top-$k$ nodes per pod (by carbon intensity or empirical efficiency) without changing asymptotics, but further reducing the constant factor.
+
+\paragraph*{Limitations and When It Slows Down.}
+In the worst case (very lax deadlines, large $F$, long durations), $\bar{T}\!\to\!T$ and the constant factor grows; the heuristic remains polynomial but can approach $\mathcal{O}(P\,F\,T)$ work. Highly heterogeneous constraints (affinity/anti-affinity, per-class quotas) increase feasibility checks per candidate, and very fine-grained slotting increases $T$. Conversely, the MILP oracle has exponential worst-case behaviour but sometimes benefits from strong relaxations on small instances; we therefore position the oracle for benchmarking bounds and the heuristic for production scheduling.
+
+\paragraph*{Opportunities for Further Speedups.}
+Three engineering optimisations preserve decisions while reducing constants: (i) cache per-node cumulative carbon/energy curves to make emissions computation $\mathcal{O}(1)$ in duration; (ii) reuse leftover-capacity snapshots across adjacent pods with identical durations; and (iii) apply vectorised evaluations for the $(j,t)$ grid (e.g., batched cost computation on a node). These are orthogonal to algorithmic complexity and complement the carbon-efficiency gains demonstrated earlier.
 
 \subsection{Threats to Validity} \pk{internal, external, construct, conclusion, mitigations}
 
