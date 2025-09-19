@@ -32,7 +32,7 @@ import numpy as np
 import argparse
 
 
-EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments"
+EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
 NODES_YAML_PATH = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
 
 
@@ -362,31 +362,36 @@ def parse_utilizations_from_experiments(experiments_root: str, nodes_yaml_path: 
         print(f"⚠️ Experiments directory not found: {experiments_root}")
         return cpu_results, mem_results
 
-    for entry in os.listdir(experiments_root):
-        entry_path = os.path.join(experiments_root, entry)
-        if not os.path.isdir(entry_path):
-            continue
+    for current_root, dirnames, _ in os.walk(experiments_root):
+        dirnames.sort()
+        next_level = []
+        for entry in dirnames:
+            if entry.lower().startswith("archive"):
+                continue
+            entry_path = os.path.join(current_root, entry)
+            parsed = _parse_experiment_name(entry)
+            if not parsed:
+                next_level.append(entry)
+                continue
 
-        parsed = _parse_experiment_name(entry)
-        if not parsed:
-            continue
-        algo_key, pods_count = parsed
+            algo_key, pods_count = parsed
 
-        # Filter by selection (vanilla always included)
-        if not _should_include_algo(algo_key, selection):
-            continue
+            if not _should_include_algo(algo_key, selection):
+                continue
 
-        csv_path = _find_placement_csv(entry_path, algo_key)
-        if not csv_path:
-            continue
+            csv_path = _find_placement_csv(entry_path, algo_key)
+            if not csv_path:
+                continue
 
-        cpu_util = _compute_run_avg_cpu_util_percent(csv_path, total_cores)
-        if cpu_util is not None:
-            cpu_results[algo_key][pods_count].append(cpu_util)
+            cpu_util = _compute_run_avg_cpu_util_percent(csv_path, total_cores)
+            if cpu_util is not None:
+                cpu_results[algo_key][pods_count].append(cpu_util)
 
-        mem_util = _compute_run_avg_mem_util_percent(csv_path, total_bytes)
-        if mem_util is not None:
-            mem_results[algo_key][pods_count].append(mem_util)
+            mem_util = _compute_run_avg_mem_util_percent(csv_path, total_bytes)
+            if mem_util is not None:
+                mem_results[algo_key][pods_count].append(mem_util)
+
+        dirnames[:] = next_level
 
     return cpu_results, mem_results
 
@@ -563,5 +568,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
     create_utilization_plots(selection)
-
 

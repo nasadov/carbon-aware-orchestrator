@@ -30,7 +30,7 @@ import glob
 from collections import defaultdict
 import argparse
 
-EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments"
+EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
 OUTPUT_DIR = "/root/carbon-aware-orchestrator/figures/TimeComplexity"
 
 
@@ -39,7 +39,10 @@ def _iter_timing_csv_paths(experiments_root: str, latest_only: bool = True, algo
 
     If latest_only is True, return only the most recent file by mtime.
     """
-    candidates = [p for p in glob.glob(os.path.join(experiments_root, "precompute_timing_*.csv")) if os.path.isfile(p)]
+    candidates = [
+        p for p in glob.glob(os.path.join(experiments_root, "**", "precompute_timing_*.csv"), recursive=True)
+        if os.path.isfile(p)
+    ]
     # Exclude vanilla timing files unless explicitly requested
     if algorithm_filter in ("heuristic", "global-optimal"):
         candidates = [p for p in candidates if "precompute_timing_vanilla_" not in os.path.basename(p)]
@@ -302,5 +305,4 @@ if __name__ == "__main__":
     # Combined overlay plot across all algorithms
     alg_to_by_pods = _collect_all_algorithms_time_data(latest_only=latest_only)
     _plot_combined_time_vs_pods(alg_to_by_pods, cap_seconds=args.cap_seconds)
-
 

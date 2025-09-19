@@ -36,7 +36,7 @@ except Exception as e:
     print(f"⚠️ Warning: could not import carbon_aware modules: {e}")
     CarbonAwareFlavour = None
 
-EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments"
+EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
 NODES_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
 FORECASTS_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/all_forecasts.json"
 
@@ -147,19 +147,25 @@ def _attach_forecasts(nodes, forecasts):
 
 def _discover_experiments(experiments_root: str):
     """Yield (algo, pods, dirpath) for each experiment directory."""
-    for entry in os.listdir(experiments_root):
-        dir_path = os.path.join(experiments_root, entry)
-        if not os.path.isdir(dir_path):
-            continue
-        m = re.match(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_", entry)
-        if not m:
-            continue
-        algo = m.group('algo')
-        pods = int(m.group('pods'))
-        mode = m.group('mode') or ''
-        if mode:
-            algo = f"{algo}-{mode}"
-        yield algo, pods, dir_path
+    pattern = re.compile(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_")
+    for current_root, dirnames, _ in os.walk(experiments_root):
+        dirnames.sort()
+        next_level = []
+        for entry in dirnames:
+            if entry.lower().startswith("archive"):
+                continue
+            dir_path = os.path.join(current_root, entry)
+            m = pattern.match(entry)
+            if m:
+                algo = m.group('algo')
+                pods = int(m.group('pods'))
+                mode = m.group('mode') or ''
+                if mode:
+                    algo = f"{algo}-{mode}"
+                yield algo, pods, dir_path
+            else:
+                next_level.append(entry)
+        dirnames[:] = next_level
 
 
 def _find_placement_csv(algo: str, dir_path: str):
@@ -490,5 +496,4 @@ if __name__ == "__main__":
     print("🚀 COMMON-PODS EMISSIONS VS PODS PLOT GENERATOR")
     print("=" * 50)
     create_common_pods_emissions_plot()
-
 

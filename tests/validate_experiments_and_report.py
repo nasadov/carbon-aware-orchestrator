@@ -33,12 +33,20 @@ from placement_constraint_validator import (  # type: ignore
 def discover_experiments(root: str) -> List[str]:
     if not os.path.isdir(root):
         return []
-    out = []
-    for name in sorted(os.listdir(root)):
-        p = os.path.join(root, name)
-        if os.path.isdir(p) and not name.lower().startswith("archive"):
-            out.append(p)
-    return out
+    out: List[str] = []
+    for current_root, dirnames, _ in os.walk(root):
+        dirnames.sort()
+        next_level = []
+        for name in dirnames:
+            if name.lower().startswith("archive"):
+                continue
+            path = os.path.join(current_root, name)
+            if detect_algorithm(path):
+                out.append(path)
+            else:
+                next_level.append(name)
+        dirnames[:] = next_level
+    return sorted(out)
 
 
 def detect_algorithm(exp_dir: str) -> Optional[str]:
@@ -114,7 +122,7 @@ def validate_one(csv_path: str, nodes_file: str, workloads_dir: str) -> Tuple[Di
 
 def main():
     ap = argparse.ArgumentParser(description="Validate all experiments and write timestamped report")
-    ap.add_argument("--experiments-dir", default="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments")
+    ap.add_argument("--experiments-dir", default="/root/carbon-aware-orchestrator/experiments")
     ap.add_argument("--nodes-file", default="/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml")
     ap.add_argument("--workloads-dir", default="/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads")
     ap.add_argument("--workloads-vanilla-dir", default="/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads-vanilla")
@@ -214,5 +222,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 

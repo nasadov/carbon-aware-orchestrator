@@ -17,6 +17,7 @@ GENERATOR="$REPO_ROOT/pkg/carbon-aware/infra_workload_gen.py"
 SERVER_MAIN="$REPO_ROOT/pkg/carbon-aware/server-python/main.py"
 SERVER_DIR="$REPO_ROOT/pkg/carbon-aware/server-python"
 FORECASTS_FILE="$SERVER_DIR/all_forecasts.json"
+EXPERIMENTS_ROOT="$REPO_ROOT/experiments/precompute_sweeps"
 
 # Embodied mode selection (default: proportional). Flags: --proportional | --uniform | --both
 MODES=("proportional")
@@ -49,7 +50,17 @@ done
 # Run identifiers and timing
 RUN_START_ID=$(date +%Y%m%d_%H%M%S)
 RUN_ID="$RUN_START_ID"
-SUMMARY_CSV="$SERVER_DIR/experiments/precompute_timing_${RUN_START_ID}.csv"
+RUN_DIR="$EXPERIMENTS_ROOT/sweep_${RUN_ID}"
+if [[ -e "$RUN_DIR" ]]; then
+  suffix=1
+  while [[ -e "$EXPERIMENTS_ROOT/sweep_${RUN_START_ID}_${suffix}" ]]; do
+    ((suffix++))
+  done
+  RUN_ID="${RUN_START_ID}_${suffix}"
+  RUN_DIR="$EXPERIMENTS_ROOT/sweep_${RUN_ID}"
+fi
+mkdir -p "$RUN_DIR"
+SUMMARY_CSV="$RUN_DIR/precompute_timing_${RUN_ID}.csv"
 
 # Save original config to restore after sweep
 ORIG_TMP=$(mktemp)
@@ -61,7 +72,7 @@ cleanup() {
   if [[ -f "$SUMMARY_CSV" ]]; then
     local run_end_hms
     run_end_hms=$(date +%H%M%S)
-    mv "$SUMMARY_CSV" "$SERVER_DIR/experiments/precompute_timing_${RUN_START_ID}-${run_end_hms}.csv" || true
+    mv "$SUMMARY_CSV" "$RUN_DIR/precompute_timing_${RUN_ID}-${run_end_hms}.csv" || true
   fi
 }
 trap cleanup EXIT
@@ -177,7 +188,7 @@ for P in "${POD_VALUES[@]}"; do
       --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
       --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
       --forecasts-file "$FORECASTS_FILE" \
-      --experiment-dir "$SERVER_DIR/experiments" \
+      --experiment-dir "$RUN_DIR" \
       --embodied-mode "$MODE" \
       --loglevel INFO | sed -u "s/.*/[heuristic-$TAG] &/"
     end_h=$(date +%s%N)
@@ -204,7 +215,7 @@ PY
       --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
       --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
       --forecasts-file "$FORECASTS_FILE" \
-      --experiment-dir "$SERVER_DIR/experiments" \
+      --experiment-dir "$RUN_DIR" \
       --embodied-mode "$MODE" \
       --loglevel INFO | sed -u "s/.*/[global-$TAG] &/"
     end_g=$(date +%s%N)
@@ -228,7 +239,7 @@ PY
     --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
     --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
     --forecasts-file "$FORECASTS_FILE" \
-    --experiment-dir "$SERVER_DIR/experiments" \
+    --experiment-dir "$RUN_DIR" \
     --loglevel INFO | sed -u 's/.*/[vanilla] &/'
   end_v=$(date +%s%N)
   end_iso_v="$(date +%Y-%m-%dT%H:%M:%S)"
@@ -242,7 +253,7 @@ PY
 
   # Tag latest per-algo with pods.txt
   for algo in heuristic global-optimal vanilla; do
-    dir=$(ls -dt "$SERVER_DIR/experiments/${algo}_*pods_*" 2>/dev/null | head -n 1 || true)
+    dir=$(ls -dt "$RUN_DIR/${algo}_*pods_*" 2>/dev/null | head -n 1 || true)
     if [[ -n "$dir" ]]; then
       echo "pods=$P" > "$dir/pods.txt"
     fi
@@ -250,6 +261,5 @@ PY
 
 done
 
-echo "Sweep complete. Results CSV: $(basename "$SUMMARY_CSV") in $SERVER_DIR/experiments/ (renamed with end time on exit)"
-
+echo "Sweep complete. Results stored under $RUN_DIR (timing CSV renamed with end timestamp on exit)"
 

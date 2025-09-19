@@ -22,6 +22,9 @@ import argparse
 from collections import defaultdict
 
 
+EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
+
+
 def _read_pods_txt_if_present(session_dir: str, pods_count_from_dir: int) -> int | None:
     pods_marker = os.path.join(session_dir, 'pods.txt')
     if os.path.exists(pods_marker):
@@ -67,83 +70,82 @@ def _parse_success_rates_from_experiments(experiments_root: str, selection: str 
         return results
 
     # Expect folders like: "global-optimal_181pods_20250822_100133" or "heuristic_86pods_..."
-    for entry in os.listdir(experiments_root):
-        entry_path = os.path.join(experiments_root, entry)
-        if not os.path.isdir(entry_path):
-            continue
+    for current_root, dirnames, _ in os.walk(experiments_root):
+        dirnames.sort()
+        next_level = []
+        for entry in dirnames:
+            if entry.lower().startswith('archive'):
+                continue
+            entry_path = os.path.join(current_root, entry)
 
-        # Extract algorithm and pod count from the directory name
-        # Pattern: ^<algo>(?:_op)?_<pods>pods_
-        m = re.match(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_", entry)
-        if not m:
-            # Skip directories that don't encode pod count (e.g., experiment_session)
-            continue
+            # Extract algorithm and pod count from the directory name
+            m = re.match(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_", entry)
+            if not m:
+                next_level.append(entry)
+                continue
 
-        algo_key = m.group('algo')
-        mode = m.group('mode') or ''
-        if mode:
-            algo_key = f"{algo_key}-{mode}"
-        # Filter by selection (vanilla always included)
-        if not _should_include_algo(algo_key, selection):
-            continue
-        try:
-            pods_count = int(m.group('pods'))
-        except Exception:
-            continue
-
-        # Compute success rate directly from placement CSVs to avoid stale summaries
-        placement_csv = None
-        candidate_names = []
-        if algo_key.startswith('global-optimal'):
-            candidate_names = ['global_optimal_placements_session.csv']
-        elif algo_key.startswith('heuristic'):
-            candidate_names = [
-                'heuristic_prop_placements_session.csv',
-                'heuristic_uniform_placements_session.csv',
-                'heuristic_placements_session.csv',
-            ]
-        elif algo_key == 'vanilla':
-            # Prefer bind-based placement CSVs by default (our bind generator writes vanilla_placement_session.csv)
-            candidate_names = [
-                'vanilla_placement_session.csv',
-                'vanilla_placement_session_bind.csv',
-                'vanilla_placement_session_presence.csv',
-                'vanilla_placement_session_fixed.csv',
-                'vanilla_placements.csv',
-            ]
-        else:
-            candidate_names = [
-                'global_optimal_placements_session.csv',
-                'heuristic_placements_session.csv',
-                'vanilla_placement_session_fixed.csv',
-                'vanilla_placement_session.csv',
-                'vanilla_placements.csv',
-            ]
-
-        for name in candidate_names:
-            p = os.path.join(entry_path, name)
-            if os.path.exists(p):
-                placement_csv = p
-                break
-
-        if placement_csv:
+            algo_key = m.group('algo')
+            mode = m.group('mode') or ''
+            if mode:
+                algo_key = f"{algo_key}-{mode}"
+            if not _should_include_algo(algo_key, selection):
+                continue
             try:
-                with open(placement_csv, 'r') as fh:
-                    reader = csv.DictReader(fh)
-                    unique_pods = set()
-                    for row in reader:
-                        pid = row.get('pod_id')
-                        if pid:
-                            unique_pods.add(pid)
-                placed = len(unique_pods)
-                # Derive total pods: prefer pods.txt only if it matches the folder pods_count
-                total_from_marker = _read_pods_txt_if_present(entry_path, pods_count)
-                total = total_from_marker if total_from_marker is not None else pods_count
-                if total > 0:
-                    results[algo_key][pods_count].append(100.0 * placed / total)
+                pods_count = int(m.group('pods'))
             except Exception:
-                # If CSV parsing fails, skip
-                pass
+                continue
+
+            placement_csv = None
+            candidate_names = []
+            if algo_key.startswith('global-optimal'):
+                candidate_names = ['global_optimal_placements_session.csv']
+            elif algo_key.startswith('heuristic'):
+                candidate_names = [
+                    'heuristic_prop_placements_session.csv',
+                    'heuristic_uniform_placements_session.csv',
+                    'heuristic_placements_session.csv',
+                ]
+            elif algo_key == 'vanilla':
+                candidate_names = [
+                    'vanilla_placement_session.csv',
+                    'vanilla_placement_session_bind.csv',
+                    'vanilla_placement_session_presence.csv',
+                    'vanilla_placement_session_fixed.csv',
+                    'vanilla_placements.csv',
+                ]
+            else:
+                candidate_names = [
+                    'global_optimal_placements_session.csv',
+                    'heuristic_placements_session.csv',
+                    'vanilla_placement_session_fixed.csv',
+                    'vanilla_placement_session.csv',
+                    'vanilla_placements.csv',
+                ]
+
+            for name in candidate_names:
+                p = os.path.join(entry_path, name)
+                if os.path.exists(p):
+                    placement_csv = p
+                    break
+
+            if placement_csv:
+                try:
+                    with open(placement_csv, 'r') as fh:
+                        reader = csv.DictReader(fh)
+                        unique_pods = set()
+                        for row in reader:
+                            pid = row.get('pod_id')
+                            if pid:
+                                unique_pods.add(pid)
+                    placed = len(unique_pods)
+                    total_from_marker = _read_pods_txt_if_present(entry_path, pods_count)
+                    total = total_from_marker if total_from_marker is not None else pods_count
+                    if total > 0:
+                        results[algo_key][pods_count].append(100.0 * placed / total)
+                except Exception:
+                    pass
+
+        dirnames[:] = next_level
 
     return results
 
@@ -194,10 +196,9 @@ def _aggregate_results(results):
 def create_success_rate_plot(selection: str = 'proportional'):
     """Generate success rate comparison plot by parsing experiment outputs."""
     # Parse dynamic results
-    experiments_root = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments"
-    parsed = _parse_success_rates_from_experiments(experiments_root, selection)
+    parsed = _parse_success_rates_from_experiments(EXPERIMENTS_ROOT, selection)
     if not parsed:
-        print(f"❌ No experiment results found in: {experiments_root}")
+        print(f"❌ No experiment results found in: {EXPERIMENTS_ROOT}")
         return
 
     algos_order, pod_counts_sorted, mean_rates, std_errs = _aggregate_results(parsed)

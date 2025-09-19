@@ -182,11 +182,11 @@ python3 pkg/carbon-aware/server-python/main.py \
   --workloads-dir pkg/carbon-aware/workloads \
   --nodes-file pkg/carbon-aware/nodes.yaml \
   --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
-  --experiment-dir pkg/carbon-aware/server-python/experiments \
+  --experiment-dir experiments/manual_precompute \
   --loglevel INFO
 ```
 
-Outputs: a timestamped directory under `experiments/vanilla_*` with `vanilla_placements_session.csv`.
+Outputs: a timestamped directory under `experiments/manual_precompute/vanilla_*` with `vanilla_placements_session.csv`.
 
 Notes and caveats:
 
@@ -287,7 +287,7 @@ python3 pkg/carbon-aware/server-python/main.py \
   --workloads-dir pkg/carbon-aware/workloads \
   --nodes-file pkg/carbon-aware/nodes.yaml \
   --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
-  --experiment-dir pkg/carbon-aware/server-python/experiments \
+  --experiment-dir experiments/manual_precompute \
   --embodied-mode proportional --loglevel INFO
 
 # Heuristic, uniform
@@ -296,7 +296,7 @@ python3 pkg/carbon-aware/server-python/main.py \
   --workloads-dir pkg/carbon-aware/workloads \
   --nodes-file pkg/carbon-aware/nodes.yaml \
   --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
-  --experiment-dir pkg/carbon-aware/server-python/experiments \
+  --experiment-dir experiments/manual_precompute \
   --embodied-mode uniform --loglevel INFO
 
 # Global-optimal (proportional shown here)
@@ -305,7 +305,7 @@ python3 pkg/carbon-aware/server-python/main.py \
   --workloads-dir pkg/carbon-aware/workloads \
   --nodes-file pkg/carbon-aware/nodes.yaml \
   --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
-  --experiment-dir pkg/carbon-aware/server-python/experiments \
+  --experiment-dir experiments/manual_precompute \
   --embodied-mode proportional --loglevel INFO
 ```
 
@@ -480,7 +480,7 @@ To verify that the earliest timeslot constraint is properly enforced in placemen
 python3 tests/check_timeslot_constraints.py /path/to/your/placements_session.csv
 
 # Example: Check the latest heuristic experiment
-python3 tests/check_timeslot_constraints.py pkg/carbon-aware/server-python/experiments/heuristic_perf_log_session_YYYYMMDD_HHMMSS/heuristic_placements_session.csv
+python3 tests/check_timeslot_constraints.py experiments/manual_precompute/heuristic_proportional_YYYYMMDD_HHMMSS/heuristic_placements_session.csv
 ```
 
 The script will analyze the placements and report any constraint violations.
@@ -491,7 +491,7 @@ We also provide a batch validator that scans all experiment folders and writes a
 
 ```bash
 python3 tests/validate_experiments_and_report.py \
-  --experiments-dir pkg/carbon-aware/server-python/experiments \
+  --experiments-dir experiments \
   --nodes-file pkg/carbon-aware/nodes.yaml \
   --workloads-dir pkg/carbon-aware/workloads \
   --workloads-vanilla-dir pkg/carbon-aware/workloads-vanilla
@@ -595,7 +595,7 @@ This script (`analysis/visualization.py`) generates various plots related to alg
 python3 analysis/schedule_visualization.py /path/to/your/placements_session.csv
 
 # Example: Visualize the latest heuristic experiment
-python3 analysis/schedule_visualization.py pkg/carbon-aware/server-python/experiments/heuristic_perf_log_session_YYYYMMDD_HHMMSS/heuristic_placements_session.csv
+python3 analysis/schedule_visualization.py experiments/manual_precompute/heuristic_proportional_YYYYMMDD_HHMMSS/heuristic_placements_session.csv
 
 # Generate both individual and density plots
 python3 analysis/schedule_visualization.py /path/to/placements.csv --mode all
@@ -636,7 +636,7 @@ Visualization outputs are saved to the `figures/` directory in a timestamped fol
   # Subset of algorithms
   python analysis/time_complexity_plot_generator.py --all --algorithms heuristic global-optimal
   ```
-  Consumes precompute timing CSVs from `pkg/carbon-aware/server-python/experiments/` named like `precompute_timing_<START>-<HHMMSS>.csv`; outputs saved under `figures/TimeComplexity/`.
+  Consumes precompute timing CSVs from `experiments/**/precompute_timing_<RUN>-<HHMMSS>.csv`; outputs saved under `figures/TimeComplexity/`.
   Also produces a combined overlay plot `time_vs_pods_all_algorithms_<timestamp>.pdf` comparing heuristic, global-optimal, and vanilla in one figure.
 
   To generate fresh timing data for all three algorithms across pod counts (20..200 step 20):

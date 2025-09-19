@@ -131,8 +131,21 @@ def main():
     
     # Paths
     workloads_dir = '/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads-vanilla'
-    csv_path = '/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/vanilla_placement_session.csv'
-    output_path = '/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments/vanilla_placement_session_fixed.csv'
+    experiments_root = Path('/root/carbon-aware-orchestrator/experiments')
+
+    csv_path = experiments_root / 'vanilla_placement_session.csv'
+    output_path = experiments_root / 'vanilla_placement_session_fixed.csv'
+
+    if not csv_path.exists():
+        candidates = sorted(
+            experiments_root.glob('**/vanilla_placement_session.csv'),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+        if candidates:
+            csv_path = candidates[0]
+            output_path = csv_path.with_name('vanilla_placement_session_fixed.csv')
+
     
     print(f"Workloads directory: {workloads_dir}")
     print(f"Input CSV: {csv_path}")
@@ -145,9 +158,9 @@ def main():
     if not os.path.exists(csv_path):
         print(f"ERROR: Input CSV not found: {csv_path}")
         return
-    
+
     # Fix the start slot values
-    df_fixed = fix_csv_start_slots(csv_path, workloads_dir, output_path)
+    df_fixed = fix_csv_start_slots(str(csv_path), workloads_dir, str(output_path))
     
     # Show some statistics
     print(f"\nStart slot distribution after fixing:")

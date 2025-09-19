@@ -5,7 +5,7 @@ Carbon Emissions vs Pod Count Plot Generator
 Generates a plot with three curves (Vanilla, Heuristic, Global-Optimal),
 with x-axis as number of pods in the experiment and y-axis as total carbon
 emissions (kg CO2e) per experiment. Data is parsed dynamically from
-/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments.
+/root/carbon-aware-orchestrator/experiments and its subdirectories.
 
 Default behavior is to plot proportional embodied allocation only.
 Flags:
@@ -46,7 +46,7 @@ except Exception as e:
     CarbonAwarePod = None
     compute_emissions = None
 
-EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments"
+EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
 NODES_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
 FORECASTS_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/all_forecasts.json"
 
@@ -236,19 +236,25 @@ def _compute_total_emissions_for_csv(algo: str, csv_path: str, nodes_dict: dict)
 
 def _discover_experiments(experiments_root: str):
     """Yield (algo, pods, dirpath) for each experiment directory."""
-    for entry in os.listdir(experiments_root):
-        dir_path = os.path.join(experiments_root, entry)
-        if not os.path.isdir(dir_path):
-            continue
-        m = re.match(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_", entry)
-        if not m:
-            continue
-        algo = m.group('algo')
-        pods = int(m.group('pods'))
-        mode = m.group('mode') or ''
-        if mode:
-            algo = f"{algo}-{mode}"
-        yield algo, pods, dir_path
+    pattern = re.compile(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_")
+    for current_root, dirnames, _ in os.walk(experiments_root):
+        dirnames.sort()
+        next_level = []
+        for entry in dirnames:
+            if entry.lower().startswith("archive"):
+                continue
+            dir_path = os.path.join(current_root, entry)
+            m = pattern.match(entry)
+            if m:
+                algo = m.group('algo')
+                pods = int(m.group('pods'))
+                mode = m.group('mode') or ''
+                if mode:
+                    algo = f"{algo}-{mode}"
+                yield algo, pods, dir_path
+            else:
+                next_level.append(entry)
+        dirnames[:] = next_level
 
 
 def _should_include_algo(algo: str, selection: str) -> bool:

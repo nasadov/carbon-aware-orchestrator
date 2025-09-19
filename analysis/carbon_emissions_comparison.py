@@ -40,7 +40,7 @@ logging.basicConfig(level=logging.INFO,
                   datefmt='%Y-%m-%d %H:%M:%S')
 
 def find_latest_experiment(algorithm_name,
-                           experiments_dir="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments",
+                           experiments_dir="/root/carbon-aware-orchestrator/experiments",
                            pod_count=None):
     """Find the latest experiment directory for a given algorithm"""
     algorithm = algorithm_name.lower()
@@ -57,8 +57,8 @@ def find_latest_experiment(algorithm_name,
 
     matching_dirs = []
     for pattern in patterns:
-        search_pattern = os.path.join(experiments_dir, pattern)
-        pattern_dirs = [d for d in glob.glob(search_pattern) if os.path.isdir(d)]
+        search_pattern = os.path.join(experiments_dir, "**", pattern)
+        pattern_dirs = [d for d in glob.glob(search_pattern, recursive=True) if os.path.isdir(d)]
         matching_dirs.extend(pattern_dirs)
 
     # Deduplicate while preserving order of discovery
@@ -84,7 +84,7 @@ def find_latest_experiment(algorithm_name,
 
 def get_experiment_files(algorithm_name,
                          experiment_dir=None,
-                         experiments_dir="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments",
+                         experiments_dir="/root/carbon-aware-orchestrator/experiments",
                          pod_count=None):
     """Get the performance and placement file paths for an algorithm"""
     if experiment_dir is None:
@@ -852,7 +852,7 @@ def main():
     parser.add_argument("--vanilla-placement", help="Specific vanilla placement CSV file")
     parser.add_argument("--output-dir", help="Output directory for results (default: auto-generated)")
     parser.add_argument("--experiments-dir", 
-                       default="/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/experiments",
+                       default="/root/carbon-aware-orchestrator/experiments",
                        help="Base experiments directory")
     parser.add_argument("--pod-count", type=int, help="Filter experiments to a specific pod count (e.g., 80)")
     
