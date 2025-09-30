@@ -10,10 +10,20 @@ optimization:
   # Ignored when use_lexicographic is true.
   unplaced_penalty: 10000
   
+  # Emissions objective weighting (tune to prioritize carbon reduction)
+  emissions:
+    # Scale on per-pod dynamic emissions terms (default 1.0). Increase to emphasize dynamic carbon.
+    dynamic_weight: 1.8
+    # Scale on per-(node,slot) activation (idle + embodied) terms (default 1.0).
+    activation_weight: 2.2
+    # In dynamic-only fallback (when activations are dropped), add a surrogate penalty per chosen
+    # placement proportional to that slot's idle+embodied to reduce scattering (default 0.0 = off).
+    fallback_surrogate_activation_weight: 0.25
+  
   # Solver configuration
   solver:
     name: cp_sat
-    time_limit: 60  # seconds per phase for lexicographic, total for standard
+    time_limit: 120  # seconds per phase for lexicographic, total for standard
     gap_tolerance: 0.05
     threads: 8
 

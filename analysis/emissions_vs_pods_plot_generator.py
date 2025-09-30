@@ -235,7 +235,7 @@ def _compute_total_emissions_for_csv(algo: str, csv_path: str, nodes_dict: dict)
 
 
 def _discover_experiments(experiments_root: str):
-    """Yield (algo, pods, dirpath) for each experiment directory."""
+    """Yield (algo, pods, dirpath, mtime) for each experiment directory."""
     pattern = re.compile(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_")
     for current_root, dirnames, _ in os.walk(experiments_root):
         dirnames.sort()
@@ -251,7 +251,11 @@ def _discover_experiments(experiments_root: str):
                 mode = m.group('mode') or ''
                 if mode:
                     algo = f"{algo}-{mode}"
-                yield algo, pods, dir_path
+                try:
+                    mtime = os.path.getmtime(dir_path)
+                except Exception:
+                    mtime = 0.0
+                yield algo, pods, dir_path, mtime
             else:
                 next_level.append(entry)
         dirnames[:] = next_level
@@ -306,7 +310,7 @@ def _find_placement_csv(algo: str, dir_path: str):
     return None
 
 
-def create_emissions_plot(selection: str = 'proportional'):
+def create_emissions_plot(selection: str = 'proportional', include_all: bool = False):
     # Prepare nodes and forecasts for computed emissions
     nodes = _load_nodes_from_yaml(NODES_FILE)
     forecasts = _load_carbon_forecasts(FORECASTS_FILE)
@@ -321,9 +325,22 @@ def create_emissions_plot(selection: str = 'proportional'):
         print(f"❌ Experiments directory not found: {EXPERIMENTS_ROOT}")
         return
 
-    for algo, pods, dir_path in _discover_experiments(EXPERIMENTS_ROOT):
-        if not _should_include_algo(algo, selection):
-            continue
+    # Optionally filter to latest-only per (algo,pods)
+    discovered = list(_discover_experiments(EXPERIMENTS_ROOT))
+    if not include_all:
+        latest_map = {}  # (algo,pods) -> (dir_path, mtime)
+        for algo, pods, dir_path, mtime in discovered:
+            if not _should_include_algo(algo, selection):
+                continue
+            key = (algo, pods)
+            prev = latest_map.get(key)
+            if prev is None or mtime > prev[1]:
+                latest_map[key] = (dir_path, mtime)
+        selected = [(algo, pods, dir_path) for (algo, pods), (dir_path, _) in latest_map.items()]
+    else:
+        selected = [(algo, pods, dir_path) for (algo, pods, dir_path, _) in discovered if _should_include_algo(algo, selection)]
+
+    for algo, pods, dir_path in selected:
         csv_path = _find_placement_csv(algo, dir_path)
         if not csv_path:
             continue
@@ -551,6 +568,7 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--uniform', action='store_true', help='Plot uniform embodied allocation only (plus vanilla)')
     group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
+    parser.add_argument('--all', action='store_true', help='Include all experiments (default: latest-only per algo and pod count)')
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
-    create_emissions_plot(selection)
+    create_emissions_plot(selection, include_all=args.all)

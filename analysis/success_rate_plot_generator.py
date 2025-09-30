@@ -57,19 +57,10 @@ def _should_include_algo(algo_key: str, selection: str) -> bool:
     return algo_key.endswith('-proportional')
 
 
-def _parse_success_rates_from_experiments(experiments_root: str, selection: str = 'proportional'):
-    """Scan experiments_root for runs and parse success rates per algorithm and pod count.
-
-    Returns:
-        results: dict[str, dict[int, list[float]]] mapping algo -> pods -> list of success rates
-    """
-    results = defaultdict(lambda: defaultdict(list))
-
+def _discover_experiment_dirs(experiments_root: str, selection: str = 'proportional'):
+    """Yield (algo_key, pods_count, entry_path, mtime) for directories matching selection."""
     if not os.path.isdir(experiments_root):
-        print(f"⚠️ Experiments directory not found: {experiments_root}")
-        return results
-
-    # Expect folders like: "global-optimal_181pods_20250822_100133" or "heuristic_86pods_..."
+        return
     for current_root, dirnames, _ in os.walk(experiments_root):
         dirnames.sort()
         next_level = []
@@ -78,7 +69,6 @@ def _parse_success_rates_from_experiments(experiments_root: str, selection: str 
                 continue
             entry_path = os.path.join(current_root, entry)
 
-            # Extract algorithm and pod count from the directory name
             m = re.match(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_", entry)
             if not m:
                 next_level.append(entry)
@@ -95,57 +85,91 @@ def _parse_success_rates_from_experiments(experiments_root: str, selection: str 
             except Exception:
                 continue
 
-            placement_csv = None
-            candidate_names = []
-            if algo_key.startswith('global-optimal'):
-                candidate_names = ['global_optimal_placements_session.csv']
-            elif algo_key.startswith('heuristic'):
-                candidate_names = [
-                    'heuristic_prop_placements_session.csv',
-                    'heuristic_uniform_placements_session.csv',
-                    'heuristic_placements_session.csv',
-                ]
-            elif algo_key == 'vanilla':
-                candidate_names = [
-                    'vanilla_placement_session.csv',
-                    'vanilla_placement_session_bind.csv',
-                    'vanilla_placement_session_presence.csv',
-                    'vanilla_placement_session_fixed.csv',
-                    'vanilla_placements.csv',
-                ]
-            else:
-                candidate_names = [
-                    'global_optimal_placements_session.csv',
-                    'heuristic_placements_session.csv',
-                    'vanilla_placement_session_fixed.csv',
-                    'vanilla_placement_session.csv',
-                    'vanilla_placements.csv',
-                ]
-
-            for name in candidate_names:
-                p = os.path.join(entry_path, name)
-                if os.path.exists(p):
-                    placement_csv = p
-                    break
-
-            if placement_csv:
-                try:
-                    with open(placement_csv, 'r') as fh:
-                        reader = csv.DictReader(fh)
-                        unique_pods = set()
-                        for row in reader:
-                            pid = row.get('pod_id')
-                            if pid:
-                                unique_pods.add(pid)
-                    placed = len(unique_pods)
-                    total_from_marker = _read_pods_txt_if_present(entry_path, pods_count)
-                    total = total_from_marker if total_from_marker is not None else pods_count
-                    if total > 0:
-                        results[algo_key][pods_count].append(100.0 * placed / total)
-                except Exception:
-                    pass
+            try:
+                mtime = os.path.getmtime(entry_path)
+            except Exception:
+                mtime = 0.0
+            yield algo_key, pods_count, entry_path, mtime
 
         dirnames[:] = next_level
+
+
+def _parse_success_rates_from_experiments(experiments_root: str, selection: str = 'proportional', include_all: bool = False):
+    """Scan experiments_root for runs and parse success rates per algorithm and pod count.
+
+    Returns:
+        results: dict[str, dict[int, list[float]]] mapping algo -> pods -> list of success rates
+    """
+    results = defaultdict(lambda: defaultdict(list))
+
+    if not os.path.isdir(experiments_root):
+        print(f"⚠️ Experiments directory not found: {experiments_root}")
+        return results
+
+    # Build selected directories: latest-only per (algo,pods) unless include_all
+    discovered = list(_discover_experiment_dirs(experiments_root, selection))
+    if not include_all:
+        latest_map: dict[tuple[str, int], tuple[str, float]] = {}
+        for algo_key, pods_count, entry_path, mtime in discovered:
+            key = (algo_key, pods_count)
+            prev = latest_map.get(key)
+            if prev is None or mtime > prev[1]:
+                latest_map[key] = (entry_path, mtime)
+        selected = [(a, p, path) for (a, p), (path, _) in latest_map.items()]
+    else:
+        selected = [(a, p, path) for (a, p, path, _) in discovered]
+
+    # Parse selected runs
+    for algo_key, pods_count, entry_path in selected:
+        placement_csv = None
+        candidate_names = []
+        if algo_key.startswith('global-optimal'):
+            candidate_names = ['global_optimal_placements_session.csv']
+        elif algo_key.startswith('heuristic'):
+            candidate_names = [
+                'heuristic_prop_placements_session.csv',
+                'heuristic_uniform_placements_session.csv',
+                'heuristic_placements_session.csv',
+            ]
+        elif algo_key == 'vanilla':
+            candidate_names = [
+                'vanilla_placement_session.csv',
+                'vanilla_placement_session_bind.csv',
+                'vanilla_placement_session_presence.csv',
+                'vanilla_placement_session_fixed.csv',
+                'vanilla_placements.csv',
+            ]
+        else:
+            candidate_names = [
+                'global_optimal_placements_session.csv',
+                'heuristic_placements_session.csv',
+                'vanilla_placement_session_fixed.csv',
+                'vanilla_placement_session.csv',
+                'vanilla_placements.csv',
+            ]
+
+        for name in candidate_names:
+            p = os.path.join(entry_path, name)
+            if os.path.exists(p):
+                placement_csv = p
+                break
+
+        if placement_csv:
+            try:
+                with open(placement_csv, 'r') as fh:
+                    reader = csv.DictReader(fh)
+                    unique_pods = set()
+                    for row in reader:
+                        pid = row.get('pod_id')
+                        if pid:
+                            unique_pods.add(pid)
+                placed = len(unique_pods)
+                total_from_marker = _read_pods_txt_if_present(entry_path, pods_count)
+                total = total_from_marker if total_from_marker is not None else pods_count
+                if total > 0:
+                    results[algo_key][pods_count].append(100.0 * placed / total)
+            except Exception:
+                pass
 
     return results
 
@@ -193,10 +217,10 @@ def _aggregate_results(results):
     return algos_order, pod_counts_sorted, mean_rates, std_errs
 
 
-def create_success_rate_plot(selection: str = 'proportional'):
+def create_success_rate_plot(selection: str = 'proportional', include_all: bool = False):
     """Generate success rate comparison plot by parsing experiment outputs."""
     # Parse dynamic results
-    parsed = _parse_success_rates_from_experiments(EXPERIMENTS_ROOT, selection)
+    parsed = _parse_success_rates_from_experiments(EXPERIMENTS_ROOT, selection, include_all)
     if not parsed:
         print(f"❌ No experiment results found in: {EXPERIMENTS_ROOT}")
         return
@@ -309,6 +333,7 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--uniform', action='store_true', help='Plot uniform embodied allocation only (plus vanilla)')
     group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
+    parser.add_argument('--all', action='store_true', help='Include all experiments (default: latest-only per algo and pod count)')
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
-    create_success_rate_plot(selection) 
+    create_success_rate_plot(selection, include_all=args.all) 
