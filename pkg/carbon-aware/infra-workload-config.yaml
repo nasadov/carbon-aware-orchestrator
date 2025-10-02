@@ -8,22 +8,38 @@ optimization:
   # Penalty applied per unplaced pod in single-phase mode (gCO2e-equivalent units)
   # Larger values prioritize placing pods over emissions; smaller values allow skipping high-cost pods.
   # Ignored when use_lexicographic is true.
-  unplaced_penalty: 10000
+  unplaced_penalty: 4000
   
   # Emissions objective weighting (tune to prioritize carbon reduction)
   emissions:
     # Scale on per-pod dynamic emissions terms (default 1.0). Increase to emphasize dynamic carbon.
-    dynamic_weight: 1.8
+    dynamic_weight: 1.0
     # Scale on per-(node,slot) activation (idle + embodied) terms (default 1.0).
-    activation_weight: 2.2
+    activation_weight: 1.0
     # In dynamic-only fallback (when activations are dropped), add a surrogate penalty per chosen
     # placement proportional to that slot's idle+embodied to reduce scattering (default 0.0 = off).
-    fallback_surrogate_activation_weight: 0.25
+    fallback_surrogate_activation_weight: 0.0
+  
+  # Candidate pruning to focus MILP on greener placements (reduces variables)
+  # DISABLED to preserve packing synergies - oracle needs full search space
+  pruning:
+    enable: false
+    # Keep at most this many best options per pod (0 = unlimited)
+    top_k_per_pod: 0
+    # Also keep any option within this relative margin to the best emissions (e.g., 0.15 = +15%)
+    emissions_margin: 0.8
+  
+  # Hard constraints to enforce minimum success rate in multi-objective mode
+  constraints:
+    # At most this fraction of pods can be unplaced (e.g., 0.05 = 5%). If both are set, 'max_unplaced' takes precedence.
+    max_unplaced_fraction: 0.1
+    # Or absolute cap on the number of unplaced pods (comment out to use only fraction)
+    # max_unplaced: 10
   
   # Solver configuration
   solver:
     name: cp_sat
-    time_limit: 120  # seconds per phase for lexicographic, total for standard
+    time_limit: 360  # seconds per phase for lexicographic, total for standard
     gap_tolerance: 0.05
     threads: 8
 
@@ -126,7 +142,7 @@ workload:
   
   # Total number of pods to generate across all timeslots
   # Used only when generation_strategy == "exact_total"
-  exact_total_pods: 120
+  exact_total_pods: 140
   
   # Minimum number of services per timeslot, regardless of Poisson distribution
   min_services: 1

@@ -20,6 +20,9 @@ FORECASTS_FILE="$SERVER_DIR/all_forecasts.json"
 EXPERIMENTS_ROOT="$REPO_ROOT/experiments/precompute_sweeps"
 
 # Embodied mode selection (default: proportional). Flags: --proportional | --uniform | --both
+# Partial sweep range controls (defaults)
+START=20
+END=200
 MODES=("proportional")
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,13 +38,23 @@ while [[ $# -gt 0 ]]; do
       MODES=("proportional")
       shift
       ;;
+    --start)
+      shift
+      START="$1"
+      shift
+      ;;
+    --end)
+      shift
+      END="$1"
+      shift
+      ;;
     -h|--help)
-      echo "Usage: $0 [--proportional|--uniform|--both]" >&2
+      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N]" >&2
       exit 0
       ;;
     *)
       echo "Unknown argument: $1" >&2
-      echo "Usage: $0 [--proportional|--uniform|--both]" >&2
+      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N]" >&2
       exit 1
       ;;
   esac
@@ -79,6 +92,19 @@ trap cleanup EXIT
 
 # Initialize summary CSV with header
 echo "run_id,begin_time,end_time,target_pods,algorithm,pods,nodes,elapsed_seconds" > "$SUMMARY_CSV"
+
+# Apply partial sweep filter if requested
+if [[ -n "$START" && -n "$END" ]]; then
+  FILTERED=()
+  for v in "${POD_VALUES[@]}"; do
+    if (( v >= START && v <= END )); then
+      FILTERED+=("$v")
+    fi
+  done
+  if [[ ${#FILTERED[@]} -gt 0 ]]; then
+    POD_VALUES=("${FILTERED[@]}")
+  fi
+fi
 
 # Function to ensure generation_strategy is set to exact_total
 ensure_exact_strategy() {

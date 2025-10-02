@@ -108,6 +108,22 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             f"fallback_surrogate_activation={self.weight_fallback_surrogate_activation}"
         )
 
+        # Candidate pruning knobs to focus MILP on greener placements
+        pruning_cfg = self.config.get('optimization', {}).get('pruning', {}) if hasattr(self, 'config') else {}
+        self.pruning_enable = bool(pruning_cfg.get('enable', True))
+        try:
+            self.pruning_top_k_per_pod = int(pruning_cfg.get('top_k_per_pod', 8))
+        except Exception:
+            self.pruning_top_k_per_pod = 8
+        try:
+            self.pruning_emissions_margin = float(pruning_cfg.get('emissions_margin', 0.15))
+        except Exception:
+            self.pruning_emissions_margin = 0.15
+        logging.info(
+            f"🔧 Pruning: enable={self.pruning_enable}, top_k_per_pod={self.pruning_top_k_per_pod}, "
+            f"emissions_margin={self.pruning_emissions_margin}"
+        )
+
     def set_embodied_allocation_mode(self, mode: str):
         if mode not in ("proportional", "uniform"):
             logging.warning(f"Unknown embodied allocation mode '{mode}', defaulting to 'proportional'")
@@ -822,8 +838,23 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             if valid_options < 10:  # Only log first 10 invalid options to avoid log spam
                                 logging.debug(f"     - Invalid placement on {flv.id} at ts={ts.id}: {resource_issues}")
 
+                # Optional pruning: keep only greenest candidates per pod to shrink MILP
+                if self.pruning_enable and pod_placements:
+                    # Sort by total emissions ascending (greener first)
+                    sorted_opts = sorted(pod_placements, key=lambda t: t[2])
+                    best = sorted_opts[0][2]
+                    # Keep those within (1 + margin) of best and cap by top_k
+                    margin = best * (1.0 + max(0.0, self.pruning_emissions_margin))
+                    pruned = [opt for opt in sorted_opts if opt[2] <= margin]
+                    if self.pruning_top_k_per_pod > 0:
+                        pruned = pruned[: self.pruning_top_k_per_pod]
+                    removed = max(0, len(pod_placements) - len(pruned))
+                    if removed > 0:
+                        logging.info(f"     - Pruned {removed} high-emission options for pod {pod.id}; kept {len(pruned)}")
+                    pod_placements = pruned
+
                 placements[pod.id] = pod_placements
-                logging.info(f"     - Result: {valid_options} valid placements across {valid_timeslots} valid timeslots")
+                logging.info(f"     - Result: {len(pod_placements)} valid placements across {valid_timeslots} valid timeslots (after pruning if enabled)")
 
             # If no placements were found at all, exit early
             if not x:
@@ -849,6 +880,28 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 else:
                     # If no feasible placements exist for this pod, force it to be unplaced
                     prob += (s[pod_id] == 1), f"ASSIGN_NOPLACE_{pod_id}"
+            # Optional success-rate floor: cap number of unplaced pods
+            try:
+                constraints_cfg = self.config.get('optimization', {}).get('constraints', {}) if hasattr(self, 'config') else {}
+                max_unplaced_fraction = constraints_cfg.get('max_unplaced_fraction', None)
+                max_unplaced_abs = constraints_cfg.get('max_unplaced', None)
+                if max_unplaced_fraction is not None or max_unplaced_abs is not None:
+                    total_pods = len(s)
+                    allowed_unplaced = None
+                    if isinstance(max_unplaced_abs, int):
+                        allowed_unplaced = max(0, int(max_unplaced_abs))
+                    if allowed_unplaced is None and max_unplaced_fraction is not None:
+                        try:
+                            frac = float(max_unplaced_fraction)
+                        except Exception:
+                            frac = None
+                        if frac is not None:
+                            allowed_unplaced = max(0, int(frac * total_pods))
+                    if allowed_unplaced is not None:
+                        logging.info(f"  - Applying success-rate floor: sum(s) <= {allowed_unplaced} (of {total_pods})")
+                        prob += pulp.lpSum([s[p] for p in s]) <= allowed_unplaced, "CAP_UNPLACED_PODS"
+            except Exception as _e:
+                logging.warning(f"  - Unable to apply success-rate floor constraint: {_e}")
             
             # Lexicographic two-phase solve (if enabled): Phase 1 maximize placements, Phase 2 minimize emissions
             if getattr(self, 'use_lexicographic', False):
@@ -926,7 +979,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 logging.info(f"  - [Phase 1] Optimal unplaced pods: {opt_unplaced} (placed={len(s)-opt_unplaced}/{len(s)})")
 
                 # -----------------
-                # Phase 2: minimize emissions with fixed number of unplaced pods
+                # Phase 2: minimize activated node-hours (packing) with fixed unplaced pods
                 # -----------------
                 prob2 = pulp.LpProblem("CarbonAwareScheduling_Phase2", pulp.LpMinimize)
 
@@ -963,37 +1016,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 for pod_id in placed_phase1:
                     prob2 += (s[pod_id] == 0), f"FIX_S_PLACED_{pod_id}"
 
-                # Objective Phase 2: emissions only (dynamic + idle + embodied) with weights
-                dynamic_terms = []
-                for pod_id, pod_placements in placements.items():
-                    pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
-                    if not pod_obj:
-                        continue
-                    for flv_id, ts_id, _ in pod_placements:
-                        flv_obj = next((f for f in flavours if f.id == flv_id), None)
-                        if not flv_obj:
-                            continue
-                        k_watts = compute_node_dynamic_coeff_watts(flv_obj)
-                        total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
-                        u_pod = pod_obj.cpuRequest / total_cpu
-                        for offset in range(int(pod_obj.duration)):
-                            slot = ts_id + offset
-                            if slot >= max_time_slots:
-                                break
-                            intensity = get_carbon_intensity(flv_obj, slot)
-                            coef_g = intensity * (k_watts * u_pod / 1000.0)
-                            dynamic_terms.append(self.weight_dynamic * coef_g * x[(pod_id, flv_id, ts_id)])
-                idle_embodied_terms = []
-                for flv in flavours:
-                    idle_w = flv.power.get('idle', 0.0)
-                    embodied_per_h = compute_embodied_per_hour_g(flv)
-                    for ts in timeslots:
-                        intensity = get_carbon_intensity(flv, ts.id)
-                        idle_oper_g = intensity * (idle_w / 1000.0)
-                        idle_embodied_terms.append(self.weight_activation * (idle_oper_g + embodied_per_h) * y[(flv.id, ts.id)])
-
-                emissions_objective = pulp.lpSum(dynamic_terms) + pulp.lpSum(idle_embodied_terms)
-                prob2 += emissions_objective
+                # Objective Phase 2: minimize activated node-hours (force packing)
+                packing_objective = pulp.lpSum([y[(flv.id, ts.id)] for flv in flavours for ts in timeslots])
+                prob2 += packing_objective
 
                 # Optional warm start from Phase 1 values (best-effort; supported by some solvers)
                 try:
@@ -1040,9 +1065,128 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     self.iterations = prob2.solverModel.Iterations if hasattr(prob2.solverModel, 'Iterations') else 0
                     logging.info(f"  - [Phase 2] completed in {solution_time:.3f}s, status={self.status}")
 
+                # -----------------
+                # Phase 3: minimize emissions with fixed packing (activated node-hours)
+                # -----------------
+                if (self.solver_name.lower() == 'cp_sat' and self.status == 'Optimal') or (self.solver_name.lower() != 'cp_sat' and prob2.status == pulp.LpStatusOptimal):
+                    logging.info("🔀 Phase 2 (packing) completed successfully, proceeding to Phase 3 (emissions)")
+                    
+                    # Extract activated node-hours from Phase 2
+                    activated_node_hours = set()
+                    if self.solver_name.lower() == 'cp_sat':
+                        # For CP-SAT, we need to extract from solution_dict
+                        for pod_id, (flv_id, ts_id, _) in solution_dict.items():
+                            pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                            if pod_obj:
+                                for offset in range(int(pod_obj.duration)):
+                                    slot = ts_id + offset
+                                    if slot < max_time_slots:
+                                        activated_node_hours.add((flv_id, slot))
+                    else:
+                        # For PuLP, extract from y variables
+                        for (flv_id, ts_id), var in y.items():
+                            if var.value() and var.value() > 0.5:
+                                activated_node_hours.add((flv_id, ts_id))
+                    
+                    logging.info(f"  - [Phase 2] Activated {len(activated_node_hours)} node-hours")
+                    
+                    # Phase 3: minimize emissions with fixed activated node-hours
+                    prob3 = pulp.LpProblem("CarbonAwareScheduling_Phase3", pulp.LpMinimize)
+                    
+                    # Recreate assignment constraints for prob3
+                    for pod_id, pod_placements in placements.items():
+                        if pod_placements:
+                            prob3 += (
+                                pulp.lpSum([x[(pod_id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]) + s[pod_id] == 1
+                            ), f"ASSIGN_{pod_id}_P3"
+                        else:
+                            prob3 += (s[pod_id] == 1), f"ASSIGN_NOPLACE_{pod_id}_P3"
+                    
+                    # Fix unplaced pods from Phase 1
+                    for pod_id in unplaced_phase1:
+                        prob3 += (s[pod_id] == 1), f"FIX_S_UNPLACED_{pod_id}_P3"
+                    for pod_id in placed_phase1:
+                        prob3 += (s[pod_id] == 0), f"FIX_S_PLACED_{pod_id}_P3"
+                    
+                    # Fix activated node-hours from Phase 2
+                    for (flv_id, ts_id) in activated_node_hours:
+                        prob3 += (y[(flv_id, ts_id)] == 1), f"FIX_ACTIVATED_{flv_id}_{ts_id}_P3"
+                    for flv in flavours:
+                        for ts in timeslots:
+                            if (flv.id, ts.id) not in activated_node_hours:
+                                prob3 += (y[(flv.id, ts.id)] == 0), f"FIX_INACTIVE_{flv.id}_{ts.id}_P3"
+                    
+                    # Add capacity constraints
+                    for (flv_id, ts_id), usage_expressions in cpu_usage.items():
+                        if flv_id in leftover_cpu and ts_id in leftover_cpu[flv_id]:
+                            cpu_limit = leftover_cpu[flv_id][ts_id]
+                            prob3 += pulp.lpSum(usage_expressions) <= cpu_limit, f"CPU_{flv_id}_{ts_id}_P3"
+                            M_cpu = cpu_limit if cpu_limit > 0 else 1.0
+                            prob3 += pulp.lpSum(usage_expressions) <= M_cpu * y[(flv_id, ts_id)], f"ACTIVATION_CPU_LINK_{flv_id}_{ts_id}_P3"
+                    for (flv_id, ts_id), usage_expressions in ram_usage.items():
+                        if flv_id in leftover_ram and ts_id in leftover_ram[flv_id]:
+                            ram_limit = leftover_ram[flv_id][ts_id]
+                            prob3 += pulp.lpSum(usage_expressions) <= ram_limit, f"RAM_{flv_id}_{ts_id}_P3"
+                    
+                    # Objective Phase 3: minimize emissions with fixed packing
+                    dynamic_terms = []
+                    for pod_id, pod_placements in placements.items():
+                        pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                        if not pod_obj:
+                            continue
+                        for flv_id, ts_id, _ in pod_placements:
+                            flv_obj = next((f for f in flavours if f.id == flv_id), None)
+                            if not flv_obj:
+                                continue
+                            k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+                            total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
+                            u_pod = pod_obj.cpuRequest / total_cpu
+                            for offset in range(int(pod_obj.duration)):
+                                slot = ts_id + offset
+                                if slot >= max_time_slots:
+                                    break
+                                intensity = get_carbon_intensity(flv_obj, slot)
+                                coef_g = intensity * (k_watts * u_pod / 1000.0)
+                                dynamic_terms.append(self.weight_dynamic * coef_g * x[(pod_id, flv_id, ts_id)])
+                    
+                    idle_embodied_terms = []
+                    for flv in flavours:
+                        idle_w = flv.power.get('idle', 0.0)
+                        embodied_per_h = compute_embodied_per_hour_g(flv)
+                        for ts in timeslots:
+                            intensity = get_carbon_intensity(flv, ts.id)
+                            idle_oper_g = intensity * (idle_w / 1000.0)
+                            idle_embodied_terms.append(self.weight_activation * (idle_oper_g + embodied_per_h) * y[(flv.id, ts.id)])
+                    
+                    emissions_objective = pulp.lpSum(dynamic_terms) + pulp.lpSum(idle_embodied_terms)
+                    prob3 += emissions_objective
+                    
+                    # Solve Phase 3
+                    logging.info(f"  - [Phase 3] settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
+                    solver_start_time = time.time()
+                    primary_solver = self._get_pulp_solver(solver_cfg, time_limit_cfg, gap_tolerance_cfg, threads_cfg)
+                    prob3.solve(primary_solver)
+                    phase3_time = time.time() - solver_start_time
+                    status3 = pulp.LpStatus[prob3.status]
+                    logging.info(f"  - [Phase 3] completed in {phase3_time:.3f}s, status={status3}")
+                    
+                    # Use Phase 3 solution if successful, otherwise fall back to Phase 2
+                    if status3 in ("Optimal", "OptimalInfeasible"):
+                        logging.info("✅ Using Phase 3 (emissions) solution")
+                        final_prob = prob3
+                        final_status = status3
+                    else:
+                        logging.warning("⚠️ Phase 3 failed, using Phase 2 (packing) solution")
+                        final_prob = prob2
+                        final_status = self.status
+                else:
+                    logging.warning("❌ Phase 2 (packing) failed, using Phase 1 (placements) solution")
+                    final_prob = prob1
+                    final_status = status1
+
                 # Extract placements and emissions as in standard flow, but use values from x/s/y
                 logging.info(f"🔍 STEP 5: Processing solution and recording results")
-                if (self.solver_name.lower() == 'cp_sat' and self.status == 'Optimal') or (self.solver_name.lower() != 'cp_sat' and prob2.status == pulp.LpStatusOptimal):
+                if final_status in ("Optimal", "OptimalInfeasible"):
                     solution = {}
                     total_emissions_objective = 0.0
 
