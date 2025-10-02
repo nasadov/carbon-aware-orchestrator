@@ -802,12 +802,64 @@ def main():
     final_plot_output_dir = os.path.join(args.output_dir_base, plot_output_subdir_name)
     os.makedirs(final_plot_output_dir, exist_ok=True)
 
+    # Helper: if the user passed a directory, try to find the expected placement CSV inside it
+    def _find_csv_in_dir(dir_path: str):
+        if not os.path.isdir(dir_path):
+            return None
+        # Preferred filenames by algorithm
+        candidates = [
+            # Global-optimal
+            'global_optimal_placements_session.csv',
+            # Heuristic
+            'heuristic_prop_placements_session.csv',
+            'heuristic_uniform_placements_session.csv',
+            'heuristic_placements_session.csv',
+            # Vanilla
+            'vanilla_placement_session_presence.csv',
+            'vanilla_placement_session_bind.csv',
+            'vanilla_placement_session_fixed.csv',
+            'vanilla_placement_session.csv',
+            'vanilla_placements.csv',
+        ]
+        for name in candidates:
+            p = os.path.join(dir_path, name)
+            if os.path.isfile(p):
+                return p
+        # Fallback: any placements-like CSV in the directory
+        for p in glob.glob(os.path.join(dir_path, "*placement*.csv")):
+            if os.path.isfile(p):
+                return p
+        for p in glob.glob(os.path.join(dir_path, "*placements*.csv")):
+            if os.path.isfile(p):
+                return p
+        return None
+
+    # Build the list of CSV files from inputs (files, globs, or directories)
     all_csv_files = []
+    raw_inputs = []
     for pattern in args.input_csvs:
-        all_csv_files.extend(glob.glob(pattern))
-    
+        matches = glob.glob(pattern)
+        # If no glob matches, still consider the raw value (could be a directory)
+        if not matches:
+            raw_inputs.append(pattern)
+        else:
+            raw_inputs.extend(matches)
+
+    for item in raw_inputs:
+        if os.path.isdir(item):
+            csv_inside = _find_csv_in_dir(item)
+            if csv_inside:
+                all_csv_files.append(csv_inside)
+            else:
+                print(f"Warning: no placement CSV found inside directory: {item}")
+        elif os.path.isfile(item):
+            all_csv_files.append(item)
+        else:
+            # Not a file or directory; skip
+            pass
+
     if not all_csv_files:
-        print(f"No CSV files found matching patterns: {args.input_csvs}")
+        print(f"No CSV files found from inputs: {args.input_csvs}")
         return
 
     if len(all_csv_files) > 1 and args.name:
@@ -833,6 +885,9 @@ def main():
     else:
         for csv_file in all_csv_files:
             df = load_data(csv_file, pod_cpu_requests)
+            if df is None or df.empty:
+                print(f"No valid data loaded from CSV: {csv_file}. Skipping.")
+                continue
 
             file_basename = os.path.splitext(os.path.basename(csv_file))[0]
             

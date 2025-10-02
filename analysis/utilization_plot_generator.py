@@ -346,8 +346,37 @@ def _compute_run_avg_mem_util_percent(csv_path: str, total_cluster_bytes: float)
     return float(np.mean(utilizations))
 
 
-def parse_utilizations_from_experiments(experiments_root: str, nodes_yaml_path: str, selection: str = 'proportional'):
-    """Return two mappings (cpu_results, mem_results): algo -> pods -> list of utilization percent per run."""
+def _discover_experiments(experiments_root: str, selection: str):
+    """Yield (algo_key, pods_count, dir_path, mtime) for matching experiments."""
+    if not os.path.isdir(experiments_root):
+        return
+    for current_root, dirnames, _ in os.walk(experiments_root):
+        dirnames.sort()
+        next_level = []
+        for entry in dirnames:
+            if entry.lower().startswith("archive"):
+                continue
+            entry_path = os.path.join(current_root, entry)
+            parsed = _parse_experiment_name(entry)
+            if not parsed:
+                next_level.append(entry)
+                continue
+            algo_key, pods_count = parsed
+            if not _should_include_algo(algo_key, selection):
+                continue
+            try:
+                mtime = os.path.getmtime(entry_path)
+            except Exception:
+                mtime = 0.0
+            yield algo_key, pods_count, entry_path, mtime
+        dirnames[:] = next_level
+
+
+def parse_utilizations_from_experiments(experiments_root: str, nodes_yaml_path: str, selection: str = 'proportional', include_all: bool = False):
+    """Return two mappings (cpu_results, mem_results): algo -> pods -> list of utilization percent per run.
+
+    If include_all is False, only the latest directory per (algo_key, pods) is used.
+    """
     cpu_results: Dict[str, Dict[int, List[float]]] = defaultdict(lambda: defaultdict(list))
     mem_results: Dict[str, Dict[int, List[float]]] = defaultdict(lambda: defaultdict(list))
 
@@ -362,36 +391,28 @@ def parse_utilizations_from_experiments(experiments_root: str, nodes_yaml_path: 
         print(f"⚠️ Experiments directory not found: {experiments_root}")
         return cpu_results, mem_results
 
-    for current_root, dirnames, _ in os.walk(experiments_root):
-        dirnames.sort()
-        next_level = []
-        for entry in dirnames:
-            if entry.lower().startswith("archive"):
-                continue
-            entry_path = os.path.join(current_root, entry)
-            parsed = _parse_experiment_name(entry)
-            if not parsed:
-                next_level.append(entry)
-                continue
+    discovered = list(_discover_experiments(experiments_root, selection))
+    if not include_all:
+        latest_map: Dict[Tuple[str, int], Tuple[str, float]] = {}
+        for algo_key, pods_count, entry_path, mtime in discovered:
+            key = (algo_key, pods_count)
+            prev = latest_map.get(key)
+            if prev is None or mtime > prev[1]:
+                latest_map[key] = (entry_path, mtime)
+        selected = [(a, p, path) for (a, p), (path, _) in latest_map.items()]
+    else:
+        selected = [(a, p, path) for (a, p, path, _) in discovered]
 
-            algo_key, pods_count = parsed
-
-            if not _should_include_algo(algo_key, selection):
-                continue
-
-            csv_path = _find_placement_csv(entry_path, algo_key)
-            if not csv_path:
-                continue
-
-            cpu_util = _compute_run_avg_cpu_util_percent(csv_path, total_cores)
-            if cpu_util is not None:
-                cpu_results[algo_key][pods_count].append(cpu_util)
-
-            mem_util = _compute_run_avg_mem_util_percent(csv_path, total_bytes)
-            if mem_util is not None:
-                mem_results[algo_key][pods_count].append(mem_util)
-
-        dirnames[:] = next_level
+    for algo_key, pods_count, entry_path in selected:
+        csv_path = _find_placement_csv(entry_path, algo_key)
+        if not csv_path:
+            continue
+        cpu_util = _compute_run_avg_cpu_util_percent(csv_path, total_cores)
+        if cpu_util is not None:
+            cpu_results[algo_key][pods_count].append(cpu_util)
+        mem_util = _compute_run_avg_mem_util_percent(csv_path, total_bytes)
+        if mem_util is not None:
+            mem_results[algo_key][pods_count].append(mem_util)
 
     return cpu_results, mem_results
 
@@ -496,8 +517,8 @@ def _plot_utilization(ax, algos_order, pod_counts_sorted, mean_vals, std_errs, y
     ax.legend(fontsize=12, loc=legend_loc, framealpha=0.9, shadow=True, fancybox=True)
 
 
-def create_utilization_plots(selection: str = 'proportional'):
-    cpu_results, mem_results = parse_utilizations_from_experiments(EXPERIMENTS_ROOT, NODES_YAML_PATH, selection)
+def create_utilization_plots(selection: str = 'proportional', include_all: bool = False):
+    cpu_results, mem_results = parse_utilizations_from_experiments(EXPERIMENTS_ROOT, NODES_YAML_PATH, selection, include_all)
     any_results = any(cpu_results.values()) or any(mem_results.values())
     if not any_results:
         print(f"❌ No experiment results found in: {EXPERIMENTS_ROOT}")
@@ -565,7 +586,8 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--uniform', action='store_true', help='Plot uniform embodied allocation only (plus vanilla)')
     group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
+    parser.add_argument('--all', action='store_true', help='Include all experiments (default: latest-only per algo and pod count)')
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
-    create_utilization_plots(selection)
+    create_utilization_plots(selection, include_all=args.all)
 

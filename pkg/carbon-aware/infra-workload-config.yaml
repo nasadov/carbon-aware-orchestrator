@@ -51,7 +51,7 @@ nodes:
   regions:
     region_counts:
       DE: 1
-      FR: 2
+      FR: 1
       ES: 1
       IT-NO: 1
   
@@ -64,8 +64,7 @@ nodes:
     DE:
       IoT: 1
     FR:
-      Smartphone: 1
-      Laptop: 1
+      Server: 1
     ES:
       Smartphone: 1
     IT-NO:
@@ -75,9 +74,9 @@ nodes:
   hardware_assignment:
     hardware_counts:
       IoT: 1
-      Smartphone: 2
-      Laptop: 2
-      Server: 0
+      Smartphone: 1
+      Laptop: 1
+      Server: 1
   
   # Method to assign hardware types to nodes (ignored when explicit_assignments is set)
   hardware_assignment_method: exact_counts
@@ -104,7 +103,7 @@ nodes:
         max: 15.0    # Watts
     Laptop:
       cpu: "8"
-      memory: "16Gi"
+      memory: "8Gi"
       embodied_carbon: 231.855
       lifetime: 4.13
       power:
@@ -112,13 +111,13 @@ nodes:
         active: 40.0 # Watts
         max: 150.0   # Watts
     Server:
-      cpu: "32"
-      memory: "64Gi"
+      cpu: "16"
+      memory: "16Gi"
       embodied_carbon: 1230.656
       lifetime: 3.87
       power:
         idle: 100.0  # Watts
-        active: 200.0# Watts
+        active: 200.0 # Watts
         max: 400.0   # Watts
   
   # Random seed for reproducibility
