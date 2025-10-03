@@ -1016,9 +1016,38 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 for pod_id in placed_phase1:
                     prob2 += (s[pod_id] == 0), f"FIX_S_PLACED_{pod_id}"
 
-                # Objective Phase 2: minimize activated node-hours (force packing)
-                packing_objective = pulp.lpSum([y[(flv.id, ts.id)] for flv in flavours for ts in timeslots])
-                prob2 += packing_objective
+                # Objective Phase 2: minimize total emissions (dynamic + idle + embodied)
+                dynamic_terms = []
+                for pod_id, pod_placements in placements.items():
+                    pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                    if not pod_obj:
+                        continue
+                    for flv_id, ts_id, _ in pod_placements:
+                        flv_obj = next((f for f in flavours if f.id == flv_id), None)
+                        if not flv_obj:
+                            continue
+                        k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+                        total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
+                        u_pod = pod_obj.cpuRequest / total_cpu
+                        for offset in range(int(pod_obj.duration)):
+                            slot = ts_id + offset
+                            if slot >= max_time_slots:
+                                break
+                            intensity = get_carbon_intensity(flv_obj, slot)
+                            coef_g = intensity * (k_watts * u_pod / 1000.0)
+                            dynamic_terms.append(self.weight_dynamic * coef_g * x[(pod_id, flv_id, ts_id)])
+
+                idle_embodied_terms = []
+                for flv in flavours:
+                    idle_w = flv.power.get('idle', 0.0)
+                    embodied_per_h = compute_embodied_per_hour_g(flv)
+                    for ts in timeslots:
+                        intensity = get_carbon_intensity(flv, ts.id)
+                        idle_oper_g = intensity * (idle_w / 1000.0)
+                        idle_embodied_terms.append(self.weight_activation * (idle_oper_g + embodied_per_h) * y[(flv.id, ts.id)])
+
+                emissions_objective = pulp.lpSum(dynamic_terms) + pulp.lpSum(idle_embodied_terms)
+                prob2 += emissions_objective
 
                 # Optional warm start from Phase 1 values (best-effort; supported by some solvers)
                 try:
@@ -1065,123 +1094,11 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     self.iterations = prob2.solverModel.Iterations if hasattr(prob2.solverModel, 'Iterations') else 0
                     logging.info(f"  - [Phase 2] completed in {solution_time:.3f}s, status={self.status}")
 
-                # -----------------
-                # Phase 3: minimize emissions with fixed packing (activated node-hours)
-                # -----------------
+                # Determine final status from Phase 2 (emissions)
                 if (self.solver_name.lower() == 'cp_sat' and self.status == 'Optimal') or (self.solver_name.lower() != 'cp_sat' and prob2.status == pulp.LpStatusOptimal):
-                    logging.info("🔀 Phase 2 (packing) completed successfully, proceeding to Phase 3 (emissions)")
-                    
-                    # Extract activated node-hours from Phase 2
-                    activated_node_hours = set()
-                    if self.solver_name.lower() == 'cp_sat':
-                        # For CP-SAT, we need to extract from solution_dict
-                        for pod_id, (flv_id, ts_id, _) in solution_dict.items():
-                            pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
-                            if pod_obj:
-                                for offset in range(int(pod_obj.duration)):
-                                    slot = ts_id + offset
-                                    if slot < max_time_slots:
-                                        activated_node_hours.add((flv_id, slot))
-                    else:
-                        # For PuLP, extract from y variables
-                        for (flv_id, ts_id), var in y.items():
-                            if var.value() and var.value() > 0.5:
-                                activated_node_hours.add((flv_id, ts_id))
-                    
-                    logging.info(f"  - [Phase 2] Activated {len(activated_node_hours)} node-hours")
-                    
-                    # Phase 3: minimize emissions with fixed activated node-hours
-                    prob3 = pulp.LpProblem("CarbonAwareScheduling_Phase3", pulp.LpMinimize)
-                    
-                    # Recreate assignment constraints for prob3
-                    for pod_id, pod_placements in placements.items():
-                        if pod_placements:
-                            prob3 += (
-                                pulp.lpSum([x[(pod_id, flv_id, ts_id)] for flv_id, ts_id, _ in pod_placements]) + s[pod_id] == 1
-                            ), f"ASSIGN_{pod_id}_P3"
-                        else:
-                            prob3 += (s[pod_id] == 1), f"ASSIGN_NOPLACE_{pod_id}_P3"
-                    
-                    # Fix unplaced pods from Phase 1
-                    for pod_id in unplaced_phase1:
-                        prob3 += (s[pod_id] == 1), f"FIX_S_UNPLACED_{pod_id}_P3"
-                    for pod_id in placed_phase1:
-                        prob3 += (s[pod_id] == 0), f"FIX_S_PLACED_{pod_id}_P3"
-                    
-                    # Fix activated node-hours from Phase 2
-                    for (flv_id, ts_id) in activated_node_hours:
-                        prob3 += (y[(flv_id, ts_id)] == 1), f"FIX_ACTIVATED_{flv_id}_{ts_id}_P3"
-                    for flv in flavours:
-                        for ts in timeslots:
-                            if (flv.id, ts.id) not in activated_node_hours:
-                                prob3 += (y[(flv.id, ts.id)] == 0), f"FIX_INACTIVE_{flv.id}_{ts.id}_P3"
-                    
-                    # Add capacity constraints
-                    for (flv_id, ts_id), usage_expressions in cpu_usage.items():
-                        if flv_id in leftover_cpu and ts_id in leftover_cpu[flv_id]:
-                            cpu_limit = leftover_cpu[flv_id][ts_id]
-                            prob3 += pulp.lpSum(usage_expressions) <= cpu_limit, f"CPU_{flv_id}_{ts_id}_P3"
-                            M_cpu = cpu_limit if cpu_limit > 0 else 1.0
-                            prob3 += pulp.lpSum(usage_expressions) <= M_cpu * y[(flv_id, ts_id)], f"ACTIVATION_CPU_LINK_{flv_id}_{ts_id}_P3"
-                    for (flv_id, ts_id), usage_expressions in ram_usage.items():
-                        if flv_id in leftover_ram and ts_id in leftover_ram[flv_id]:
-                            ram_limit = leftover_ram[flv_id][ts_id]
-                            prob3 += pulp.lpSum(usage_expressions) <= ram_limit, f"RAM_{flv_id}_{ts_id}_P3"
-                    
-                    # Objective Phase 3: minimize emissions with fixed packing
-                    dynamic_terms = []
-                    for pod_id, pod_placements in placements.items():
-                        pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
-                        if not pod_obj:
-                            continue
-                        for flv_id, ts_id, _ in pod_placements:
-                            flv_obj = next((f for f in flavours if f.id == flv_id), None)
-                            if not flv_obj:
-                                continue
-                            k_watts = compute_node_dynamic_coeff_watts(flv_obj)
-                            total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
-                            u_pod = pod_obj.cpuRequest / total_cpu
-                            for offset in range(int(pod_obj.duration)):
-                                slot = ts_id + offset
-                                if slot >= max_time_slots:
-                                    break
-                                intensity = get_carbon_intensity(flv_obj, slot)
-                                coef_g = intensity * (k_watts * u_pod / 1000.0)
-                                dynamic_terms.append(self.weight_dynamic * coef_g * x[(pod_id, flv_id, ts_id)])
-                    
-                    idle_embodied_terms = []
-                    for flv in flavours:
-                        idle_w = flv.power.get('idle', 0.0)
-                        embodied_per_h = compute_embodied_per_hour_g(flv)
-                        for ts in timeslots:
-                            intensity = get_carbon_intensity(flv, ts.id)
-                            idle_oper_g = intensity * (idle_w / 1000.0)
-                            idle_embodied_terms.append(self.weight_activation * (idle_oper_g + embodied_per_h) * y[(flv.id, ts.id)])
-                    
-                    emissions_objective = pulp.lpSum(dynamic_terms) + pulp.lpSum(idle_embodied_terms)
-                    prob3 += emissions_objective
-                    
-                    # Solve Phase 3
-                    logging.info(f"  - [Phase 3] settings: time_limit={time_limit_cfg}s, gap_tolerance={gap_tolerance_cfg}, threads={threads_cfg}")
-                    solver_start_time = time.time()
-                    primary_solver = self._get_pulp_solver(solver_cfg, time_limit_cfg, gap_tolerance_cfg, threads_cfg)
-                    prob3.solve(primary_solver)
-                    phase3_time = time.time() - solver_start_time
-                    status3 = pulp.LpStatus[prob3.status]
-                    logging.info(f"  - [Phase 3] completed in {phase3_time:.3f}s, status={status3}")
-                    
-                    # Use Phase 3 solution if successful, otherwise fall back to Phase 2
-                    if status3 in ("Optimal", "OptimalInfeasible"):
-                        logging.info("✅ Using Phase 3 (emissions) solution")
-                        final_prob = prob3
-                        final_status = status3
-                    else:
-                        logging.warning("⚠️ Phase 3 failed, using Phase 2 (packing) solution")
-                        final_prob = prob2
-                        final_status = self.status
+                    final_status = 'Optimal'
                 else:
-                    logging.warning("❌ Phase 2 (packing) failed, using Phase 1 (placements) solution")
-                    final_prob = prob1
+                    logging.warning("❌ Emissions minimization (Phase 2) failed, using Phase 1 (placements) solution")
                     final_status = status1
 
                 # Extract placements and emissions as in standard flow, but use values from x/s/y

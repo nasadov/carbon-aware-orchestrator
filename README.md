@@ -68,6 +68,7 @@ The interface definition is in the `./pkg/idl/idl.proto` file. It models a snaps
     - `emissions_vs_pods_plot_generator.py`: Plot total and per‑pod emissions vs. pod count (Vanilla/Heuristic/Global‑Optimal)
     - `success_rate_plot_generator.py`: Plot scheduling success rate vs. pod count (multi‑algorithm)
     - `time_complexity_plot_generator.py`: Plot precompute time vs. pods/nodes for heuristic, global‑optimal, and vanilla
+    - `heuristic_time_complexity_sweep.py`: Scripted sweep to generate heuristic runtime scaling datasets (pods × nodes)
     - `fix_start_slots.py`: Tool for fixing timeslot inconsistencies in placement data for vanilla algorithm
 - `figures/`: Generated visualization outputs organized by experiment
     - `Comparison/Carbon_Emissions_Analysis_TIMESTAMP/`: Carbon emissions comparison results with automatic timestamping
@@ -643,6 +644,37 @@ Visualization outputs are saved to the `figures/` directory in a timestamped fol
   ```bash
   bash scripts/sweep_podcounts_and_precompute.sh
   ```
+
+### Heuristic Time Complexity (sweep script)
+
+We provide a focused sweep for the heuristic algorithm that synthesizes infrastructures/workloads and measures precompute runtime across pods and nodes, writing a publication‑ready plot and CSVs.
+
+```bash
+# From repository root
+python scripts/heuristic_time_complexity_sweep.py \
+  --node-counts 8,16,32,64 \
+  --pod-counts 50,100,200,400 \
+  --replicates 3 \
+  --timeslots 12
+
+# Optional knobs
+#   --min-density/--max-density  filter pods-per-node ranges
+#   --output-dir                 base folder for artifacts (default: experiments/time_complexity)
+#   --run-name                   custom run stamp
+#   --keep-artifacts             keep generated nodes/workloads
+#   --prioritize-efficiency      pass through to heuristic flags
+#   --operational-only           evaluate heuristic with operational-only carbon
+#   --embodied-mode              proportional|uniform (default: proportional)
+```
+
+Outputs under `experiments/time_complexity/<stamp>/`:
+
+- `heuristic_time_complexity_results.csv`: per‑run timing metrics and metadata
+- `artifacts/…`: generated nodes/workloads (if `--keep-artifacts`)
+- `logs/…/heuristic_performance.csv`: per‑call timings
+- `heuristic_time_complexity.png` and `.pdf`: runtime vs total pods, grouped by node count (median ±1σ)
+
+Use these artifacts directly, or feed the timing CSVs into `analysis/time_complexity_plot_generator.py` for multi‑algorithm overlays.
 
 **3. CSV Tracking and Output Details:**
 
