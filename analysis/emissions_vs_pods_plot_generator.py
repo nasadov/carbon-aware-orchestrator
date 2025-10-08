@@ -95,7 +95,8 @@ def _load_nodes_from_yaml(nodes_file: str):
 
             power_settings = {
                 "idle": float(annotations.get("hardware.power/idle_watts", "100")),
-                "active": float(annotations.get("hardware.power/active_watts", "200")),
+                # active no longer used in calculations; keep for backward compatibility if present
+                "active": float(annotations.get("hardware.power/active_watts", annotations.get("hardware.power/idle_watts", "200"))),
                 "max": float(annotations.get("hardware.power/max_watts", "300")),
             }
 

@@ -116,7 +116,8 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                     # Extract hardware annotations for embodied carbon, lifetime, and power
                     embodied_carbon = 0.0
                     lifetime_hours = 8760.0  # Default 1 year
-                    power_settings = {"idle": 50.0, "active": 100.0, "max": 150.0}  # Default power in watts
+                    # Default power in watts (active retained for backward compatibility; not used in calculations)
+                    power_settings = {"idle": 50.0, "active": 50.0, "max": 150.0}
                     
                     # Parse embodied emissions from annotations (convert kg to grams)
                     if "hardware.carbon/embodied_emissions" in annotations:

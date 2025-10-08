@@ -483,7 +483,7 @@ def compute_emissions_from_placements(placement_df, nodes_dict):
             continue
 
         idle_watts = node.power.get('idle', 0.0)
-        dynamic_coeff_watts = node.power.get('max', 0.0) - node.power.get('active', 0.0)
+        dynamic_coeff_watts = node.power.get('max', 0.0) - node.power.get('idle', 0.0)
         carbon_intensity = node.forecast.get(slot, 200.0)
 
         lifetime_hours = getattr(node, 'lifetime', 0.0) or 1e-6

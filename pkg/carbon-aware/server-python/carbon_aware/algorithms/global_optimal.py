@@ -2513,7 +2513,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     # Parse power settings
                     power_settings = {
                         "idle": float(annotations.get("hardware.power/idle_watts", "100")),
-                        "active": float(annotations.get("hardware.power/active_watts", "200")),
+                        # active kept for compatibility; not used in calculations
+                        "active": float(annotations.get("hardware.power/active_watts", annotations.get("hardware.power/idle_watts", "100"))),
                         "max": float(annotations.get("hardware.power/max_watts", "400"))
                     }
                     

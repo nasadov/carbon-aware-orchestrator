@@ -39,7 +39,7 @@ def compute_emissions(
     
     Power consumption model:
     - Base power = idle power
-    - Additional power based on CPU usage = (active-idle) * (pod.cpuRequest / flavour.totalCpu)
+    - Additional power based on CPU usage = (max-idle) * (pod.cpuRequest / flavour.totalCpu)
     
     Emissions calculation:
     - operationalEmissions = carbon_intensity * duration * power_consumption (kW)
@@ -60,16 +60,15 @@ def compute_emissions(
     carbon_intensity = flavour.forecast.get(timeslot_id, 200.0)
 
     # Calculate power consumption based on CPU usage
-    # Use the formula: idle + (max-active) * cpu_usage_ratio
+    # Use the formula: idle + (max-idle) * cpu_usage_ratio
     idle_power = flavour.power["idle"]  # watts
-    active_power = flavour.power["active"]  # watts
     max_power = flavour.power["max"]  # watts
     
     # CPU usage ratio (ensure we don't divide by zero)
     cpu_usage_ratio = pod.cpuRequest / max(flavour.totalCpu, 0.001)  # Avoid division by zero
     
-    # Calculate power based on the formula: idle + (max-active) * cpu_usage_ratio
-    power_consumption_watts = idle_power + (max_power - active_power) * cpu_usage_ratio
+    # Calculate power based on the formula: idle + (max-idle) * cpu_usage_ratio
+    power_consumption_watts = idle_power + (max_power - idle_power) * cpu_usage_ratio
     
     # Convert watts to kilowatts for emissions calculation
     pod.powerConsumption = power_consumption_watts / 1000.0  # convert W to kW
@@ -112,16 +111,15 @@ def compute_emissions_operational_only(flavour: CarbonAwareFlavour, timeslot_id:
     carbon_intensity = flavour.forecast.get(timeslot_id, 200.0)
 
     # Calculate power consumption based on CPU usage
-    # Use the formula: idle + (max-active) * cpu_usage_ratio
+    # Use the formula: idle + (max-idle) * cpu_usage_ratio
     idle_power = flavour.power["idle"]  # watts
-    active_power = flavour.power["active"]  # watts
     max_power = flavour.power["max"]  # watts
     
     # CPU usage ratio (ensure we don't divide by zero)
     cpu_usage_ratio = pod.cpuRequest / max(flavour.totalCpu, 0.001)  # Avoid division by zero
     
-    # Calculate power based on the formula: idle + (max-active) * cpu_usage_ratio
-    power_consumption_watts = idle_power + (max_power - active_power) * cpu_usage_ratio
+    # Calculate power based on the formula: idle + (max-idle) * cpu_usage_ratio
+    power_consumption_watts = idle_power + (max_power - idle_power) * cpu_usage_ratio
     
     # Convert watts to kilowatts for emissions calculation
     pod.powerConsumption = power_consumption_watts / 1000.0  # convert W to kW
@@ -154,21 +152,20 @@ def get_carbon_intensity(flavour: CarbonAwareFlavour, timeslot_id: int, default_
 
 def compute_node_power_watts(flavour: CarbonAwareFlavour, total_cpu_ratio: float) -> float:
     """Compute node power (W) at aggregate CPU utilization ratio U in [0,1].
-    Power model: P_node(U) = P_idle + (P_max - P_active) * U if U > 0, else 0.
-    We attribute node idle only when there is at least one running pod (U>0).
+    Power model: P_node(U) = P_idle + (P_max - P_idle) * U if U > 0, else 0.
+    We attribute node idle whenever there is any work (U>0).
     """
     idle_power = flavour.power["idle"]
-    active_power = flavour.power["active"]
     max_power = flavour.power["max"]
     if total_cpu_ratio <= 0:
         return 0.0
-    dynamic_coeff = max_power - active_power
+    dynamic_coeff = max_power - idle_power
     return idle_power + dynamic_coeff * max(0.0, min(1.0, total_cpu_ratio))
 
 
 def compute_node_dynamic_coeff_watts(flavour: CarbonAwareFlavour) -> float:
     """Return dynamic coefficient k (W) such that dynamic(W) = k * U."""
-    return flavour.power["max"] - flavour.power["active"]
+    return flavour.power["max"] - flavour.power["idle"]
 
 
 def compute_embodied_per_hour_g(flavour: CarbonAwareFlavour) -> float:
@@ -459,12 +456,13 @@ def get_node_hardware_metadata(node) -> tuple[float, float, Dict[str, float]]:
                 except (ValueError, TypeError):
                     logging.warning(f"Invalid idle power value: {annotation.value}, using default")
                     
+            # 'active_watts' retained for backward compatibility but not used in calculations.
             if annotation.key == "hardware.power/active_watts":
                 try:
                     power["active"] = float(annotation.value)
-                    logging.debug(f"Found active power from annotation: {power['active']}W")
+                    logging.debug(f"Found active power from annotation (compat only): {power['active']}W")
                 except (ValueError, TypeError):
-                    logging.warning(f"Invalid active power value: {annotation.value}, using default")
+                    logging.warning(f"Invalid active power value: {annotation.value}, keeping default")
                     
             if annotation.key == "hardware.power/max_watts":
                 try:
@@ -495,28 +493,28 @@ def get_node_hardware_metadata(node) -> tuple[float, float, Dict[str, float]]:
             if lifetime == default_lifetime:
                 lifetime = 5.2
             if power == default_power:  # Only replace if we haven't found any power annotations
-                power = {"idle": 0.5, "active": 2.0, "max": 5.0}
+                power = {"idle": 0.5, "active": 0.5, "max": 5.0}
         elif subcategory == "Smartphone":
             if embodied_carbon == default_embodied_carbon:
                 embodied_carbon = 52.729
             if lifetime == default_lifetime:
                 lifetime = 3.03
             if power == default_power:
-                power = {"idle": 1.0, "active": 3.0, "max": 15.0}
+                power = {"idle": 1.0, "active": 1.0, "max": 15.0}
         elif subcategory == "Laptop":
             if embodied_carbon == default_embodied_carbon:
                 embodied_carbon = 231.855
             if lifetime == default_lifetime:
                 lifetime = 4.13
             if power == default_power:
-                power = {"idle": 10.0, "active": 40.0, "max": 150.0}
+                power = {"idle": 10.0, "active": 10.0, "max": 150.0}
         elif subcategory == "Server":
             if embodied_carbon == default_embodied_carbon:
                 embodied_carbon = 1230.656
             if lifetime == default_lifetime:
                 lifetime = 3.87
             if power == default_power:
-                power = {"idle": 100.0, "active": 200.0, "max": 400.0}
+                power = {"idle": 100.0, "active": 100.0, "max": 400.0}
     
     # Log the final values
     logging.info(f"Node {node.name} hardware metadata: embodied_carbon={embodied_carbon}kg CO2e, "
