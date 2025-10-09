@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Parameter sweep for heuristic precompute runtime scaling.
+"""Parameter sweep for precompute runtime scaling (heuristic, vanilla, global-optimal).
 
-This script generates synthetic infrastructures and workloads, runs the heuristic
-precomputation pipeline for a grid of node/pod configurations, and produces a
-publication-ready plot that summarizes how runtime scales with workload size.
+This script generates synthetic infrastructures and workloads, runs the selected
+algorithm's precomputation pipeline for a grid of node/pod configurations, and
+produces a publication-ready plot summarizing how runtime scales with workload size.
 
 Example usage (from repository root):
-    python scripts/heuristic_time_complexity_sweep.py \
-        --node-counts 8,16,32 \
+    python scripts/time_complexity_sweep.py \
+        --algorithm heuristic \
+        --node-counts 8,16,32,64 \
         --pod-counts 50,100,200,400 \
         --replicates 3
 """
@@ -85,14 +86,17 @@ def add_repo_modules_to_path() -> Tuple[Path, Path]:
 DEFAULT_CONFIG = None
 generate_nodes_file = None
 generate_timeslot_files = None
-run_heuristic_precomputation = None
+run_precompute = None
 PerformanceLogger = None
 
 
-def lazy_import_dependencies() -> None:
-    """Import tooling after sys.path has been populated."""
+def lazy_import_dependencies(algorithm: str) -> None:
+    """Import tooling after sys.path has been populated.
+
+    Select the appropriate precompute runner based on the algorithm.
+    """
     global DEFAULT_CONFIG, generate_nodes_file, generate_timeslot_files
-    global run_heuristic_precomputation, PerformanceLogger
+    global run_precompute, PerformanceLogger
 
     if DEFAULT_CONFIG is not None:
         return
@@ -102,16 +106,26 @@ def lazy_import_dependencies() -> None:
         generate_nodes_file as gen_nodes,
         generate_timeslot_files as gen_timeslots,
     )
-    from carbon_aware.precompute_heuristic import run_heuristic_precomputation as run_precompute  # type: ignore
+    # Select precompute entrypoint per algorithm
+    if algorithm == "heuristic":
+        from carbon_aware.precompute_heuristic import (
+            run_heuristic_precomputation as _run_precompute,  # type: ignore
+        )
+    elif algorithm == "vanilla":
+        from carbon_aware.precompute_vanilla import (
+            run_vanilla_precomputation as _run_precompute,  # type: ignore
+        )
+    else:
+        from carbon_aware.precompute_global_optimal import (
+            run_global_optimal_precomputation as _run_precompute,  # type: ignore
+        )
     from carbon_aware.utils import PerformanceLogger as PerfLogger  # type: ignore
 
     DEFAULT_CONFIG = GEN_DEFAULT_CONFIG
     generate_nodes_file = gen_nodes
     generate_timeslot_files = gen_timeslots
-    run_heuristic_precomputation = run_precompute
+    run_precompute = _run_precompute
     PerformanceLogger = PerfLogger
-
-
 
 
 class ProgressTracker:
@@ -247,24 +261,50 @@ def run_single_precompute(
     prioritize_efficiency: bool,
     operational_only: bool,
     embodied_mode: str,
+    algorithm: str,
 ) -> Tuple[bool, float, Path]:
-    """Execute the heuristic precompute run and capture elapsed wall time."""
+    """Execute the precompute run for the given algorithm and capture elapsed wall time."""
     config.log_dir.mkdir(parents=True, exist_ok=True)
-    perf_logger = PerformanceLogger("heuristic")
-    perf_log_path = config.log_dir / "heuristic_performance.csv"
-    perf_logger.set_new_log_file(str(config.log_dir), "heuristic_performance.csv")
+    algo_key = algorithm.replace("-", "_")
+    perf_logger = PerformanceLogger(algorithm)
+    perf_filename = f"{algo_key}_performance.csv"
+    perf_log_path = config.log_dir / perf_filename
+    perf_logger.set_new_log_file(str(config.log_dir), perf_filename)
 
     start = time.perf_counter()
-    success = run_heuristic_precomputation(
-        workloads_dir=str(config.workloads_dir),
-        nodes_file=str(config.nodes_file),
-        forecasts_file=str(forecasts_file),
-        session_log_dir=str(config.log_dir),
-        perf_logger=perf_logger,
-        prioritize_efficiency=prioritize_efficiency,
-        operational_only=operational_only,
-        embodied_mode=embodied_mode,
-    )
+    # Invoke the selected precompute function with the right signature
+    if algorithm == "vanilla":
+        success = run_precompute(
+            workloads_dir=str(config.workloads_dir),
+            nodes_file=str(config.nodes_file),
+            forecasts_file=str(forecasts_file),
+            session_log_dir=str(config.log_dir),
+            perf_logger=perf_logger,
+            prioritize_efficiency=prioritize_efficiency,
+            operational_only=operational_only,
+        )
+    elif algorithm == "global-optimal":
+        success = run_precompute(
+            workloads_dir=str(config.workloads_dir),
+            nodes_file=str(config.nodes_file),
+            forecasts_file=str(forecasts_file),
+            session_log_dir=str(config.log_dir),
+            perf_logger=perf_logger,
+            prioritize_efficiency=prioritize_efficiency,
+            operational_only=operational_only,
+            embodied_mode=embodied_mode,
+        )
+    else:  # heuristic
+        success = run_precompute(
+            workloads_dir=str(config.workloads_dir),
+            nodes_file=str(config.nodes_file),
+            forecasts_file=str(forecasts_file),
+            session_log_dir=str(config.log_dir),
+            perf_logger=perf_logger,
+            prioritize_efficiency=prioritize_efficiency,
+            operational_only=operational_only,
+            embodied_mode=embodied_mode,
+        )
     elapsed = time.perf_counter() - start
 
     return success, elapsed, perf_log_path
@@ -286,8 +326,8 @@ def aggregate_run_metrics(perf_log_path: Path) -> Tuple[int, float, float, float
     return total_calls, total_ms, mean_ms, max_ms
 
 
-def create_publication_plot(results: pd.DataFrame, output_dir: Path) -> Path:
-    """Create and save the runtime scaling plot."""
+def create_publication_plot(results: pd.DataFrame, output_dir: Path, algorithm: str) -> Path:
+    """Create and save the runtime scaling plot for the specified algorithm."""
     if results.empty:
         raise ValueError("No successful runs available to plot.")
 
@@ -323,7 +363,13 @@ def create_publication_plot(results: pd.DataFrame, output_dir: Path) -> Path:
 
     ax.set_xlabel("Total pods scheduled", fontsize=12)
     ax.set_ylabel("Runtime (s)", fontsize=12)
-    ax.set_title("Heuristic precompute runtime scaling", fontsize=13)
+    # Title per algorithm
+    algo_label = (
+        "Heuristic" if algorithm == "heuristic" else
+        "Global-Optimal" if algorithm == "global-optimal" else
+        "Vanilla"
+    )
+    ax.set_title(f"{algo_label} precompute runtime scaling", fontsize=13)
     ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.6)
     ax.legend(title="Infrastructure size", fontsize=10)
     ax.set_ylim(bottom=0)
@@ -342,8 +388,13 @@ def create_publication_plot(results: pd.DataFrame, output_dir: Path) -> Path:
 
     fig.tight_layout()
 
-    png_path = output_dir / "heuristic_time_complexity.png"
-    pdf_path = output_dir / "heuristic_time_complexity.pdf"
+    base = (
+        "heuristic_time_complexity" if algorithm == "heuristic" else
+        "global_optimal_time_complexity" if algorithm == "global-optimal" else
+        "vanilla_time_complexity"
+    )
+    png_path = output_dir / f"{base}.png"
+    pdf_path = output_dir / f"{base}.pdf"
     fig.savefig(png_path, dpi=300, bbox_inches="tight")
     fig.savefig(pdf_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -353,6 +404,12 @@ def create_publication_plot(results: pd.DataFrame, output_dir: Path) -> Path:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--algorithm",
+        choices=["heuristic", "vanilla", "global-optimal"],
+        default="heuristic",
+        help="Algorithm to evaluate in the sweep (default: heuristic)",
+    )
     parser.add_argument(
         "--node-counts",
         type=parse_int_series,
@@ -450,7 +507,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("--min-density cannot exceed --max-density")
 
     repo_root, server_python_dir = add_repo_modules_to_path()
-    lazy_import_dependencies()
+    lazy_import_dependencies(args.algorithm)
 
     forecasts_file = server_python_dir / "all_forecasts.json"
     if not forecasts_file.exists():
@@ -491,8 +548,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         len(args.pod_counts),
     )
 
+    label = (
+        "Heuristic" if args.algorithm == "heuristic" else
+        "Global-Optimal" if args.algorithm == "global-optimal" else
+        "Vanilla"
+    )
     if tqdm is not None:
-        progress = tqdm(total=total_runs, desc="Heuristic sweep", unit="run")
+        progress = tqdm(total=total_runs, desc=f"{label} sweep", unit="run")
     else:
         progress = ProgressTracker(total_runs)
 
@@ -516,6 +578,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.prioritize_efficiency,
                 args.operational_only,
                 args.embodied_mode,
+                args.algorithm,
             )
             total_calls, total_ms, mean_ms, max_ms = aggregate_run_metrics(perf_log_path)
             status = "success" if success else "failed"
@@ -569,7 +632,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     progress.close()
 
     results_df = pd.DataFrame(records)
-    results_csv = base_output_dir / "heuristic_time_complexity_results.csv"
+    algo_key = args.algorithm.replace("-", "_")
+    results_csv = base_output_dir / f"{algo_key}_time_complexity_results.csv"
     results_df.to_csv(results_csv, index=False)
 
     successful_runs = results_df[results_df["status"] == "success"].shape[0]
@@ -578,7 +642,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     try:
-        plot_path = create_publication_plot(results_df, base_output_dir)
+        plot_path = create_publication_plot(results_df, base_output_dir, args.algorithm)
         logging.info("Saved runtime plot to %s", plot_path)
     except ValueError as exc:
         logging.warning("Plot generation skipped: %s", exc)
@@ -593,3 +657,5 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
     sys.exit(main())
+
+

@@ -81,7 +81,7 @@ Carbon-aware computing, container orchestration, Kubernetes, sustainable computi
     \item We establish that carbon-aware container orchestration provides a feasible pathway toward sustainable cloud computing.
 \end{itemize}
 
-\subsection{Research Questions}
+\subsection{Research Questions} \pk{delete}
 
 \begin{description}
     \item[RQ1:] How does the proposed algorithm compare to baseline algorithms in terms of carbon emission reduction?
@@ -126,7 +126,7 @@ The 2025 literature advances the axes flagged in our review: temporally aware sc
 
 \section{Proposed Method}
 
-\subsection{The Hidden Impact: Why Embodied Emissions Matter}
+\subsection{The Hidden Impact: Why Embodied Emissions Matter} \pk{move to results section}
 
 Current carbon-aware scheduling approaches in the literature focus predominantly on operational emissions---the carbon footprint from electricity consumed during workload execution (e.g., \cite{beena_green_2025, lints2025}). While this operational perspective captures the immediate energy consumption of running containers, it fundamentally overlooks a critical component of the total carbon footprint: embodied emissions from hardware manufacturing, transportation, and end-of-life processing.
 
@@ -154,7 +154,7 @@ The implications extend beyond mere placement optimization. When embodied emissi
 
 Our analysis demonstrates that neglecting embodied emissions can lead to suboptimal scheduling decisions that significantly underestimate total carbon impact in typical cloud workload scenarios. More critically, operational-only approaches may actively work against sustainability goals by creating utilization patterns that waste the embodied carbon investment in underutilized hardware.
 
-\subsection{System Architecture Overview}
+\subsection{System Architecture Overview} \pk{move to experimental setup section}
 
 Our carbon-aware orchestration system is implemented as a distributed architecture that integrates with Kubernetes through a custom gRPC-based interface. The system decouples carbon-aware scheduling logic from the underlying orchestration platform, enabling algorithmic experimentation while maintaining production-grade performance and reliability.
 
