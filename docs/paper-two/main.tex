@@ -123,13 +123,7 @@ The 2025 literature advances the axes flagged in our review: temporally aware sc
 
 \subsubsection{Carbon Signals}
 
-Our carbon intensity modeling incorporates both geographical and temporal variations in electricity grid carbon footprint, providing the foundation for accurate operational carbon emission calculations.
-
-\textbf{Grid-Level Forecasting:} The system integrates carbon intensity forecasts from Electricity Maps API, which provides real-time and predicted carbon intensity data for European regions. Forecasts incorporate renewable energy generation, fossil fuel plant dispatch, and grid interconnection effects.
-
-\textbf{Regional Coverage:} The current implementation supports four European regions (DE, FR, ES, IT-NO) with hourly carbon-intensity forecasts. Regional data shows carbon intensities ranging from 30 gCO\textsubscript{2}/kWh to 479 gCO\textsubscript{2}/kWh, reflecting differences in electricity generation portfolios across European grids.
-
-\textbf{Forecast Processing:} The \texttt{build\_timeslots} function constructs temporal scheduling windows by combining carbon intensity forecasts with infrastructure availability. Timeslots align with forecast granularity (hourly) while supporting sub-hourly workload placement through interpolation methods.
+We use average carbon intensity (ACI) as the actionable carbon signal and denote it by $\mathrm{CI}_{j,t}$ for region (node) $j$ at timeslot $t$. This signal varies over geography and time and enters the operational-emissions term of our objective (see MILP in Section~\ref{sec:milp}). Forecasts are treated as exogenous inputs; details on data source, geographical coverage, horizon, and preprocessing are provided in Section~\ref{sec:experimental-setup}.
 
 \subsubsection{Power Modeling}
 
@@ -186,7 +180,7 @@ where $t_{duration}$ represents the workload execution time in hours. This alloc
 
 The embodied carbon calculation is integrated directly into the scheduling objective function, where it combines with operational emissions to provide a comprehensive carbon footprint assessment for each placement decision. This integrated approach ensures that both emission components influence scheduling decisions simultaneously, rather than treating them as separate optimization phases. We quantify the effect on placement patterns in Section~\ref{subsec:hidden-impact}.
 
-\subsection{Problem Formulation (MILP)}
+\subsection{Problem Formulation (MILP)}\label{sec:milp}
 
 We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Programming (MILP) optimization that finds optimal assignments of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing total carbon emissions incorporating both operational and embodied components.
 
@@ -357,7 +351,7 @@ The heuristic algorithm has time complexity $O(|\mathcal{P}| \times |\mathcal{F}
 
 The baseline simulates a Kubernetes-default-inspired scheduler to enable apples-to-apples comparisons over the same spatiotemporal horizon. It follows a \emph{filter → score → select} paradigm: filter nodes that satisfy CPU and RAM feasibility across the pod's labeled duration for a candidate start; score feasible nodes with a LeastAllocated-like metric that prefers higher residual CPU and RAM fractions (equal weights); and select the best-scoring node and earliest feasible start. It explicitly enforces earliest-timeslot constraints and ignores all carbon signals (operational and embodied), returning zero emissions for placements. This design yields a robust, capacity-respecting comparator that isolates the effect of adding carbon-awareness.
 
-\section{Experimental Setup}
+\section{Experimental Setup}\label{sec:experimental-setup}
 
 \subsection{System Architecture Overview}
 
@@ -514,7 +508,7 @@ Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At
 \end{figure}
 
 \subsection{Runtime Cost: Time Complexity}\label{subsec:time-complexity}
-Figure~\ref{fig:time-vs-pods} summarises the wall-clock runtime collected in our 12-timeslot sweep. We swept node counts $\{8,16,32,64\}$ against pod targets $\{50,100,200,400\}$, executing three replicates per configuration with distinct seeds. Points show the replicate median while the error bars denote $\pm1\sigma$. Runtime increases roughly linearly with pod volume yet remains below eight seconds even for the 400-pod, 64-node scenario, which confirms the heuristic's suitability for online scheduling. For comparison, MILP precomputation (not plotted) remains an order of magnitude slower and highly sensitive to solver limits, reinforcing its use as a benchmarking oracle rather than a production scheduler.
+Figure~\ref{fig:time-vs-pods} summarises runtime. It grows roughly with the number of pods and stays under eight seconds even at our largest case (400 pods, 64 nodes), which is compatible with online use. The MILP approach is far slower and sensitive to solver limits, so we treat it as a benchmarking oracle rather than a production scheduler.
 % Use heuristic time complexity plots as representative runtime cost
 \newcommand{\TimeVsPods}{\detokenize{../../experiments/time_complexity/sweep_20250918_113006/heuristic_time_complexity.pdf}}
 \begin{figure}[t]
@@ -531,24 +525,20 @@ Figure~\ref{fig:time-vs-pods} summarises the wall-clock runtime collected in our
 \section{Discussion}
 
 \subsection{Implications and Limitations}
-\paragraph*{Time Complexity in Big-O.}
-Let $P$ denote the number of pods, $F$ the number of nodes (flavours), and $T$ the number of horizon slots considered for scheduling. The heuristic orders pods, then for each pod evaluates feasible $(j,t)$ candidates (node $j$, start slot $t$) subject to resource and window constraints, computing an emissions cost per candidate before committing. With standard feasibility pruning, this yields an overall runtime of
-\begin{equation*}
-\mathcal{O}\big(P\,\log P\big) \; + \; \mathcal{O}\big(P\,F\,\bar{T}\,\bar{D}\big),
-\end{equation*}
-where $\bar{T}$ is the average number of start slots actually eligible for a pod (tight windows reduce this below $T$) and $\bar{D}$ is the average pod duration measured in slots (a constant factor for fixed duration sets). The first term comes from sorting pods by urgency/size; the second dominates and is effectively linear in $P$ for fixed $F,\bar{T},\bar{D}$. Memory usage is $\mathcal{O}(F\,T)$ for per-node, per-slot capacity tracking plus $\mathcal{O}(P)$ for pod metadata.
+\paragraph*{How it scales.}
+In practice, runtime grows with the number of pods and nodes that must be evaluated. Two things keep it fast: (i) realistic deadlines shrink the number of eligible start times per pod, and (ii) early feasibility checks discard many node–time candidates before detailed scoring. Memory use grows with tracked capacity per node and the number of pods under consideration.
 
-\paragraph*{Empirical Calibration.}
-The sweep (12-slot horizon; $F\in\{8,16,32,64\}$; $P\in\{50,100,200,400\}$; 3 replicates) exhibits near-linear scaling in $P$ for fixed $F$, and roughly linear scaling in $F$ at a given $P$, consistent with the $\mathcal{O}(P\,F\,\bar{T})$ term. Even at the largest tested point (400 pods, 64 nodes), the median runtime remained under eight seconds on our test machine, which is compatible with online or nearline admission control.
+\paragraph*{Empirical behavior.}
+Across our sweep (12-slot horizon; 8–64 nodes; 50–400 pods; three replicates), runtime increased smoothly with load and remained under eight seconds at the largest point, suitable for online or nearline admission control.
 
-\paragraph*{Implications for Deployability.}
-Because the dominant term grows with the candidate set size, two design choices keep $\bar{T}$ small in practice: (i) realistic deadlines and durations reduce eligible starts; and (ii) resource feasibility checks prune many $(j,t)$ pairs early. When service-level objectives require stricter response times, the heuristic can restrict evaluation to the top-$k$ nodes per pod (by carbon intensity or empirical efficiency) without changing asymptotics, but further reducing the constant factor.
+\paragraph*{Implications for deployability.}
+When response-time targets are tight, we can further cap per-pod evaluations to a small set of promising nodes (e.g., by carbon intensity), reducing constant factors while preserving outcomes.
 
-\paragraph*{Limitations and When It Slows Down.}
-In the worst case (very lax deadlines, large $F$, long durations), $\bar{T}\!\to\!T$ and the constant factor grows; the heuristic remains polynomial but can approach $\mathcal{O}(P\,F\,T)$ work. Highly heterogeneous constraints (affinity/anti-affinity, per-class quotas) increase feasibility checks per candidate, and very fine-grained slotting increases $T$. Conversely, the MILP oracle has exponential worst-case behaviour but sometimes benefits from strong relaxations on small instances; we therefore position the oracle for benchmarking bounds and the heuristic for production scheduling.
+\paragraph*{When it slows down.}
+Very loose deadlines, many nodes, or long durations increase candidates to check and can slow evaluation. Rich policy constraints also add per-candidate checks. The MILP oracle, by contrast, can be much slower and is retained as a benchmarking tool rather than for production.
 
-\paragraph*{Opportunities for Further Speedups.}
-Three engineering optimisations preserve decisions while reducing constants: (i) cache per-node cumulative carbon/energy curves to make emissions computation $\mathcal{O}(1)$ in duration; (ii) reuse leftover-capacity snapshots across adjacent pods with identical durations; and (iii) apply vectorised evaluations for the $(j,t)$ grid (e.g., batched cost computation on a node). These are orthogonal to algorithmic complexity and complement the carbon-efficiency gains demonstrated earlier.
+\paragraph*{Further speedups.}
+We can reduce overheads further by caching per-node energy/carbon curves, reusing capacity snapshots across similar pods, and evaluating batches of candidates together.
 
 \subsection{Threats to Validity}
 \textbf{Internal validity.} We control randomness via fixed seeds and validate constraints post hoc. Remaining risks include generator-induced artifacts; we mitigate by sweeping multiple pod counts and infrastructures.

@@ -35,64 +35,28 @@ def compute_emissions(
     embodied_allocation_mode: Optional[str] = None,
 ) -> float:
     """
-    Compute the total carbon emissions for placing 'pod' on 'flavour' during timeslot 'timeslot_id'.
-    
-    Power consumption model:
-    - Base power = idle power
-    - Additional power based on CPU usage = (max-idle) * (pod.cpuRequest / flavour.totalCpu)
-    
-    Emissions calculation:
-    - operationalEmissions = carbon_intensity * duration * power_consumption (kW)
-    - embodiedEmissions = (embodiedCarbon / (365 * lifetime * 24)) * duration
+    Compute total carbon emissions (gCO2e) for placing 'pod' on 'flavour' starting at
+    'timeslot_id' using node-aware allocation.
+
+    Behavior:
+    - Always uses the node-aware allocation model (no per‑pod fallback).
+    - Default embodied allocation mode is "proportional" unless explicitly set to "uniform".
+    - If 'used_cpu_before_by_slot' is None, hours are treated as previously idle.
     """
-    # If an embodied allocation mode is provided, delegate to the node-aware allocator
-    if embodied_allocation_mode is not None:
-        return compute_emissions_with_allocation(
-            flavour=flavour,
-            start_slot=timeslot_id,
-            pod=pod,
-            used_cpu_before_by_slot=used_cpu_before_by_slot or {},
-            embodied_allocation_mode=embodied_allocation_mode,
-        )
-
-    # Backward-compatible default method
-    # Default carbon intensity if timeslot not in forecast
-    carbon_intensity = flavour.forecast.get(timeslot_id, 200.0)
-
-    # Calculate power consumption based on CPU usage
-    # Use the formula: idle + (max-idle) * cpu_usage_ratio
-    idle_power = flavour.power["idle"]  # watts
-    max_power = flavour.power["max"]  # watts
-    
-    # CPU usage ratio (ensure we don't divide by zero)
-    cpu_usage_ratio = pod.cpuRequest / max(flavour.totalCpu, 0.001)  # Avoid division by zero
-    
-    # Calculate power based on the formula: idle + (max-idle) * cpu_usage_ratio
-    power_consumption_watts = idle_power + (max_power - idle_power) * cpu_usage_ratio
-    
-    # Convert watts to kilowatts for emissions calculation
-    pod.powerConsumption = power_consumption_watts / 1000.0  # convert W to kW
-    
-    # Calculate operational emissions
-    operationalEmissions = carbon_intensity * pod.duration * pod.powerConsumption
-
-    # Embodied carbon distributed over lifetime (flavour.lifetime is already in hours)
-    hours_in_lifetime = flavour.lifetime
-    if hours_in_lifetime <= 0:
-        hours_in_lifetime = 1e-6
-    embodied_per_hour = flavour.embodiedCarbon / hours_in_lifetime
-    embodiedEmissions = embodied_per_hour * pod.duration
-
-    total_emi = operationalEmissions + embodiedEmissions
-
-    logging.debug(
-        f"[compute_emissions] Node={flavour.id}, TimeslotID={timeslot_id}, "
-        f"carbon_intensity={carbon_intensity}, duration={pod.duration}, "
-        f"cpu_ratio={cpu_usage_ratio:.2f}, power={power_consumption_watts:.2f}W ({pod.powerConsumption:.3f}kW), "
-        f"lifetime={hours_in_lifetime}h, embodied_per_hour={embodied_per_hour:.3f}, "
-        f"operationalEmi={operationalEmissions:.3f}, embodiedEmi={embodiedEmissions:.3f}, total={total_emi:.3f}"
+    mode = embodied_allocation_mode if embodied_allocation_mode in ("proportional", "uniform") else "proportional"
+    used_map = used_cpu_before_by_slot or {}
+    total = compute_emissions_with_allocation(
+        flavour=flavour,
+        start_slot=timeslot_id,
+        pod=pod,
+        used_cpu_before_by_slot=used_map,
+        embodied_allocation_mode=mode,
     )
-    return total_emi
+    logging.debug(
+        f"[compute_emissions] Node={flavour.id}, TimeslotID={timeslot_id}, mode={mode}, "
+        f"used_cpu_map_entries={len(used_map)} => total={total:.3f} gCO2e"
+    )
+    return total
 
 
 def compute_emissions_operational_only(flavour: CarbonAwareFlavour, timeslot_id: int, pod: CarbonAwarePod) -> float:
