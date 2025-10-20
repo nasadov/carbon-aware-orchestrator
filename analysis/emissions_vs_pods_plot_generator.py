@@ -7,7 +7,9 @@ with x-axis as number of pods in the experiment and y-axis as total carbon
 emissions (kg CO2e) per experiment. Data is parsed dynamically from
 /root/carbon-aware-orchestrator/experiments and its subdirectories.
 
-Default behavior is to plot proportional embodied allocation only.
+Default behavior is to plot proportional embodied allocation only. Idle power is
+included by default in operational emissions; pass --exclude-idle to drop it.
+Embodied emissions are included by default; pass --exclude-emb to drop them.
 Flags:
   --uniform  Plot only uniform embodied allocation (plus vanilla)
   --both     Plot both proportional and uniform (plus vanilla)
@@ -158,10 +160,12 @@ def _attach_forecasts(nodes, forecasts):
     return nodes
 
 
-def _compute_total_emissions_for_csv(algo: str, csv_path: str, nodes_dict: dict):
+def _compute_total_emissions_for_csv(algo: str, csv_path: str, nodes_dict: dict, ignore_idle: bool = False, ignore_embodied: bool = False):
     """Compute total emissions (kg) for a given placement CSV.
     - global-optimal: sums 'total_carbon_emissions' column (already kg)
-    - heuristic/vanilla: compute using compute_emissions for each row
+    - heuristic/vanilla: compute node-slot emissions from placements
+
+    If ignore_idle is True, the idle power term is excluded from operational emissions.
     """
     total_kg = 0.0
     rows = 0
@@ -219,17 +223,17 @@ def _compute_total_emissions_for_csv(algo: str, csv_path: str, nodes_dict: dict)
                 continue
             # Node parameters
             idle_w = node.power.get('idle', 0.0)
-            k_watts = (node.power.get('max', 0.0) - node.power.get('active', 0.0))
+            # Dynamic coefficient (W). Prefer max-idle; fall back to max-active for compatibility.
+            k_watts = (node.power.get('max', 0.0) - node.power.get('idle', node.power.get('active', 0.0)))
             # Emissions per hour (g)
             intensity = 200.0
             try:
                 intensity = node.forecast.get(slot, 200.0)
             except Exception:
                 pass
-            embodied_per_h = 0.0
             lifetime_hours = getattr(node, 'lifetime', 0.0) or 1e-6
-            embodied_per_h = getattr(node, 'embodiedCarbon', 0.0) / lifetime_hours
-            idle_oper_g = intensity * (idle_w / 1000.0)
+            embodied_per_h = 0.0 if ignore_embodied else (getattr(node, 'embodiedCarbon', 0.0) / lifetime_hours)
+            idle_oper_g = 0.0 if ignore_idle else intensity * (idle_w / 1000.0)
             dynamic_g = intensity * (k_watts * U / 1000.0)
             total_kg += (idle_oper_g + dynamic_g + embodied_per_h) / 1000.0
     return total_kg, rows
@@ -311,7 +315,7 @@ def _find_placement_csv(algo: str, dir_path: str):
     return None
 
 
-def create_emissions_plot(selection: str = 'proportional', include_all: bool = False):
+def create_emissions_plot(selection: str = 'proportional', include_all: bool = False, ignore_idle: bool = False, ignore_embodied: bool = False):
     # Prepare nodes and forecasts for computed emissions
     nodes = _load_nodes_from_yaml(NODES_FILE)
     forecasts = _load_carbon_forecasts(FORECASTS_FILE)
@@ -345,7 +349,7 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
         csv_path = _find_placement_csv(algo, dir_path)
         if not csv_path:
             continue
-        total_kg, rows = _compute_total_emissions_for_csv(algo, csv_path, nodes_dict)
+        total_kg, rows = _compute_total_emissions_for_csv(algo, csv_path, nodes_dict, ignore_idle=ignore_idle, ignore_embodied=ignore_embodied)
         if rows == 0:
             continue
         totals[algo][pods].append(total_kg)
@@ -456,7 +460,13 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
 
     plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Total Carbon Emissions per Experiment (kg CO₂e)', fontsize=14, fontweight='bold')
-    plt.title('Total Carbon Emissions vs. Pod Count\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
+    title_flags = []
+    if ignore_idle:
+        title_flags.append('Idle Excluded')
+    if ignore_embodied:
+        title_flags.append('Embodied Excluded')
+    title_suffix = f" ({', '.join(title_flags)})" if title_flags else ''
+    plt.title(f'Total Carbon Emissions vs. Pod Count{title_suffix}\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
         plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
@@ -509,7 +519,7 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
 
     plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Emissions per Placed Pod (kg CO₂e/pod)', fontsize=14, fontweight='bold')
-    plt.title('Emissions per Pod vs. Pod Count\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
+    plt.title(f'Emissions per Pod vs. Pod Count{title_suffix}\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
         plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
@@ -547,7 +557,7 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
             plt.axhline(0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
             plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
             plt.ylabel('Emissions Improvement vs Vanilla (%)', fontsize=14, fontweight='bold')
-            plt.title('Carbon Emissions Reduction vs Vanilla Baseline', fontsize=16, fontweight='bold', pad=20)
+            plt.title(f'Carbon Emissions Reduction vs Vanilla Baseline{title_suffix}', fontsize=16, fontweight='bold', pad=20)
             plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
             if pod_counts_sorted:
                 plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
@@ -565,11 +575,13 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
 if __name__ == "__main__":
     print("🚀 EMISSIONS VS PODS PLOT GENERATOR")
     print("=" * 50)
-    parser = argparse.ArgumentParser(description="Emissions vs Pods Plot Generator")
+    parser = argparse.ArgumentParser(description="Emissions vs Pods Plot Generator (idle included by default)")
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--uniform', action='store_true', help='Plot uniform embodied allocation only (plus vanilla)')
     group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
     parser.add_argument('--all', action='store_true', help='Include all experiments (default: latest-only per algo and pod count)')
+    parser.add_argument('--exclude-idle', action='store_true', help='Exclude idle power from operational emissions (default: included)')
+    parser.add_argument('--exclude-emb', action='store_true', help='Exclude embodied emissions (default: included)')
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
-    create_emissions_plot(selection, include_all=args.all)
+    create_emissions_plot(selection, include_all=args.all, ignore_idle=args.exclude_idle, ignore_embodied=args.exclude_emb)
