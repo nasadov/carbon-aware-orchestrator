@@ -267,8 +267,8 @@ The MILP contains $O(|\mathcal{P}|\,|\mathcal{F}|\,|\mathcal{T}|)$ binary variab
 
 \subsection{Proposed Heuristic Carbon-Aware Scheduler}
 
-While the MILP formulation provides optimal solutions, it becomes computationally intractable for large-scale deployments with hundreds of pods and nodes. To address this scalability challenge, we develop a heuristic carbon-aware spatiotemporal shifting algorithm that efficiently finds near-optimal solutions in real-time.
-
+While the MILP formulation provides optimal solutions, it becomes computationally intractable for large-scale deployments with hundreds of pods and nodes. To address this scalability challenge, we first proposed an algorithm  ... develop a heuristic carbon-aware spatiotemporal shifting algorithm that efficiently finds near-optimal solutions in real-time.
+\pk{To address these challenges, we developed a novel spatio-temporal scheduling algorithm. The principles of this algorithm were first presented in [17], an improved - and now also implemented and benchmarked - version is presented in Section 3.3.2 [3.4.2 vielleicht, mit dem neuen 3.3] below. Section 4 then discusses implementation details, while Section 5 compares its performance to vanilla Kubernetes and an NP-hard global oracle.}
 
 
 \subsubsection{Algorithmic Framework}
@@ -347,7 +347,7 @@ That is, starts respect earliest timeslot $s_i$ and deadlines $D_i$ with duratio
 
 The heuristic algorithm has time complexity $O(|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|)$ for each scheduling iteration, where $|\mathcal{P}|$ is the number of pending pods, $|\mathcal{F}|$ is the number of nodes, and $|\mathcal{T}|$ is the number of timeslots. This represents a significant improvement over the MILP formulation while maintaining solution quality for practical deployment scenarios.
 
-\subsection{Carbon-Agnostic Baseline Scheduler}
+\subsection{Carbon-Agnostic Baseline Scheduler} \pk{--- TODO: move to experimental setup?}
 
 The baseline simulates a Kubernetes-default-inspired scheduler to enable apples-to-apples comparisons over the same spatiotemporal horizon. It follows a \emph{filter → score → select} paradigm: filter nodes that satisfy CPU and RAM feasibility across the pod's labeled duration for a candidate start; score feasible nodes with a LeastAllocated-like metric that prefers higher residual CPU and RAM fractions (equal weights); and select the best-scoring node and earliest feasible start. It explicitly enforces earliest-timeslot constraints and ignores all carbon signals (operational and embodied), returning zero emissions for placements. This design yields a robust, capacity-respecting comparator that isolates the effect of adding carbon-awareness.
 
@@ -381,7 +381,7 @@ The architecture comprises five interconnected components:
 
 \textbf{State Management:} \texttt{PersistentStateStorage} maintains scheduling state across service restarts, enabling consistent placement decisions and experiment continuity. The state management layer supports both stateless operation for production deployments and stateful experiment tracking for research applications.
 
-\begin{figure}[htbp]
+\begin{figure}[htbp] \pk{--- TODO: remove grpc and go client?}
 \centering
 \begin{tikzpicture}[node distance=0.8cm, auto, thick, scale=0.75, transform shape,
     block/.style={rectangle, draw, fill=blue!20, text width=1.8cm, text centered, minimum height=0.7cm, font=\scriptsize},
@@ -444,6 +444,8 @@ We evaluate all algorithms on a shared synthetic testbed with consistent infrast
 
 Workloads consist of pods with CPU and RAM requests, integer-hour durations, and earliest start slots derived from their originating timeslot files. Deadlines are set as earliest + duration + slack to create bounded scheduling windows. We generate realistic mixes to induce nontrivial packing, with per-scale pod counts ranging from tens to hundreds. Because algorithms can place different subsets under pressure, we supplement coverage-inclusive metrics with matched-set analyses over the intersection of successfully placed pods.
 
+\pk{--- TODO: add oracle und vanilla implementation details}
+
 \subsection{Evaluation Metrics}
 
 We report:
@@ -454,6 +456,19 @@ We report:
   \item \textbf{Runtime}: median/mean per-placement execution time and end-to-end precompute time
   \item \textbf{Fairness lenses}: coverage-inclusive vs. matched-set (common pods only)
 \end{itemize}
+
+\subsection{Evaluation Protocol and Fairness}
+To quantify carbon reductions, we evaluate three schedulers—\emph{vanilla} (baseline), \emph{heuristic} (carbon-aware), and \emph{global-optimal} (MILP oracle)—over controlled workload scales (20–200 pods) and time horizons. All algorithms operate under the same constraints (earliest timeslot, CPU/Memory, node capacity/affinity) and the same emissions model (operational + amortized embodied carbon; identical regional carbon-intensity forecasts and node power profiles). We fix seeds where stochasticity is used and report confidence intervals when averaging over multiple runs.
+
+Apples-to-apples comparison is non-trivial because algorithms can schedule different subsets of pods under the same load, confounding emissions with feasibility. To address this, we report \textbf{two complementary lenses}:
+\begin{itemize}
+  \item \textbf{Coverage-Inclusive:} Emissions computed over \emph{all} pods each algorithm successfully schedules. This reflects end-to-end impact (quality \emph{and} coverage) and is the primary view for total environmental effect.
+  \item \textbf{Matched-Set (Common Pods Only):} Emissions computed only for pods \emph{scheduled by all three algorithms}. This isolates placement quality by holding the work constant, removing feasibility from the comparison.
+\end{itemize}
+Together, these lenses provide a fair and transparent evaluation: inclusive results reflect real impact, while matched-set results isolate the scheduler’s carbon-efficiency for identical work.
+
+\subsection{Runtime Measurement Protocol}
+We report median precompute runtime in offline mode with a 12-slot horizon. For node-scaling overlays, we fix pods at 200 and vary node count; for pod-scaling overlays, we fix nodes at 16 and vary pod count. Curves overlay multiple schedulers; error bars (when present) denote $\pm1\sigma$ over three replicates.
 
 \section{Results and Analysis}  % nice to have: stat confidence or repeated runs; sensitivity to forecast error
 
@@ -483,9 +498,38 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
 \newcommand{\EmissionsVsPodsInclusive}{\detokenize{../../figures/EmissionsVsPods/emissions_vs_pods_20251003_081848.pdf}}
 \newcommand{\EmissionsVsPodsCommon}{\detokenize{../../figures/EmissionsVsPods/emissions_vs_pods_common_pods_20250910_143007.pdf}}
 \newcommand{\EmissionsPerPodCommon}{\detokenize{../../figures/EmissionsVsPods/emissions_per_pod_vs_pods_common_pods_20250910_143007.pdf}}
+\newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{../../figures/EmissionsVsPods/emissions_per_pod_vs_pods_20251008_173253.pdf}}
+\providecommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_YYYYMMDD_HHMMSS.pdf}}
 
-% Unified carbon reduction subsection with fairness framing and common-pods insights
-\input{results.tex}
+\subsubsection{Carbon Reduction Results}
+Figure~\ref{fig:emissions-inclusive} shows total emissions versus pod count (coverage-inclusive). As load increases, the carbon-aware schedulers reduce emissions relative to the vanilla baseline; the MILP oracle consistently provides a lower bound, and the heuristic tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{fig:success-rate} (protocol in Section~\ref{sec:experimental-setup}).
+
+Figure~\ref{fig:emissions-common} presents the matched-set (intersection) analysis: totals are restricted to the exact pods scheduled by \emph{all} three algorithms at each scale. This removes coverage differences and reveals the pure placement advantage: global-optimal is best, and the heuristic is typically close, indicating that much of the benefit of the oracle can be captured by a practical heuristic.
+
+Across both views we use the same emissions accounting (operational + embodied). For completeness, per-pod or per-CPU-hour normalizations and operational-only sensitivity analyses can be included in the supplement; the qualitative ordering remains stable under these variants in our experiments.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\EmissionsVsPodsInclusive}
+  \caption{Total carbon emissions vs. pod count (\textbf{coverage-inclusive}). Emissions are computed using a shared model (operational + amortized embodied). Inclusive results reflect each algorithm’s \emph{actual} coverage at a given scale.}
+  \label{fig:emissions-inclusive}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\EmissionsVsPodsCommon}
+  \caption{Total carbon emissions vs. pod count (\textbf{matched-set/common pods}). Only pods scheduled by \emph{all three} algorithms are counted, isolating placement quality from feasibility.}
+  \label{fig:emissions-common}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\EmissionsPerPodVsPodsLatest}
+  \caption{Average emissions per placed pod (kg CO\textsubscript{2}e/pod) vs. pod count (coverage-inclusive). Carbon-aware methods remain nearly flat; vanilla starts high.}
+  \label{fig:emissions-per-pod-inclusive}
+\end{figure}
+
+% Interpretation moved to Discussion
 
 \begin{figure}[t]
   \centering
@@ -508,21 +552,39 @@ Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At
 \end{figure}
 
 \subsection{Runtime Cost: Time Complexity}\label{subsec:time-complexity}
-Figure~\ref{fig:time-vs-pods} summarises runtime. It grows roughly with the number of pods and stays under eight seconds even at our largest case (400 pods, 64 nodes), which is compatible with online use. The MILP approach is far slower and sensitive to solver limits, so we treat it as a benchmarking oracle rather than a production scheduler.
-% Use heuristic time complexity plots as representative runtime cost
-\newcommand{\TimeVsPods}{\detokenize{../../experiments/time_complexity/sweep_20250918_113006/heuristic_time_complexity.pdf}}
+Figures~\ref{fig:time-overlay-nodes} and~\ref{fig:time-overlay-pods} summarise runtime. It grows roughly with the number of pods and remains compatible with online use at our largest scales. The MILP approach is far slower and sensitive to solver limits, so we treat it as a benchmarking oracle rather than a production scheduler.
+% Overlay time complexity plots (multi-algorithm)
+\newcommand{\TimeOverlayNodesFixedPods}{\detokenize{../../figures/TimeComplexity/overlay_time_vs_nodes_fixed_pods_200_20251010_104555.pdf}}
+\newcommand{\TimeOverlayPodsFixedNodes}{\detokenize{../../figures/TimeComplexity/overlay_time_vs_pods_fixed_nodes_16_20251010_104555.pdf}}
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.95\linewidth]{\TimeVsPods}
-  \caption{Median precompute runtime versus pod count across three replicates per configuration. Error bars denote $\pm1\sigma$ for 12-timeslot synthetic workloads.}
-  \label{fig:time-vs-pods}
+  \includegraphics[width=0.95\linewidth]{\TimeOverlayNodesFixedPods}
+  \caption{Median precompute runtime versus node count at fixed 200 pods (overlay across algorithms; error bars where available denote $\pm1\sigma$).}
+  \label{fig:time-overlay-nodes}
 \end{figure}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\TimeOverlayPodsFixedNodes}
+  \caption{Median precompute runtime versus pod count at fixed 16 nodes (overlay across algorithms; error bars where available denote $\pm1\sigma$).}
+  \label{fig:time-overlay-pods}
+\end{figure}
+
+\noindent\textit{Setup.} We report median precompute runtime in offline mode with a 12-slot horizon. Figure~\ref{fig:time-overlay-nodes} fixes pods to 200 and varies node count; Figure~\ref{fig:time-overlay-pods} fixes nodes to 16 and varies pod count. Curves overlay multiple schedulers; error bars (when present) denote $\pm1\sigma$ over three replicates.
+
+\noindent\textit{Results.} Runtime grows smoothly with both nodes and pods. The heuristic remains compatible with online use across tested scales (single-digit seconds at the largest points), while the MILP oracle grows much faster and is sensitive to solver limits. The vanilla baseline is generally the fastest (simplest scoring), with the heuristic modestly above it but far below MILP; this ordering holds in both fixed-pods and fixed-nodes views.
 
 \subsection{Scalability}
 
 \pk{\subsection{Ablation and Sensitivity}}
 
 \section{Discussion}
+
+\subsection{Interpreting Emissions Patterns}
+\paragraph*{Why per-pod curves are flat.}
+With co-location–aware accounting, dynamic power for a node-hour is linear in aggregate utilization \(U\), and per-pod attribution scales with CPU share. The pod-normalized dynamic term simplifies to \(\mathrm{CI}\times k \times u_i\), independent of the number of co-located pods. Idle and embodied are paid \emph{once} per active node-hour and allocated proportionally to CPU share, so a pod’s share \(\propto u_i/U\) \emph{shrinks} as utilization grows. As a result, average emissions per pod stay approximately constant (or slightly decrease) even as the system fills and placement flexibility declines.
+
+\paragraph*{Why vanilla starts high.}
+The vanilla scheduler’s LeastAllocated-like scoring spreads pods to underutilized nodes, activating many node-hours early. This incurs idle and amortized embodied costs across more nodes and often places work in high-CI nodes/timeslots from the outset, leading to substantially higher per-pod emissions relative to carbon-aware schedulers that consolidate selectively and align with low-CI windows.
 
 \subsection{Implications and Limitations}
 \paragraph*{How it scales.}
