@@ -174,6 +174,12 @@ Key properties:
 4. **Earliest timeslot respected**: pods from `timeslot_X.yaml` can only start at or after X.
 5. **No carbon signals**: ignores carbon intensity and embodied emissions; returns 0.0 emissions in placements.
 
+Performance-aligned implementation notes (kube-inspired):
+
+- Node sampling during scoring with bounds similar to `percentageOfNodesToScore` and `minNodesToScore`.
+- Early stop after a small number of feasible candidates (akin to `numFeasibleNodesToFind`).
+- LeastAllocated-style scoring from the NodeResourcesFit plugin; select best without sorting entire lists.
+
 Run precompute (offline, capacity-safe):
 
 ```bash
@@ -188,6 +194,19 @@ python3 pkg/carbon-aware/server-python/main.py \
 ```
 
 Outputs: a timestamped directory under `experiments/manual_precompute/vanilla_*` with `vanilla_placements_session.csv`.
+
+Time-complexity sweep:
+
+```bash
+# From repository root
+python scripts/time_complexity_sweep.py \
+  --algorithm vanilla \
+  --node-counts 8,16,32,64 \
+  --pod-counts 50,100,200,400 \
+  --replicates 3 \
+  --timeslots 12
+```
+Artifacts are saved under `experiments/time_complexity/<stamp>/` with a CSV summary and publication‑ready plots.
 
 Notes and caveats:
 

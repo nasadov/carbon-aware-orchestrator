@@ -347,9 +347,11 @@ That is, starts respect earliest timeslot $s_i$ and deadlines $D_i$ with duratio
 
 The heuristic algorithm has time complexity $O(|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|)$ for each scheduling iteration, where $|\mathcal{P}|$ is the number of pending pods, $|\mathcal{F}|$ is the number of nodes, and $|\mathcal{T}|$ is the number of timeslots. This represents a significant improvement over the MILP formulation while maintaining solution quality for practical deployment scenarios.
 
-\subsection{Carbon-Agnostic Baseline Scheduler} \pk{--- TODO: move to experimental setup?}
+\subsection{Carbon-Agnostic Baseline Scheduler}
 
 The baseline simulates a Kubernetes-default-inspired scheduler to enable apples-to-apples comparisons over the same spatiotemporal horizon. It follows a \emph{filter → score → select} paradigm: filter nodes that satisfy CPU and RAM feasibility across the pod's labeled duration for a candidate start; score feasible nodes with a LeastAllocated-like metric that prefers higher residual CPU and RAM fractions (equal weights); and select the best-scoring node and earliest feasible start. It explicitly enforces earliest-timeslot constraints and ignores all carbon signals (operational and embodied), returning zero emissions for placements. This design yields a robust, capacity-respecting comparator that isolates the effect of adding carbon-awareness.
+
+To align performance characteristics with the upstream scheduler, we adopt two classes of optimizations: (i) \textbf{kube-inspired} pruning, and (ii) \textbf{simulator-specific} accelerations necessitated by our multi-timeslot horizon. Kube-inspired pruning mirrors the default scheduler’s sampling and early termination: we evaluate only a bounded subset of nodes per timeslot (analogous to \texttt{percentageOfNodesToScore}/\texttt{minNodesToScore}) and stop once a small number of feasible candidates are found (akin to \texttt{numFeasibleNodesToFind}), then select the top candidate without sorting entire lists. Simulator-specific accelerations include tight timeslot windowing between earliest start and deadline minus duration; sliding-window feasibility checks using deque-based minima over the pod’s duration; array-backed capacity grids (node × slot) in the hot path; and buffered output to minimize I/O. Collectively, these changes reduce the candidate space and the per-candidate cost, yielding substantial runtime improvements while preserving baseline semantics.
 
 \section{Experimental Setup}\label{sec:experimental-setup}
 
@@ -552,10 +554,10 @@ Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At
 \end{figure}
 
 \subsection{Runtime Cost: Time Complexity}\label{subsec:time-complexity}
-Figures~\ref{fig:time-overlay-nodes} and~\ref{fig:time-overlay-pods} summarise runtime. It grows roughly with the number of pods and remains compatible with online use at our largest scales. The MILP approach is far slower and sensitive to solver limits, so we treat it as a benchmarking oracle rather than a production scheduler.
+Figures~\ref{fig:time-overlay-nodes} and~\ref{fig:time-overlay-pods} summarise runtime. It grows roughly with the number of pods and remains compatible with online use at our largest scales. The MILP approach is far slower and sensitive to solver limits, so we treat it as a benchmarking oracle rather than a production scheduler. Following the vanilla baseline optimizations described above, the vanilla series shifts down substantially in both overlays.
 % Overlay time complexity plots (multi-algorithm)
-\newcommand{\TimeOverlayNodesFixedPods}{\detokenize{../../figures/TimeComplexity/overlay_time_vs_nodes_fixed_pods_200_20251010_104555.pdf}}
-\newcommand{\TimeOverlayPodsFixedNodes}{\detokenize{../../figures/TimeComplexity/overlay_time_vs_pods_fixed_nodes_16_20251010_104555.pdf}}
+\newcommand{\TimeOverlayNodesFixedPods}{\detokenize{../../figures/TimeComplexity/overlay_time_vs_nodes_fixed_pods_200_20251022_115342.pdf}}
+\newcommand{\TimeOverlayPodsFixedNodes}{\detokenize{../../figures/TimeComplexity/overlay_time_vs_pods_fixed_nodes_32_20251022_115342.pdf}}
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{\TimeOverlayNodesFixedPods}
@@ -565,13 +567,21 @@ Figures~\ref{fig:time-overlay-nodes} and~\ref{fig:time-overlay-pods} summarise r
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{\TimeOverlayPodsFixedNodes}
-  \caption{Median precompute runtime versus pod count at fixed 16 nodes (overlay across algorithms; error bars where available denote $\pm1\sigma$).}
+  \caption{Median precompute runtime versus pod count at fixed 32 nodes (overlay across algorithms; error bars where available denote $\pm1\sigma$).}
   \label{fig:time-overlay-pods}
 \end{figure}
 
-\noindent\textit{Setup.} We report median precompute runtime in offline mode with a 12-slot horizon. Figure~\ref{fig:time-overlay-nodes} fixes pods to 200 and varies node count; Figure~\ref{fig:time-overlay-pods} fixes nodes to 16 and varies pod count. Curves overlay multiple schedulers; error bars (when present) denote $\pm1\sigma$ over three replicates.
+\noindent\textit{Setup.} We report median precompute runtime in offline mode with a 12-slot horizon. Figure~\ref{fig:time-overlay-nodes} fixes pods to 200 and varies node count; Figure~\ref{fig:time-overlay-pods} fixes nodes to 32 and varies pod count. Curves overlay multiple schedulers; error bars (when present) denote $\pm1\sigma$ over three replicates.
 
 \noindent\textit{Results.} Runtime grows smoothly with both nodes and pods. The heuristic remains compatible with online use across tested scales (single-digit seconds at the largest points), while the MILP oracle grows much faster and is sensitive to solver limits. The vanilla baseline is generally the fastest (simplest scoring), with the heuristic modestly above it but far below MILP; this ordering holds in both fixed-pods and fixed-nodes views.
+
+\paragraph*{Fixed pods (varying nodes).}
+With 200 pods held constant, both vanilla and heuristic exhibit near-linear growth in precompute time as node count increases. The optimized vanilla curve lies consistently below its earlier baseline, indicating lower constant factors; its slope remains modest due to node sampling and early termination once a small set of feasible candidates is found. By contrast, the MILP oracle grows much more steeply with the number of nodes. Error bars are small across replicates, indicating stable timings and low run-to-run variance.
+
+\paragraph*{Fixed nodes (varying pods).}
+With 32 nodes held constant, runtime grows approximately linearly with total pods for both vanilla and heuristic, as expected from per-pod evaluation over a bounded timeslot window. The optimized vanilla reduces both the intercept and the slope relative to the prior implementation, reflecting cheaper feasibility checks and less I/O in the hot path. The heuristic maintains a roughly constant factor overhead versus vanilla across scales—primarily from additional feasibility and scoring work—while remaining far below the MILP oracle, which grows faster-than-linearly and exhibits higher variance.
+
+\noindent\textit{Takeaways.} (i) Empirical scaling matches the intended design: linear in pods at fixed nodes, and close to linear in nodes at fixed pods; (ii) kube-inspired pruning (node sampling and early feasible stop) keeps growth in check; (iii) simulator-specific accelerations (tight timeslot windowing, sliding-window feasibility, array-backed capacity) reduce constant factors, shifting the vanilla curve downward without changing its qualitative scaling; (iv) MILP remains orders of magnitude slower and is best treated as an oracle for bounds rather than a production scheduler.
 
 \subsection{Scalability}
 

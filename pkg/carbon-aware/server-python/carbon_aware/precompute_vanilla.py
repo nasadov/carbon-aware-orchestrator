@@ -109,9 +109,19 @@ def run_vanilla_precomputation(
                 file_pods_placed = 0
                 file_pods_failed = 0
 
+                # Hoist timeslot construction per file (reduces per-pod overhead)
+                timeslots = build_timeslots(max_timeslots)
+
+                # Derive earliest_timeslot from filename once and apply to all pods in this file
+                m = re.match(r"timeslot_(\d+)\.yaml$", yaml_file)
+                file_earliest_ts = int(m.group(1)) if m else 0
+
                 for pod_idx, pod in enumerate(pods):
                     total_pods_processed += 1
-                    timeslots = build_timeslots(max_timeslots)
+                    # Set earliest_timeslot from filename and mark source to skip directory scans
+                    pod.earliest_timeslot = file_earliest_ts
+                    setattr(pod, '_earliest_timeslot_source', 'precompute')
+                    pod.calculate_deadline_slot()
 
                     logging.info(f"  🔍 Pod {pod_idx + 1}/{len(pods)}: {pod.id}")
                     logging.info(f"     Resources: CPU={pod.cpuRequest:.3f}, RAM={pod.ramRequest:.0f}MB")
@@ -131,6 +141,10 @@ def run_vanilla_precomputation(
                             if ts_id < max_timeslots:
                                 leftover_cpu[selected_flavour.id][ts_id] -= pod.cpuRequest
                                 leftover_ram[selected_flavour.id][ts_id] -= pod.ramRequest
+
+                        # Keep algorithm's array views in sync for subsequent pods
+                        if hasattr(algorithm, 'note_allocation'):
+                            algorithm.note_allocation(selected_flavour.id, selected_timeslot.id, pod.duration, pod.cpuRequest, pod.ramRequest)
 
                         logging.info(f"     ✅ Placed on {selected_flavour.id} at timeslot {selected_timeslot.id}")
                         logging.info(f"     ⏱️ Execution time: {_exec_ms:.2f}ms")
@@ -167,6 +181,13 @@ def run_vanilla_precomputation(
                     logging.warning("⚠️ Could not generate placement summary")
             except Exception as e:
                 logging.warning(f"⚠️ Failed to generate placement summary: {e}")
+
+        # Ensure any buffered CSV writes are flushed
+        try:
+            if hasattr(algorithm, 'flush_session_placement_log'):
+                algorithm.flush_session_placement_log()
+        except Exception as _e:
+            logging.debug("Flush of placement CSV buffer failed or not needed")
 
         return True
 
