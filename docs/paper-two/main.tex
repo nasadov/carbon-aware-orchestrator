@@ -60,7 +60,7 @@ of Environmental Technology, Technische Universit\"at Berlin, Strasse des 17. Ju
 
 \IEEEtitleabstractindextext{%
 \begin{abstract}
-Container orchestration systems ignore carbon emissions in placement decisions, despite data centers consuming over 1\% of global electricity. Existing Kubernetes schedulers optimize for performance but lack carbon minimization mechanisms. We formulate the carbon-aware scheduling problem and develop a heuristic algorithm that incorporates both operational and embodied carbon emissions while respecting resource requirements and deadlines. Evaluation against vanilla Kubernetes and theoretical optimal solutions demonstrates our algorithm reduces carbon emissions significantly while maintaining practical execution times. This establishes that carbon-aware container orchestration provides a feasible pathway toward sustainable cloud computing.
+Data centers account for over 1\% of global electricity use, yet today's container orchestrators optimize for performance and availability while ignoring carbon emissions that vary across time and location. At the same time, manufacturing ("embodied") emissions are a first-order contributor that existing schedulers do not model. We ask whether container scheduling can reduce total emissions---operational and embodied---without sacrificing feasibility or incurring prohibitive runtime, and how closely a practical scheduler can approach an optimal oracle. To this end, we formulate a carbon-aware placement problem that integrates operational and embodied emissions under resource and timing constraints; design a fast heuristic that minimizes a comprehensive emissions objective; and implement a global mixed-integer linear program (MILP) as an oracle, alongside a carbon-agnostic Kubernetes-like baseline. All methods are evaluated on identical workloads, horizons, carbon forecasts, and power/embodied models. Across scales, the heuristic substantially reduces emissions while preserving high placement success and practical runtime. In a representative 80-pod evaluation, average per-pod emissions fall from 10.144 to 3.299 g CO\textsubscript{2}e (67.5\%) relative to the baseline, while tracking the MILP oracle closely (2.636 g). Runtime grows smoothly with pods and nodes and remains in single-digit seconds at our largest settings. These results establish carbon-aware container orchestration as a practical path to lower total emissions and provide a reproducible evaluation protocol for comparing heuristic and optimal approaches in sustainable cloud computing.
 \end{abstract}
 \begin{IEEEkeywords}
 Carbon-aware computing, container orchestration, Kubernetes, sustainable computing, green cloud computing, optimization algorithms, mixed integer linear programming, global optimization.
@@ -142,7 +142,7 @@ This uses a linear interpolation between idle and max; we do not use a separate 
 
 Our embodied carbon calculations are based on lifecycle assessment (LCA) data from the Boavizta database~\cite{boavizta2023}, which aggregates manufacturer-reported environmental product declarations following ISO 14040/14044 standards. We processed a comprehensive dataset of hardware embodied carbon values and computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{tab:embodied-carbon}.
 
-\begin{table}[htbp]
+\begin{table}[!t]
 \centering
 \caption{Hardware Category Embodied Carbon Values}
 \label{tab:embodied-carbon}
@@ -443,7 +443,7 @@ We evaluate all algorithms on a shared synthetic testbed with consistent infrast
 
 \subsection{Workload Characteristics}
 
-Workloads consist of pods with CPU and RAM requests, integer-hour durations, and earliest start slots derived from their originating timeslot files. Deadlines are set as earliest + duration + slack to create bounded scheduling windows. We generate realistic mixes to induce nontrivial packing, with per-scale pod counts ranging from tens to hundreds. Because algorithms can place different subsets under pressure, we supplement coverage-inclusive metrics with matched-set analyses over the intersection of successfully placed pods.
+Workloads consist of pods with CPU and RAM requests, integer-hour durations, and earliest start slots derived from their originating timeslot files. Deadlines are set as earliest + duration + slack to create bounded scheduling windows. We generate realistic mixes to induce nontrivial packing, with per-scale pod counts ranging from tens to hundreds.
 
 \pk{--- TODO: add oracle und vanilla implementation details}
 
@@ -452,21 +452,16 @@ Workloads consist of pods with CPU and RAM requests, integer-hour durations, and
 We report:
 \begin{itemize}
   \item \textbf{Total emissions}: operational + amortized embodied (kg CO\textsubscript{2}e), per run and per algorithm
-  \item \textbf{Emissions per pod}: total divided by placed pods, and for common-pod sets to isolate placement quality
+  \item \textbf{Emissions per pod}: total divided by placed pods
   \item \textbf{Success rate}: fraction of pods placed (feasibility under constraints)
   \item \textbf{Runtime}: median/mean per-placement execution time and end-to-end precompute time
-  \item \textbf{Fairness lenses}: coverage-inclusive vs. matched-set (common pods only)
+  \item \textbf{Fairness lens}: coverage-inclusive
 \end{itemize}
 
 \subsection{Evaluation Protocol and Fairness}
 To quantify carbon reductions, we evaluate three schedulers—\emph{vanilla} (baseline), \emph{heuristic} (carbon-aware), and \emph{global-optimal} (MILP oracle)—over controlled workload scales (20–200 pods) and time horizons. All algorithms operate under the same constraints (earliest timeslot, CPU/Memory, node capacity/affinity) and the same emissions model (operational + amortized embodied carbon; identical regional carbon-intensity forecasts and node power profiles). We fix seeds where stochasticity is used and report confidence intervals when averaging over multiple runs.
 
-Apples-to-apples comparison is non-trivial because algorithms can schedule different subsets of pods under the same load, confounding emissions with feasibility. To address this, we report \textbf{two complementary lenses}:
-\begin{itemize}
-  \item \textbf{Coverage-Inclusive:} Emissions computed over \emph{all} pods each algorithm successfully schedules. This reflects end-to-end impact (quality \emph{and} coverage) and is the primary view for total environmental effect.
-  \item \textbf{Matched-Set (Common Pods Only):} Emissions computed only for pods \emph{scheduled by all three algorithms}. This isolates placement quality by holding the work constant, removing feasibility from the comparison.
-\end{itemize}
-Together, these lenses provide a fair and transparent evaluation: inclusive results reflect real impact, while matched-set results isolate the scheduler’s carbon-efficiency for identical work.
+Apples-to-apples comparison is non-trivial because algorithms can schedule different subsets of pods under the same load, confounding emissions with feasibility. We therefore present the \textbf{coverage-inclusive} view: emissions computed over all pods each algorithm successfully schedules, reflecting end-to-end impact (quality and coverage).
 
 \subsection{Runtime Measurement Protocol}
 We report median precompute runtime in offline mode with a 12-slot horizon. For node-scaling overlays, we fix pods at 200 and vary node count; for pod-scaling overlays, we fix nodes at 16 and vary pod count. Curves overlay multiple schedulers; error bars (when present) denote $\pm1\sigma$ over three replicates.
@@ -494,18 +489,16 @@ Taken together, Figures~\ref{fig:operational-only} and~\ref{fig:comprehensive} s
 
 The result aligns with our allocation model: embodied emissions are a fixed, time-amortized cost that incentivizes sustained, efficient hardware use. Ignoring them underestimates true impact and can create seemingly efficient but globally suboptimal utilization patterns.
 
-\subsection{Carbon Reduction: Inclusive and Matched-Set}\label{subsec:carbon-reduction}
+\subsection{Carbon Reduction}\label{subsec:carbon-reduction}
 % Bind figures to latest generated PDFs (define before input)
 \newcommand{\EmissionsVsPodsInclusive}{\detokenize{../../figures/EmissionsVsPods/emissions_vs_pods_20251003_081848.pdf}}
-\newcommand{\EmissionsVsPodsCommon}{\detokenize{../../figures/EmissionsVsPods/emissions_vs_pods_common_pods_20250910_143007.pdf}}
-\newcommand{\EmissionsPerPodCommon}{\detokenize{../../figures/EmissionsVsPods/emissions_per_pod_vs_pods_common_pods_20250910_143007.pdf}}
 \newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{../../figures/EmissionsVsPods/emissions_per_pod_vs_pods_20251008_173253.pdf}}
 \providecommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_YYYYMMDD_HHMMSS.pdf}}
 
 \subsubsection{Carbon Reduction Results}
 Figure~\ref{fig:emissions-inclusive} shows total emissions versus pod count (coverage-inclusive). As load increases, the carbon-aware schedulers reduce emissions relative to the vanilla baseline; the MILP oracle consistently provides a lower bound, and the heuristic tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{fig:success-rate} (protocol in Section~\ref{sec:experimental-setup}).
 
-Figure~\ref{fig:emissions-common} presents the matched-set (intersection) analysis: totals are restricted to the exact pods scheduled by \emph{all} three algorithms at each scale. This removes coverage differences and reveals the pure placement advantage: global-optimal is best, and the heuristic is typically close, indicating that much of the benefit of the oracle can be captured by a practical heuristic.
+% Matched-set analysis removed
 
 Across both views we use the same emissions accounting (operational + embodied). For completeness, per-pod or per-CPU-hour normalizations and operational-only sensitivity analyses can be included in the supplement; the qualitative ordering remains stable under these variants in our experiments.
 
@@ -516,12 +509,7 @@ Across both views we use the same emissions accounting (operational + embodied).
   \label{fig:emissions-inclusive}
 \end{figure}
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=0.95\linewidth]{\EmissionsVsPodsCommon}
-  \caption{Total carbon emissions vs. pod count (\textbf{matched-set/common pods}). Only pods scheduled by \emph{all three} algorithms are counted, isolating placement quality from feasibility.}
-  \label{fig:emissions-common}
-\end{figure}
+% Figure for matched-set/common pods removed
 
 \begin{figure}[t]
   \centering
@@ -532,19 +520,14 @@ Across both views we use the same emissions accounting (operational + embodied).
 
 % Interpretation moved to Discussion
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=0.95\linewidth]{\EmissionsPerPodCommon}
-  \caption{Emissions per common pod (kg CO\textsubscript{2}e/pod) vs. pod count. Lower values indicate higher placement quality for identical work.}
-  \label{fig:emissions-per-pod-common}
-\end{figure}
+% Figure for emissions per common pod removed
 
 \noindent\textit{Concrete findings.} In a representative 80-pod evaluation, per-pod emissions were: vanilla 0.010144 kg CO\textsubscript{2}e, heuristic 0.003299 (\(\approx\)\,\textbf{-67.5\%}), and global-optimal 0.002636 (\(\approx\)\,\textbf{-74.0\%}). This gap illustrates that the heuristic captures most of the oracle's benefit while remaining deployable.
 
 \subsection{Placement Success Rate}\label{subsec:success-rate}
 % Update to newest success-rate plot (computed from per-run CSVs; ignores stale pods.txt)
 \renewcommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_20251003_082028.pdf}}
-Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At low load, all three methods are near 100\%; as load increases, the heuristic remains above the vanilla baseline and close to the MILP oracle. We use this figure alongside the inclusive-emissions and matched-set results to separate feasibility (who gets placed) from carbon efficiency (how those pods are placed).
+Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At low load, all three methods are near 100\%; as load increases, the heuristic remains above the vanilla baseline and close to the MILP oracle.
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{\SuccessRateVsPods}
@@ -614,11 +597,11 @@ We can reduce overheads further by caching per-node energy/carbon curves, reusin
 \subsection{Threats to Validity}
 \textbf{Internal validity.} We control randomness via fixed seeds and validate constraints post hoc. Remaining risks include generator-induced artifacts; we mitigate by sweeping multiple pod counts and infrastructures.
 
-\textbf{Construct validity.} We use ACI-based operational emissions and amortized embodied accounting. Alternative signals (e.g., marginal intensity, excess renewable) could change relative benefits; matched-set analyses reduce confounding from coverage.
+\textbf{Construct validity.} We use ACI-based operational emissions and amortized embodied accounting. Alternative signals (e.g., marginal intensity, excess renewable) could change relative benefits.
 
 \textbf{External validity.} Results derive from synthetic workloads and consolidated forecasts; real clusters may have additional constraints (affinity/anti-affinity, topology spread, storage). Our simulator architecture allows incrementally adding these.
 
-\textbf{Conclusion validity.} We report multiple scales, use complementary lenses (inclusive and matched-set), and pair emissions with success rate and runtime to avoid over-attributing gains to any single metric.
+\textbf{Conclusion validity.} We report multiple scales and pair emissions with success rate and runtime to avoid over-attributing gains to any single metric.
 
 \section{Conclusion and Future Work}
 
