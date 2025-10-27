@@ -38,7 +38,7 @@
 \begin{document}
 
 % paper title
-\title{Carbon-Aware Container Orchestration: A Comparative Analysis of Heuristic and Optimal Scheduling Algorithms for Sustainable Computing}
+\title{Carbon-Aware Kubernetes Scheduling with Embodied Emissions: Heuristic vs. MILP Oracle}
 
 % author names and affiliations
 \author{Nasir~Asadov,
@@ -60,7 +60,7 @@ of Environmental Technology, Technische Universit\"at Berlin, Strasse des 17. Ju
 
 \IEEEtitleabstractindextext{%
 \begin{abstract}
-Data centers account for over 1\% of global electricity use, yet today's container orchestrators optimize for performance and availability while ignoring carbon emissions that vary across time and location. At the same time, manufacturing ("embodied") emissions are a first-order contributor that existing schedulers do not model. We ask whether container scheduling can reduce total emissions---operational and embodied---without sacrificing feasibility or incurring prohibitive runtime, and how closely a practical scheduler can approach an optimal oracle. To this end, we formulate a carbon-aware placement problem that integrates operational and embodied emissions under resource and timing constraints; design a fast heuristic that minimizes a comprehensive emissions objective; and implement a global mixed-integer linear program (MILP) as an oracle, alongside a carbon-agnostic Kubernetes-like baseline. All methods are evaluated on identical workloads, horizons, carbon forecasts, and power/embodied models. Across scales, the heuristic substantially reduces emissions while preserving high placement success and practical runtime. In a representative 80-pod evaluation, average per-pod emissions fall from 10.144 to 3.299 g CO\textsubscript{2}e (67.5\%) relative to the baseline, while tracking the MILP oracle closely (2.636 g). Runtime grows smoothly with pods and nodes and remains in single-digit seconds at our largest settings. These results establish carbon-aware container orchestration as a practical path to lower total emissions and provide a reproducible evaluation protocol for comparing heuristic and optimal approaches in sustainable cloud computing.
+Data centers account for over 1\% of global electricity use, yet today's container orchestrators optimize for performance and availability while ignoring carbon emissions that vary across time and location. At the same time, manufacturing ("embodied") emissions are a first-order contributor that existing schedulers do not model. We ask whether container scheduling can reduce total emissions---operational and embodied---without sacrificing feasibility or incurring prohibitive runtime, and how closely a practical scheduler can approach an optimal oracle. To this end, we formulate a carbon-aware placement problem that integrates operational and embodied emissions under resource and timing constraints; design a fast heuristic that minimizes a comprehensive emissions objective; and implement a global mixed-integer linear program (MILP) as an oracle, alongside a carbon-agnostic Kubernetes-like baseline. All methods are evaluated on identical workloads, horizons, carbon forecasts, and power/embodied models. Across scales, the heuristic substantially reduces emissions while preserving high placement success and practical runtime. In a representative 80-pod evaluation, average per-pod emissions fall from 10.1 to 3.3 g CO\textsubscript{2}e (67.5\%) relative to the baseline, while tracking the MILP oracle closely (2.6 g). Runtime grows smoothly with pods and nodes and remains in single-digit seconds at our largest settings. These results establish carbon-aware container orchestration as a practical path to lower total emissions and provide a reproducible evaluation protocol for comparing heuristic and optimal approaches in sustainable cloud computing.
 \end{abstract}
 \begin{IEEEkeywords}
 Carbon-aware computing, container orchestration, Kubernetes, sustainable computing, green cloud computing, optimization algorithms, mixed integer linear programming, global optimization.
@@ -360,31 +360,20 @@ Our carbon-aware orchestration system is implemented as a distributed architectu
 
 Figure~\ref{fig:architecture} illustrates the complete system architecture and component interactions. The system follows a layered design where external clients communicate through a standardized gRPC interface, while the core engine coordinates between algorithms, data services, and persistent state management.
 
-\subsubsection{Core System Components}
+The architecture in Figure~\ref{fig:architecture} comprises four layers: (i) a client-facing ingress, (ii) a pluggable algorithm engine with three schedulers, (iii) internal data services, and (iv) external data sources. This separation (blue = core components/algorithms; green = internal data; orange = external sources) decouples scheduling logic from data acquisition and persistence.
 
-The architecture comprises five interconnected components:
+\textbf{Ingress and dispatch.} A Go client running in Kubernetes calls a gRPC Placement service that implements a stable IDL. The service forwards scheduling requests (cluster snapshot and workloads) to the Algorithm Engine, which dispatches to one of three schedulers: a carbon-agnostic Baseline (vanilla, capacity-only), a real-time carbon-aware Heuristic, or a global MILP Oracle used for offline benchmarking.
 
-\textbf{1. gRPC Placement Service:} The central \texttt{PlacementAlgorithm} service implements the Interface Definition Language (IDL) protocol, providing a language-agnostic API for scheduling requests. The service receives infrastructure snapshots and workload specifications, returning optimized placement decisions through standardized protocol buffer messages.
+\textbf{Algorithms and data dependencies.} The Heuristic and MILP Oracle consume Carbon Data (time- and location-varying forecasts) and Hardware Metadata (power curves, embodied carbon, lifetimes). The Baseline interacts only with State Storage and ignores carbon inputs. All algorithms read/write State Storage to persist placements and metrics for reproducibility and experiment continuity.
 
-\textbf{2. Multi-Algorithm Engine:} A pluggable algorithm framework supporting three scheduling approaches: (i) heuristic spatiotemporal optimization for real-time online scheduling of incoming pods; (ii) MILP-based oracle optimization that assumes perfect knowledge of all pods (including future arrivals) to compute theoretically optimal solutions for benchmarking and analysis; and (iii) a vanilla, K8s-like baseline scheduler that is carbon-agnostic (filter-score-select with CPU/RAM feasibility across the pod's duration), used for apples-to-apples comparison.
+\textbf{Internal data services.} Carbon Data maintains rolling 24--48 hour forecasts aligned to regions/nodes. Hardware Metadata stores per-node power/embodied parameters sourced from Kubernetes node labels and Boavizta LCA values. State Storage persists scheduling state and experiment logs.
 
-\textbf{3. Carbon Data Service:} Aggregates and processes carbon intensity forecasts (currently only from Electricity Maps API, with the possibility to add regional grid operators, and weather-based renewable energy predictions). The service maintains rolling 24-48 hour forecasts with hourly updates, supporting geographical and temporal carbon optimization across distributed infrastructure.
+\textbf{External sources.} Electricity Maps \cite{electricityMaps2024} provides carbon-intensity forecasts that feed Carbon Data; Kubernetes node information supplies hardware attributes to Hardware Metadata; Boavizta DB supplies embodied-carbon and lifetime parameters.
 
-\textbf{4. Hardware Metadata Repository:} Maintains comprehensive hardware profiles including power consumption characteristics (idle, 10\%, 50\%, maximum load), embodied carbon values from lifecycle assessments, and expected operational lifetimes. Node metadata is extracted from Kubernetes annotations and labels, enabling fine-grained carbon accounting per hardware category.
-
-\textbf{5. Performance Monitoring and Analytics:} Implements comprehensive logging through \texttt{PerformanceLogger} and \texttt{ExperimentLogger} classes, capturing algorithm execution metrics, carbon emissions outcomes, and resource utilization patterns. The monitoring system enables continuous algorithm improvement and validation of carbon reduction claims.
-
-\subsubsection{Integration Architecture}
-
-\textbf{Kubernetes Integration:} The system interfaces with Kubernetes through the IDL protocol, which models cluster snapshots including node flavors, resource availability, and workload requirements. The gRPC interface enables polyglot implementation with Python-based algorithms and Go-based clients, facilitating integration with existing Kubernetes scheduler frameworks.
-
-\textbf{Data Flow Pipeline:} Infrastructure data flows from Kubernetes node specifications through the IDL interface to algorithm implementations. Carbon intensity forecasts are loaded from JSON configuration files or real-time API endpoints. The system processes scheduling requests by combining infrastructure constraints, workload requirements, and carbon optimization objectives to produce placement decisions.
-
-\textbf{State Management:} \texttt{PersistentStateStorage} maintains scheduling state across service restarts, enabling consistent placement decisions and experiment continuity. The state management layer supports both stateless operation for production deployments and stateful experiment tracking for research applications.
-
-\begin{figure}[htbp] \pk{--- TODO: remove grpc and go client?}
+\begin{figure}[htbp] 
 \centering
-\begin{tikzpicture}[node distance=0.8cm, auto, thick, scale=0.75, transform shape,
+\begin{tikzpicture}[node distance=1.0cm, auto, thick, scale=0.75, transform shape, >=latex,
+    edge/.style={->, shorten >=2pt},
     block/.style={rectangle, draw, fill=blue!20, text width=1.8cm, text centered, minimum height=0.7cm, font=\scriptsize},
     external/.style={rectangle, draw, fill=orange!20, text width=1.6cm, text centered, minimum height=0.6cm, font=\scriptsize},
     data/.style={rectangle, draw, fill=green!20, text width=1.6cm, text centered, minimum height=0.6cm, font=\scriptsize}]
@@ -394,38 +383,43 @@ The architecture comprises five interconnected components:
     \node[block] (grpc) at (0,4) {gRPC\\Service};
     \node[block] (engine) at (0,3) {Algorithm\\Engine};
     
-    % Algorithms side by side but compact
-    \node[block] (heuristic) at (-1,2) {Heuristic};
-    \node[block] (oracle) at (1,2) {MILP\\Oracle};
+    % Algorithms side by side (now three algorithms)
+    \node[block] (heuristic) at (-3.0,2) {Heuristic};
+    \node[block] (baseline) at (0,2) {Baseline\\(Vanilla)};
+    \node[block] (oracle) at (3.0,2) {MILP\\Oracle};
     
     % Data services vertical stack
-    \node[data] (carbon) at (0,1) {Carbon\\Data};
-    \node[data] (hardware) at (-1,0) {Hardware\\Metadata};
-    \node[data] (state) at (1,0) {State\\Storage};
+    \node[data] (carbon) at (0,0) {Carbon\\Data};
+    \node[data] (hardware) at (-3.0,0) {Hardware\\Metadata};
+    \node[data] (state) at (3.0,0) {State\\Storage};
     
     % External sources at bottom
-    \node[external] (maps) at (0,-1) {Electricity\\Maps};
-    \node[external] (k8s) at (-1,-2) {K8s\\Nodes};
-    \node[external] (boavizta) at (1,-2) {Boavizta\\DB};
+    \node[external] (maps) at (3.0,-1.4) {Electricity\\Maps};
+    \node[external] (k8s) at (-3.0,-1.4) {K8s\\Nodes};
+    \node[external] (boavizta) at (0,-1.4) {Boavizta\\DB};
     
     % Vertical flow arrows
-    \draw[->] (client) -- (grpc);
-    \draw[->] (grpc) -- (engine);
-    \draw[->] (engine) -- (heuristic);
-    \draw[->] (engine) -- (oracle);
-    \draw[->] (heuristic) -- (carbon);
-    \draw[->] (oracle) -- (carbon);
-    \draw[->] (heuristic) -- (state);
-    \draw[->] (carbon) -- (maps);
-    \draw[->] (hardware) -- (k8s);
-    \draw[->] (hardware) -- (boavizta);
+    \draw[edge] (client) -- (grpc);
+    \draw[edge] (grpc) -- (engine);
+    \draw[edge] (engine) -- (heuristic);
+    \draw[edge] (engine) -- (baseline);
+    \draw[edge] (engine) -- (oracle);
+    \draw[edge] (heuristic) -- (carbon);
+    \draw[edge] (oracle) -- (carbon);
+    \draw[edge] (heuristic) -- (state);
+    % Baseline is carbon-agnostic; only state interaction shown
+    \draw[edge] (baseline) -- (state);
+    \draw[edge] (carbon) -- (maps);
+    \draw[edge] (hardware) -- (k8s);
+    \draw[edge] (hardware) -- (boavizta);
     
     % Cross connections
-    \draw[->] (heuristic) -- (hardware);
-    \draw[->] (oracle) -- (hardware);
+    \draw[edge] (heuristic) -- (hardware);
+    \draw[edge] (oracle) -- (hardware);
     
 \end{tikzpicture}
-\caption{Carbon-aware orchestration system architecture with component interactions and data flow.}
+\caption{Carbon-aware orchestration system architecture with component interactions and data flow.
+\footnotesize{Color Key:}\;\fcolorbox{black}{blue!20}{\phantom{\rule{0.8em}{0.8em}}} Core components and algorithms\;\fcolorbox{black}{green!20}{\phantom{\rule{0.8em}{0.8em}}} Internal data services\;\fcolorbox{black}{orange!20}{\phantom{\rule{0.8em}{0.8em}}} External data sources}
 \label{fig:architecture}
 \end{figure}
 
