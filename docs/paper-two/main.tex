@@ -118,13 +118,17 @@ In this paper, we adopt a refined, SCI-consistent allocation: we attribute embod
 
 \section{Proposed Method}
 
+This section defines carbon accounting models, the MILP formulation (oracle), the heuristic carbon-aware scheduler, and the carbon-agnostic baseline used for comparison.
+
 \subsection{Carbon Accounting Models}
 
-\subsubsection{Carbon Signals}
+This subsection defines the inputs and components of our emissions accounting: the carbon-intensity signal (Section~\ref{subsubsec:carbon-signals}), the node power model (Section~\ref{subsubsec:power-model}), and the embodied-emissions amortization (Section~\ref{subsubsec:embodied}).
 
-We use average carbon intensity (ACI) as the actionable carbon signal and denote it by $\mathrm{CI}_{j,t}$ for region (node) $j$ at timeslot $t$. This signal varies over geography and time and enters the operational-emissions term of our objective (see MILP in Section~\ref{sec:milp}). Forecasts are treated as exogenous inputs; details on data source, geographical coverage, horizon, and preprocessing are provided in Section~\ref{sec:experimental-setup}.
+\subsubsection{Carbon Signals}\label{subsubsec:carbon-signals}
 
-\subsubsection{Power Modeling}
+We use average carbon intensity (ACI) as the actionable carbon signal and denote it by $\mathrm{CI}_{j,t}$ for region (node) $j$ at timeslot $t$. This signal varies over geography and time and enters the operational-emissions term of our objective (see MILP in Section~\ref{sec:problem-formulation}). Forecasts are treated as exogenous inputs; details on data source, geographical coverage, horizon, and preprocessing are provided in Section~\ref{sec:experimental-setup}.
+
+\subsubsection{Power Modeling}\label{subsubsec:power-model}
 
 \textbf{Power Model:} Each node exposes a two-point power profile with an idle baseline and a maximum load value. We model power as a linear function of aggregate CPU utilization: 
 \(P(U) = P_{idle} + (P_{max} - P_{idle})\,U\) for \(U>0\), and zero when no work is scheduled. Idle is attributed whenever a slot has any work.
@@ -137,7 +141,7 @@ P_{workload} = P_{idle} + (P_{max} - P_{idle}) \times \frac{CPU_{request}}{CPU_{
 This uses a linear interpolation between idle and max; we do not use a separate mid-load reference.
 
 
-\subsubsection{Embodied Emissions and Amortization}
+\subsubsection{Embodied Emissions and Amortization}\label{subsubsec:embodied}
 
 
 Our embodied carbon calculations are based on lifecycle assessment (LCA) data from the Boavizta database~\cite{boavizta2023}, which aggregates manufacturer-reported environmental product declarations following ISO 14040/14044 standards. We processed a comprehensive dataset of hardware embodied carbon values and computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{tab:embodied-carbon}.
@@ -179,9 +183,9 @@ where $t_{duration}$ represents the workload execution time in hours. This alloc
 
 The embodied carbon calculation is integrated directly into the scheduling objective function, where it combines with operational emissions to provide a comprehensive carbon footprint assessment for each placement decision. This integrated approach ensures that both emission components influence scheduling decisions simultaneously, rather than treating them as separate optimization phases. We quantify the effect on placement patterns in Section~\ref{subsec:hidden-impact}.
 
-\subsection{Problem Formulation (MILP)}\label{sec:milp}
+\subsection{Problem Formulation}\label{sec:problem-formulation}
 
-We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Programming (MILP) optimization that finds optimal assignments of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing total carbon emissions incorporating both operational and embodied components.
+We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Programming (MILP) optimization that finds optimal assignments of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing total carbon emissions incorporating both operational and embodied components. The following subsections detail the problem formulation.
 
 \subsubsection{Sets, Parameters and Decision Variables}
 
@@ -247,7 +251,11 @@ where operational emissions $op_{ijt+k} = p_{ij} \cdot \text{CI}_{j,t+k}$ depend
 
 The formulation includes resource capacity constraints ensuring CPU and memory limits are respected, temporal constraints enforcing pod deadlines and scheduling windows, and placement constraints requiring each pod to be scheduled exactly once within its feasible region.
 
-\subsubsection{MILP Oracle: Feasibility and Relaxations}
+\subsection{MILP Oracle for Benchmarking}\label{subsec:milp-oracle-for-benchmarking}
+
+We include a global MILP oracle to: (i) upper-bound achievable emissions under identical data and constraints; (ii) validate the model/implementation and isolate operational vs. embodied effects; and (iii) benchmark runtime–quality trade-offs for heuristic calibration. The MILP runs only at moderate scales with solver time limits; the heuristic (see Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler}) serves production-like use while the MILP provides reference points.
+
+\subsubsection{Feasibility and Relaxations}\label{subsec:feasibility-and-relaxations}
 
 When the full MILP becomes infeasible (e.g., oversubscribed capacities or incompatible windows), we solve a relaxed variant that guarantees feasibility while preserving lexicographic priorities: (1) maximize pod placement; then (2) minimize total carbon given equal placement counts. We introduce binary slack variables $y_i$ indicating unplaced pods and set a penalty $\lambda \gg \max e_{ijt}$ to enforce the priority ordering:
 \begin{align}
@@ -260,14 +268,13 @@ subject to the softened assignment constraint
 \end{equation}
 This hierarchy ensures responsiveness in intractable instances and yields upper bounds for heuristic comparisons.
 
-\subsubsection{MILP Oracle: Computational Complexity}
+\subsubsection{Computational Complexity}\label{subsec:computational-complexity}
 
 The MILP contains $O(|\mathcal{P}|\,|\mathcal{F}|\,|\mathcal{T}|)$ binary variables over feasible pairs and is NP-hard with worst-case exponential time. Practical solvers (e.g., CBC) employ branch-and-bound with cutting planes; performance is reasonable at moderate scales but degrades with increasing horizon and candidate sets. We therefore use solver time limits and the above relaxation to bound latency and provide oracle-quality references at tractable sizes.
 
-\subsection{Proposed Heuristic Carbon-Aware Scheduler}
+\subsection{Proposed Heuristic Carbon-Aware Scheduler}\label{subsec:proposed-heuristic-carbon-aware-scheduler}
 
-While the MILP formulation provides optimal solutions, it becomes computationally intractable for large-scale deployments with hundreds of pods and nodes. To address this scalability challenge, we first proposed an algorithm  ... develop a heuristic carbon-aware spatiotemporal shifting algorithm that efficiently finds near-optimal solutions in real-time.
-\pk{To address these challenges, we developed a novel spatio-temporal scheduling algorithm. The principles of this algorithm were first presented in [17], an improved - and now also implemented and benchmarked - version is presented in Section 3.3.2 [3.4.2 vielleicht, mit dem neuen 3.3] below. Section 4 then discusses implementation details, while Section 5 compares its performance to vanilla Kubernetes and an NP-hard global oracle.}
+While the MILP formulation provides optimal solutions, it becomes computationally intractable for large-scale deployments with hundreds of pods and nodes. To address these challenges, we developed a novel spatio-temporal scheduling algorithm. The principles of this algorithm were first presented in \cite{asadov2025}, an improved - and now also implemented and benchmarked - version is presented in Algorithm~\ref{alg:heuristic} below. Section~\ref{sec:experimental-setup} then discusses implementation details, while Section~\ref{sec:results} compares its performance to vanilla Kubernetes and an NP-hard global oracle.
 
 
 \subsubsection{Algorithmic Framework}
@@ -353,6 +360,8 @@ The baseline simulates a Kubernetes-default-inspired scheduler to enable apples-
 To align performance characteristics with the upstream scheduler, we adopt two classes of optimizations: (i) \textbf{kube-inspired} pruning, and (ii) \textbf{simulator-specific} accelerations necessitated by our multi-timeslot horizon. Kube-inspired pruning mirrors the default scheduler’s sampling and early termination: we evaluate only a bounded subset of nodes per timeslot (analogous to \texttt{percentageOfNodesToScore}/\texttt{minNodesToScore}) and stop once a small number of feasible candidates are found (akin to \texttt{numFeasibleNodesToFind}), then select the top candidate without sorting entire lists. Simulator-specific accelerations include tight timeslot windowing between earliest start and deadline minus duration; sliding-window feasibility checks using deque-based minima over the pod’s duration; array-backed capacity grids (node × slot) in the hot path; and buffered output to minimize I/O. Collectively, these changes reduce the candidate space and the per-candidate cost, yielding substantial runtime improvements while preserving baseline semantics.
 
 \section{Experimental Setup}\label{sec:experimental-setup}
+
+This section describes the system architecture (Fig.~\ref{fig:architecture}), testbed configuration, workloads, evaluation metrics, the evaluation protocol, and the runtime measurement setup.
 
 \subsection{System Architecture Overview}
 
@@ -460,7 +469,9 @@ Apples-to-apples comparison is non-trivial because algorithms can schedule diffe
 \subsection{Runtime Measurement Protocol}
 We report median precompute runtime in offline mode with a 12-slot horizon. For node-scaling overlays, we fix pods at 200 and vary node count; for pod-scaling overlays, we fix nodes at 16 and vary pod count. Curves overlay multiple schedulers; error bars (when present) denote $\pm1\sigma$ over three replicates.
 
-\section{Results and Analysis}  % nice to have: stat confidence or repeated runs; sensitivity to forecast error
+\section{Results}\label{sec:results}  % nice to have: stat confidence or repeated runs; sensitivity to forecast error
+
+We report how embodied emissions change placement behavior (Section~\ref{subsec:hidden-impact}), quantify emissions reductions and success rates (Section~\ref{subsec:carbon-reduction} and Fig.~\ref{fig:success-rate}), and analyze runtime scaling (Section~\ref{subsec:time-complexity}).
 
 \subsection{Impact of Embodied Emissions on Scheduling}\label{subsec:hidden-impact}
 Including embodied emissions fundamentally changes placement behavior: it shifts from clustering on low-CI nodes to more distributed utilization that amortizes fixed manufacturing emissions while still respecting operational carbon signals.
@@ -489,7 +500,6 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
 \newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{../../figures/EmissionsVsPods/emissions_per_pod_vs_pods_20251008_173253.pdf}}
 \providecommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_YYYYMMDD_HHMMSS.pdf}}
 
-\subsubsection{Carbon Reduction Results}
 Figure~\ref{fig:emissions-inclusive} shows total emissions versus pod count (coverage-inclusive). As load increases, the carbon-aware schedulers reduce emissions relative to the vanilla baseline; the MILP oracle consistently provides a lower bound, and the heuristic tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{fig:success-rate} (protocol in Section~\ref{sec:experimental-setup}).
 
 % Matched-set analysis removed
@@ -516,7 +526,7 @@ Across both views we use the same emissions accounting (operational + embodied).
 
 % Figure for emissions per common pod removed
 
-\noindent\textit{Concrete findings.} In a representative 80-pod evaluation, per-pod emissions were: vanilla 0.010144 kg CO\textsubscript{2}e, heuristic 0.003299 (\(\approx\)\,\textbf{-67.5\%}), and global-optimal 0.002636 (\(\approx\)\,\textbf{-74.0\%}). This gap illustrates that the heuristic captures most of the oracle's benefit while remaining deployable.
+\noindent\textit{Concrete findings.} In a representative 80-pod evaluation, per-pod emissions were: vanilla 10.1 g CO\textsubscript{2}e, heuristic 3.3 g (\(\approx\)-67.5\%), and global-optimal 2.6 g (\(\approx\)-74.0\%). This gap illustrates that the heuristic captures most of the oracle's benefit while remaining deployable.
 
 \subsection{Placement Success Rate}\label{subsec:success-rate}
 % Update to newest success-rate plot (computed from per-run CSVs; ignores stale pods.txt)
@@ -559,11 +569,11 @@ With 32 nodes held constant, runtime grows approximately linearly with total pod
 
 \noindent\textit{Takeaways.} (i) Empirical scaling matches the intended design: linear in pods at fixed nodes, and close to linear in nodes at fixed pods; (ii) kube-inspired pruning (node sampling and early feasible stop) keeps growth in check; (iii) simulator-specific accelerations (tight timeslot windowing, sliding-window feasibility, array-backed capacity) reduce constant factors, shifting the vanilla curve downward without changing its qualitative scaling; (iv) MILP remains orders of magnitude slower and is best treated as an oracle for bounds rather than a production scheduler.
 
-\subsection{Scalability}
 
-\pk{\subsection{Ablation and Sensitivity}}
 
 \section{Discussion}
+
+We interpret the emissions patterns (why per-pod curves are flat and why the vanilla baseline starts high), discuss implications and limitations, and outline threats to validity, tying back to the methods in Section~\ref{sec:experimental-setup} and results in Section~\ref{sec:results}.
 
 \subsection{Interpreting Emissions Patterns}
 \paragraph*{Why per-pod curves are flat.}
