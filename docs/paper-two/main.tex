@@ -126,29 +126,28 @@ This subsection defines the inputs and components of our emissions accounting: t
 
 \subsubsection{Carbon Signals}\label{subsubsec:carbon-signals}
 
-We use average carbon intensity (ACI) as the actionable carbon signal and denote it by $\mathrm{CI}_{j,t}$ for region (node) $j$ at timeslot $t$. This signal varies over geography and time and enters the operational-emissions term of our objective (see MILP in Section~\ref{sec:problem-formulation}). Forecasts are treated as exogenous inputs; details on data source, geographical coverage, horizon, and preprocessing are provided in Section~\ref{sec:experimental-setup}.
+We use average carbon intensity (ACI) as the actionable carbon signal and denote it by $\mathrm{CI}_{j,t}$ for region (node) $j$ at timeslot $t$. This signal varies over geography and time and enters the operational-emissions term of our objective (see Section~\ref{sec:problem-formulation}). Forecasts are treated as exogenous inputs; details on data source, geographical coverage, horizon, and preprocessing are provided in Section~\ref{sec:experimental-setup}.
 
 \subsubsection{Power Modeling}\label{subsubsec:power-model}
 
-\textbf{Power Model:} Each node exposes a two-point power profile with an idle baseline and a maximum load value. We model power as a linear function of aggregate CPU utilization: 
-\(P(U) = P_{idle} + (P_{max} - P_{idle})\,U\) for \(U>0\), and zero when no work is scheduled. Idle is attributed whenever a slot has any work.
+\textbf{Power model and per-workload attribution:} Each node exposes a two-point power profile with an idle baseline \(P_{idle}\) and a maximum \(P_{max}\). We model node power as a linear function of aggregate CPU utilization \(U \in [0,1]\):
+\(P(U) = P_{idle} + (P_{max} - P_{idle})\,U\) for \(U>0\), and zero when no work is scheduled. The idle baseline is charged once per active slot.
 
-\textbf{Dynamic Power Calculation:} Power consumption for individual workloads is calculated using the formula:
+For a workload requesting \(\mathrm{CPU}_{\mathrm{request}}\) on a node with \(\mathrm{CPU}_{\mathrm{total}}\), we attribute per-pod power per slot \(t\) using the same linear interpolation for the incremental component and allocate the idle baseline across concurrent workloads in proportion to CPU share:
 \begin{equation*}
-P_{workload} = P_{idle} + (P_{max} - P_{idle}) \times \frac{CPU_{request}}{CPU_{total}}
+p_{ij,t} = (P_{max} - P_{idle}) \cdot \frac{\mathrm{CPU}_{\mathrm{request}}}{\mathrm{CPU}_{\mathrm{total}}} + \theta_{ij,t}\,P_{idle},
 \end{equation*}
-
-This uses a linear interpolation between idle and max; we do not use a separate mid-load reference.
+where \(\sum_i \theta_{ij,t} = 1\) for active slots and \(\theta_{ij,t}\) is proportional to \(\mathrm{CPU}_{\mathrm{request}}\) among concurrent workloads.
 
 
 \subsubsection{Embodied Emissions and Amortization}\label{subsubsec:embodied}
 
 
-Our embodied carbon calculations are based on lifecycle assessment (LCA) data from the Boavizta database~\cite{boavizta2023}, which aggregates manufacturer-reported environmental product declarations following ISO 14040/14044 standards. We processed a comprehensive dataset of hardware embodied carbon values and computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{tab:embodied-carbon}.
+Our embodied carbon calculations are based on lifecycle assessment (LCA) data from the Boavizta database~\cite{boavizta2023}, which aggregates manufacturer-reported environmental product declarations following ISO 14040/14044 standards.
 
 \begin{table}[!t]
 \centering
-\caption{Hardware Category Embodied Carbon Values}
+\caption{Category-wise average embodied emissions and lifetimes}
 \label{tab:embodied-carbon}
 \begin{tabular}{lcc}
 \toprule
@@ -163,7 +162,7 @@ Server                     & 1230.66                    & 3.87 \\
 \end{tabular}
 \end{table}
 
-The dataset encompasses over 200 hardware configurations from major manufacturers including Apple, Dell, and others, providing representative embodied carbon values across different hardware categories. For each category, we computed weighted averages of embodied emissions and operational lifetimes from the underlying device-specific LCA data.
+The dataset encompasses over 200 hardware configurations from major manufacturers including Dell, Lenovo, and others, providing representative embodied carbon values and expected lifetimes across different hardware categories. We computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{tab:embodied-carbon}.
 
 The core challenge in embodied carbon accounting is properly amortizing the upfront manufacturing emissions over the hardware's operational lifetime and allocating them to individual workloads. Our model follows the temporal amortization approach:
 
@@ -237,23 +236,38 @@ The optimization objective minimizes total carbon emissions across all scheduled
 
 where $e_{ijt}$ represents the total carbon emissions for executing pod $i$ on node $j$ starting at timeslot $t$.
 
-\subsubsection{Carbon Emissions Model}
+\subsubsection{Carbon Emissions Model}\label{subsubsec:carbon-emissions-model}
 
 The carbon emissions $e_{ijt}$ incorporate both operational and embodied components over the pod's execution duration $d_i$:
 
 \begin{equation}
-e_{ijt} = \sum_{k=0}^{d_i-1} \left( op_{ijt+k} + emb_{ij} \right)
+e_{ijt} = \sum_{k=0}^{d_i-1} \left( op_{ij,\,t+k} + emb_{ij,\,t+k} \right)
 \end{equation}
 
-where operational emissions $op_{ijt+k} = p_{ij} \cdot \text{CI}_{j,t+k}$ depend on power consumption $p_{ij}$ and carbon intensity forecasts $\text{CI}_{j,t+k}$, and embodied emissions per timeslot are $emb_{ij} = \frac{\text{EC}_j}{L_j \cdot u_j}$ based on total embodied carbon $\text{EC}_j$, lifetime $L_j$, and utilization factor $u_j$.
+where operational emissions $op_{ij,\,t+k} = p_{ij,\,t+k} \cdot \text{CI}_{j,\,t+k}$ depend on per-slot power $p_{ij,\,t+k}$ and carbon intensity $\text{CI}_{j,\,t+k}$, and embodied emissions per timeslot are $emb_{ij,\,t+k} = \frac{\text{EC}_j}{L_j \cdot u_j} \cdot \theta_{ij,\,t+k}$ based on total embodied carbon $\text{EC}_j$, lifetime $L_j$, node-level utilization factor $u_j$, and allocation share $\theta_{ij,\,t+k}$ (proportional to CPU share; $\sum_i \theta_{ij,\,t}=1$ for active slots).
 
-\subsubsection{Constraints}
+\subsubsection{Constraints}\label{subsubsec:constraints}
 
-The formulation includes resource capacity constraints ensuring CPU and memory limits are respected, temporal constraints enforcing pod deadlines and scheduling windows, and placement constraints requiring each pod to be scheduled exactly once within its feasible region.
+\textbf{Resource capacity}:
+\begin{align}
+\sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} c_i\, x_{ij,\,\tau-k} &\le C_{j\tau},\\
+\sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} r_i\, x_{ij,\,\tau-k} &\le R_{j\tau},
+\end{align}
+for all $j\in\mathcal{F}$ and $\tau\in\mathcal{T}$. We take $x_{ij,t}=0$ when $t\notin\mathcal{T}$ or $(j,t)\notin\mathcal{V}_i$.
+
+\textbf{Assignment} (per pod $i$):
+\begin{equation}
+\sum_{(j,t) \in \mathcal{V}_i} x_{ijt} = 1,
+\end{equation}
+with the relaxed variant given in Section~\ref{subsec:feasibility-and-relaxations}.
+
+\vspace{2pt}
+
+Temporal feasibility is encoded by the feasible set $\mathcal{V}_i$ defined earlier (earliest start and deadline windows, plus per-slot capacity checks along the pod's duration).
 
 \subsection{MILP Oracle for Benchmarking}\label{subsec:milp-oracle-for-benchmarking}
 
-We include a global MILP oracle to: (i) upper-bound achievable emissions under identical data and constraints; (ii) validate the model/implementation and isolate operational vs. embodied effects; and (iii) benchmark runtime–quality trade-offs for heuristic calibration. The MILP runs only at moderate scales with solver time limits; the heuristic (see Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler}) serves production-like use while the MILP provides reference points.
+We include a MILP oracle to: (i) upper-bound achievable emissions under identical data and constraints; (ii) validate the model/implementation and isolate operational vs. embodied effects; and (iii) benchmark runtime–quality trade-offs for heuristic calibration. The MILP runs only at moderate scales with solver time limits; the heuristic (see Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler}) serves production-like use while the MILP provides reference points.
 
 \subsubsection{Feasibility and Relaxations}\label{subsec:feasibility-and-relaxations}
 
@@ -270,7 +284,7 @@ This hierarchy ensures responsiveness in intractable instances and yields upper 
 
 \subsubsection{Computational Complexity}\label{subsec:computational-complexity}
 
-The MILP contains $O(|\mathcal{P}|\,|\mathcal{F}|\,|\mathcal{T}|)$ binary variables over feasible pairs and is NP-hard with worst-case exponential time. Practical solvers (e.g., CBC) employ branch-and-bound with cutting planes; performance is reasonable at moderate scales but degrades with increasing horizon and candidate sets. We therefore use solver time limits and the above relaxation to bound latency and provide oracle-quality references at tractable sizes.
+The MILP contains $O(|\mathcal{P}|\,|\mathcal{F}|\,|\mathcal{T}|)$ binary variables over feasible pairs and is NP-hard with worst-case exponential time. Practical solvers (e.g., CBC) employ branch-and-bound with cutting planes; performance is reasonable at moderate scales but degrades with increasing horizon and candidate sets. We therefore use solver time limits and the above relaxation to bound latency and provide references at tractable sizes.
 
 \subsection{Proposed Heuristic Carbon-Aware Scheduler}\label{subsec:proposed-heuristic-carbon-aware-scheduler}
 
@@ -279,21 +293,25 @@ While the MILP formulation provides optimal solutions, it becomes computationall
 
 \subsubsection{Algorithmic Framework}
 
-The core algorithm maintains a priority queue of pending pods ordered by deadline urgency and evaluates all feasible (node, timeslot) combinations to minimize total carbon emissions. For each pod placement candidate, the algorithm computes:
+The core algorithm maintains a priority queue of pending pods ordered by deadline urgency and evaluates all feasible (node, timeslot) combinations, scoring each candidate by $e_{ijt}$ as defined in Section~\ref{subsubsec:carbon-emissions-model}.
 
-\textbf{Operational carbon emissions:}
-\begin{equation}
-op_{ijt+k} = p_{ij} \cdot \mathrm{CI}_{j,t+k}
-\end{equation}
+\paragraph*{Constraint handling.}
+A candidate $(j,t)$ is feasible only if per-slot CPU and RAM capacities hold across the pod's duration and $t$ respects earliest/deadline windows, as defined in Section~\ref{subsubsec:constraints}.
 
-for $k \in \{0,\ldots,d_i-1\}$, where $\mathrm{CI}_{j,t}$ is the carbon intensity at node $j$ and timeslot $t$, and $p_{ij}$ is the pod’s power on node $j$. This is consistent with $e_{ijt} = \sum_{k=0}^{d_i-1}(op_{ijt+k} + emb_{ij})$.
+\paragraph*{Candidate ordering.}
+Pods are processed by smallest scheduling window (deadline minus duration), then by larger CPU, RAM, and duration (stable sort). For each pod, we pre-order timeslots by lower forecasted carbon (best-effort, taking the minimum across nodes), then enumerate nodes.
 
-\textbf{Embodied carbon emissions:}
-\begin{equation}
-emb_{ij} = \frac{\mathrm{EC}_j}{L_j \cdot u_j}
-\end{equation}
+\paragraph*{Tie-breaking and determinism.}
+Primary score is total emissions $e_{ijt}$. On ties (within a tiny $\epsilon$), we prefer tighter packing using a normalized slack metric over CPU and RAM across the pod’s duration (smaller is better). We set $\epsilon=10^{-9}$ to avoid floating-point artifacts without affecting ranking. Determinism follows from the fixed ordering of pods, timeslots, and nodes.
 
-where $\mathrm{EC}_j$ and $L_j$ are node embodied carbon and lifetime, and $u_j$ is the utilization factor as defined in the MILP formulation.
+\paragraph*{Search strategy.}
+We enumerate all feasible (node, timeslot) pairs for the pod (no node sampling or early-stop); the timeslot pre-ordering biases search toward lower-carbon hours.
+
+\paragraph*{Implementation notes.}
+We track per-slot residual capacity in dictionaries indexed by node and timeslot, and use stable sorts for deterministic processing. Per-iteration work remains $O(|\mathcal{F}||\mathcal{T}|)$ per pod (see Section~\ref{subsec:computational-complexity}).
+
+\paragraph*{Unschedulable case.}
+If no feasible $(j,t)$ exists for a pod (e.g., due to capacity or window constraints), the pod remains pending and is retried in the next scheduling round; deadlines/windows are re-evaluated each pass. No implicit relaxation or forced placement occurs in the heuristic.
 % Notation aligned with MILP: i (pods), j (nodes), t (timeslots); d_i duration; s_i earliest; D_i deadline; capacities C_{jt}, R_{jt}; CI_{j,t}; emissions e_{ijt}.
 
 \begin{algorithm}[htbp]
@@ -333,21 +351,7 @@ where $\mathrm{EC}_j$ and $L_j$ are node embodied carbon and lifetime, and $u_j$
 \end{algorithmic}
 \end{algorithm}
 
-\subsubsection{Constraint Handling and Feasibility}
 
-The algorithm enforces multiple constraint types during placement evaluation:
-
-\textbf{Resource constraints} (per node $j$ and timeslot $t$):
-\begin{equation*}
-\sum_{i \in \mathcal{P}_{j,t}} c_i \le C_{j t}, \qquad \sum_{i \in \mathcal{P}_{j,t}} r_i \le R_{j t}
-\end{equation*}
-where $\mathcal{P}_{j,t}$ denotes pods active on node $j$ during timeslot $t$.
-
-\textbf{Temporal feasibility} (per pod $i$):
-\begin{equation*}
- t \in \mathcal{T}_i := \{\, t \in \mathcal{T} \mid t \ge s_i,\; t + d_i \le D_i \,\}
-\end{equation*}
-That is, starts respect earliest timeslot $s_i$ and deadlines $D_i$ with duration $d_i$.
 
 \subsubsection{Computational Complexity}
 
@@ -364,8 +368,6 @@ This section describes the system architecture (Fig.~\ref{fig:architecture}), te
 \subsection{System Architecture Overview}
 
 Our carbon-aware orchestration system is implemented as a distributed architecture that integrates with Kubernetes through a custom gRPC-based interface. The system decouples carbon-aware scheduling logic from the underlying orchestration platform, enabling algorithmic experimentation while maintaining production-grade performance and reliability.
-
-Figure~\ref{fig:architecture} illustrates the complete system architecture and component interactions. The system follows a layered design where external clients communicate through a standardized gRPC interface, while the core engine coordinates between algorithms, data services, and persistent state management.
 
 The architecture in Figure~\ref{fig:architecture} comprises four layers: (i) a client-facing ingress, (ii) a pluggable algorithm engine with three schedulers, (iii) internal data services, and (iv) external data sources. This separation (blue = core components/algorithms; green = internal data; orange = external sources) decouples scheduling logic from data acquisition and persistence.
 
@@ -464,7 +466,6 @@ We report:
   \item \textbf{Emissions per pod}: total divided by placed pods
   \item \textbf{Success rate}: fraction of pods placed (feasibility under constraints)
   \item \textbf{Runtime}: median/mean per-placement execution time and end-to-end precompute time
-  \item \textbf{Fairness lens}: coverage-inclusive
 \end{itemize}
 
 \subsection{Evaluation Protocol and Fairness}
@@ -484,14 +485,14 @@ Including embodied emissions fundamentally changes placement behavior: it shifts
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.45\textwidth]{figures/comparison/operational_only_density.png}
+\includegraphics[width=0.45\textwidth]{figures/operational_only_density.png}
 \caption{Operational-only scheduling. Optimizing solely for electricity carbon intensity concentrates work on a subset of nodes, which can underutilize other hardware and inflate per-workload embodied attribution.}
 \label{fig:operational-only}
 \end{figure}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.45\textwidth]{figures/comparison/comprehensive_density.png}
+\includegraphics[width=0.45\textwidth]{figures/comprehensive_density.png}
 \caption{Operational+embodied scheduling. Incorporating amortized embodied costs yields more balanced placements, improving lifetime utilization and total carbon efficiency.}
 \label{fig:comprehensive}
 \end{figure}
@@ -502,9 +503,9 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
 
 \subsection{Carbon Reduction}\label{subsec:carbon-reduction}
 % Bind figures to latest generated PDFs (define before input)
-\newcommand{\EmissionsVsPodsInclusive}{\detokenize{../../figures/EmissionsVsPods/emissions_vs_pods_20251003_081848.pdf}}
-\newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{../../figures/EmissionsVsPods/emissions_per_pod_vs_pods_20251008_173253.pdf}}
-\providecommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_YYYYMMDD_HHMMSS.pdf}}
+\newcommand{\EmissionsVsPodsInclusive}{\detokenize{figures/emissions_vs_pods_20251003_081848.pdf}}
+\newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{figures/emissions_per_pod_vs_pods_20251008_173253.pdf}}
+\providecommand{\SuccessRateVsPods}{\detokenize{figures/success_rate_comparison_20251003_082028.pdf}}
 
 Figure~\ref{fig:emissions-inclusive} shows total emissions versus pod count (coverage-inclusive). As load increases, the carbon-aware schedulers reduce emissions relative to the vanilla baseline; the MILP oracle consistently provides a lower bound, and the heuristic tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{fig:success-rate} (protocol in Section~\ref{sec:experimental-setup}).
 
@@ -548,8 +549,8 @@ Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At
 \subsection{Runtime Cost: Time Complexity}\label{subsec:time-complexity}
 Figures~\ref{fig:time-overlay-nodes} and~\ref{fig:time-overlay-pods} summarise runtime. It grows roughly with the number of pods and remains compatible with online use at our largest scales. The MILP approach is far slower and sensitive to solver limits, so we treat it as a benchmarking oracle rather than a production scheduler. Following the vanilla baseline optimizations described above, the vanilla series shifts down substantially in both overlays.
 % Overlay time complexity plots (multi-algorithm)
-\newcommand{\TimeOverlayNodesFixedPods}{\detokenize{../../figures/TimeComplexity/overlay_time_vs_nodes_fixed_pods_200_20251022_115342.pdf}}
-\newcommand{\TimeOverlayPodsFixedNodes}{\detokenize{../../figures/TimeComplexity/overlay_time_vs_pods_fixed_nodes_32_20251022_115342.pdf}}
+\newcommand{\TimeOverlayNodesFixedPods}{\detokenize{figures/overlay_time_vs_nodes_fixed_pods_200_20251022_115342.pdf}}
+\newcommand{\TimeOverlayPodsFixedNodes}{\detokenize{figures/overlay_time_vs_pods_fixed_nodes_32_20251022_115342.pdf}}
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{\TimeOverlayNodesFixedPods}

@@ -55,6 +55,9 @@ htmlcov/
 docs/paper-two/
 # But track the MILP formulation document
 !docs/paper-two/milp.tex
+# Track figures under paper-two
+!docs/paper-two/figures/
+!docs/paper-two/figures/**
 
 # Generated experiment results
 **/experiment_results/
