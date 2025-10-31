@@ -85,7 +85,7 @@ Our results show that carbon-aware scheduling can substantially reduce emissions
 \section{Related Work}
 \label{sec:related}
 
-Carbon-aware workload scheduling leverages variations in the carbon intensity of electricity across \textit{time} and \textit{location}. Early research typically focused on \textit{either} shifting workloads in time (temporal shifting) or across geographic locations (spatial shifting), but not both. A recent survey ~\cite{asadov2025} found that most studies prior to 2023 pursued disjunct strategies---either temporal or spatial---rather than integrated approaches. Roughly 65\% of works examined only one axis (time or space), though by 2024--2025 a growing share began to consider both. Beyond when and where workloads run, a complementary line of work examines how to allocate embodied (manufacturing) emissions in evaluating and optimizing schedulers. Standards such as SCI~\cite{gsf2024} and recent studies propose time- and utilization-aware attribution; we review these approaches and their implications in Subsection~\ref{subsec:embodied-allocation}.
+Carbon-aware workload scheduling leverages variations in the carbon intensity of electricity across \textit{time} and \textit{location}. Early research typically focused on \textit{either} shifting workloads in time (temporal shifting) or across geographic locations (spatial shifting), but not both. A recent survey ~\cite{asadov2025} found that most studies prior to 2023 pursued disjunct strategies---either temporal or spatial---rather than integrated approaches. Roughly 65\% of works examined only one axis (time or space), though by 2024--2025 a growing share began to consider both. Beyond when and where workloads run, a complementary line of work examines how to allocate embodied (manufacturing) emissions in evaluating and optimizing schedulers. Standards such as SCI~\cite{gsf2024} and recent studies propose time- and utilization-aware attribution; we review these approaches and their implications in Subsection~\ref{subsec:embodied-allocation}. The subsequent analysis does not aim to be an exhaustive presentation of the related work. Instead, it shows how the research landscape evolved from the early, disjunct spatial or temporal scheduling towards algorithms considering the two and those considering embodied emissions as well. For the early works in particular only a few archetypical examples are shown; a thorough analysis is provided in \cite{asadov2025}.
 
 \subsection{Disjunct Temporal or Spatial Scheduling}
 
@@ -116,19 +116,20 @@ where $TE$ is total device embodied emissions from LCA, $TS$ is the time share (
 
 In this paper, we adopt a refined, SCI-consistent allocation: we attribute embodied emissions using time-in-use and resource share derived from hourly CPU utilization, and we report results alongside a lifetime-amortization baseline to quantify how allocation choice affects scheduler decisions and total carbon efficiency. \pk{leave the baseline comparison out? would it be relevant to the reader?}
 
-\section{Proposed Method}
+\section{Our Carbon-Aware Scheduler}
 
-This section defines carbon accounting models, the MILP formulation (oracle), the heuristic carbon-aware scheduler, and the carbon-agnostic baseline used for comparison.
+This section defines carbon accounting models, the MILP formulation (oracle), the heuristic carbon-aware scheduler, and the carbon-agnostic baseline used for comparison. \pk{As stated from the outset, the aim of the ASADOV scheduler is to minimize the carbon impact/FP/emissions for a random collection of nodes and pods. The carbon FP consists of operation and embodied carbon. The former is the sum of energy required for pod execution (Section 3.1.2) and carbon intensity of electricity (Section 3.1.1) for all pods blah blah. The latter is ... (Section 3.3).
+The problem is formally described in Section 3.2. ...}
 
 \subsection{Carbon Accounting Models}
 
 This subsection defines the inputs and components of our emissions accounting: the carbon-intensity signal (Section~\ref{subsubsec:carbon-signals}), the node power model (Section~\ref{subsubsec:power-model}), and the embodied-emissions amortization (Section~\ref{subsubsec:embodied}).
 
-\subsubsection{Carbon Signals}\label{subsubsec:carbon-signals}
+\subsubsection{Operational: Carbon Signals}\label{subsubsec:carbon-signals}
 
-We use average carbon intensity (ACI) as the actionable carbon signal and denote it by $\mathrm{CI}_{j,t}$ for region (node) $j$ at timeslot $t$. This signal varies over geography and time and enters the operational-emissions term of our objective (see Section~\ref{sec:problem-formulation}). Forecasts are treated as exogenous inputs; details on data source, geographical coverage, horizon, and preprocessing are provided in Section~\ref{sec:experimental-setup}.
+We use average carbon intensity (ACI) as the actionable carbon signal and denote it by $\mathrm{CI}_{j,t}$ for region (node) $j$ at timeslot $t$. This signal varies over geography and time and enters the operational-emissions term of our objective (see Section~\ref{sec:problem-formulation}). \pk{mention in advance why we need forecasting} Forecasts are treated as exogenous inputs; details on data source, geographical coverage, horizon, and preprocessing are provided in Section~\ref{sec:experimental-setup}.
 
-\subsubsection{Power Modeling}\label{subsubsec:power-model}
+\subsubsection{Operational: Power Consumption of Workloads}\label{subsubsec:power-model}
 
 \textbf{Power model and per-workload attribution:} Each node exposes a two-point power profile with an idle baseline \(P_{idle}\) and a maximum \(P_{max}\). We model node power as a linear function of aggregate CPU utilization \(U \in [0,1]\):
 \(P(U) = P_{idle} + (P_{max} - P_{idle})\,U\) for \(U>0\), and zero when no work is scheduled. The idle baseline is charged once per active slot.
@@ -140,7 +141,7 @@ p_{ij,t} = (P_{max} - P_{idle}) \cdot \frac{\mathrm{CPU}_{\mathrm{request}}}{\ma
 where \(\sum_i \theta_{ij,t} = 1\) for active slots and \(\theta_{ij,t}\) is proportional to \(\mathrm{CPU}_{\mathrm{request}}\) among concurrent workloads.
 
 
-\subsubsection{Embodied Emissions and Amortization}\label{subsubsec:embodied}
+\subsubsection{Embodied: Emissions and Amortization}\label{subsubsec:embodied}
 
 
 Our embodied carbon calculations are based on lifecycle assessment (LCA) data from the Boavizta database~\cite{boavizta2023}, which aggregates manufacturer-reported environmental product declarations following ISO 14040/14044 standards.
@@ -184,7 +185,7 @@ The embodied carbon calculation is integrated directly into the scheduling objec
 
 \subsection{Problem Formulation}\label{sec:problem-formulation}
 
-We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Programming (MILP) optimization that finds optimal assignments of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing total carbon emissions incorporating both operational and embodied components. The following subsections detail the problem formulation.
+We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Programming (MILP) optimization that finds optimal assignments of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing total carbon emissions incorporating both operational and embodied components. The following subsections detail the problem formulation. 
 
 \subsubsection{Sets, Parameters and Decision Variables}
 
@@ -265,9 +266,9 @@ with the relaxed variant given in Section~\ref{subsec:feasibility-and-relaxation
 
 Temporal feasibility is encoded by the feasible set $\mathcal{V}_i$ defined earlier (earliest start and deadline windows, plus per-slot capacity checks along the pod's duration).
 
-\subsection{MILP Oracle for Benchmarking}\label{subsec:milp-oracle-for-benchmarking}
+\subsection{Theoretical Solution: MILP Oracle}\label{subsec:milp-oracle-for-benchmarking}
 
-We include a MILP oracle to: (i) upper-bound achievable emissions under identical data and constraints; (ii) validate the model/implementation and isolate operational vs. embodied effects; and (iii) benchmark runtime–quality trade-offs for heuristic calibration. The MILP runs only at moderate scales with solver time limits; the heuristic (see Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler}) serves production-like use while the MILP provides reference points.
+\pk{Before Section 3.4 below presents our proposed algorithm, the current section first discusses the theoretically ideal solution: global oracle, with knowledge of all current and future scheduling needs, and which thus globally -- and with future knowledge -- optimizes the scheduling for minimum carbon. The role of this oracle is twofold: First, to introduce [HAUPTROLLE HIER]. Secondly, as theoretical but ideal solution, it will also be used in Sections 4 and 5 as one of the two benchmarks for our algorithm.} Before we continue with presenting our solution we introduce a MILP oracle to: (i) upper-bound achievable emissions under identical data and constraints; (ii) validate the model/implementation and isolate operational vs. embodied effects; and (iii) benchmark runtime–quality trade-offs for heuristic calibration. The MILP runs only at moderate scales with solver time limits; the heuristic (see Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler}) serves production-like use while the MILP provides reference points.
 
 \subsubsection{Feasibility and Relaxations}\label{subsec:feasibility-and-relaxations}
 
@@ -288,7 +289,7 @@ The MILP contains $O(|\mathcal{P}|\,|\mathcal{F}|\,|\mathcal{T}|)$ binary variab
 
 \subsection{Proposed Heuristic Carbon-Aware Scheduler}\label{subsec:proposed-heuristic-carbon-aware-scheduler}
 
-While the MILP formulation provides optimal solutions, it becomes computationally intractable for large-scale deployments with hundreds of pods and nodes. To address these challenges, we developed a novel spatio-temporal scheduling algorithm. The principles of this algorithm were first presented in \cite{asadov2025}, an improved - and now also implemented and benchmarked - version is presented in Algorithm~\ref{alg:heuristic} below. Section~\ref{sec:experimental-setup} then discusses implementation details, while Section~\ref{sec:results} compares its performance to vanilla Kubernetes and an NP-hard global oracle.
+The current paper introduces a further-developed version of the algorithm (Section 3.4.1) and its implementation (Section 3.4.2). Section~\ref{sec:experimental-setup} details the experimental protocol, while Section~\ref{sec:results} compares the heuristic against both the carbon-agnostic baseline and the global MILP oracle. While the MILP formulation provides optimal solutions, it becomes computationally intractable for large-scale deployments with hundreds of pods and nodes. To address these challenges, we developed a spatio-temporal scheduling algorithm. The principles of this algorithm were first presented in \cite{asadov2025}; an improved---now implemented and benchmarked---version is presented in Algorithm~\ref{alg:heuristic} below.
 
 
 \subsubsection{Algorithmic Framework}
@@ -358,14 +359,16 @@ If no feasible $(j,t)$ exists for a pod (e.g., due to capacity or window constra
 The heuristic algorithm has time complexity $O(|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|)$ for each scheduling iteration, where $|\mathcal{P}|$ is the number of pending pods, $|\mathcal{F}|$ is the number of nodes, and $|\mathcal{T}|$ is the number of timeslots. This represents a significant improvement over the MILP formulation while maintaining solution quality for practical deployment scenarios.
 
 \subsection{Carbon-Agnostic Baseline Scheduler}\label{subsec:baseline-scheduler}
+\pk{move to experimental setup}
 
  The baseline simulates a Kubernetes-default–inspired scheduler for apples-to-apples comparisons over the same spatiotemporal horizon. It follows the standard \emph{filter → score → select} flow: filter nodes that satisfy CPU/RAM feasibility across the pod’s duration for a candidate start; score feasible nodes with a LeastAllocated-like metric (equal CPU/RAM weights); and select the best-scoring node at the earliest feasible start. It explicitly enforces earliest/deadline windows and is carbon-agnostic in scoring. For parity with upstream behavior, we apply kube-inspired pruning (node sampling and early-feasible stop) so runtime and selection align with the default scheduler; otherwise the baseline differs only in its capacity-only objective.
 
 \section{Experimental Setup}\label{sec:experimental-setup}
+\pk{top down introduction}
 
 This section describes the system architecture (Fig.~\ref{fig:architecture}), testbed configuration, workloads, evaluation metrics, the evaluation protocol, and the runtime measurement setup.
 
-\subsection{System Architecture Overview}
+\subsection{System Architecture Overview}\pk{move to the section before}
 
 Our carbon-aware orchestration system is implemented as a distributed architecture that integrates with Kubernetes through a custom gRPC-based interface. The system decouples carbon-aware scheduling logic from the underlying orchestration platform, enabling algorithmic experimentation while maintaining production-grade performance and reliability.
 

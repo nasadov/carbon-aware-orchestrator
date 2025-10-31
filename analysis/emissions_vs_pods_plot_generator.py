@@ -242,6 +242,7 @@ def _compute_total_emissions_for_csv(algo: str, csv_path: str, nodes_dict: dict,
 def _discover_experiments(experiments_root: str):
     """Yield (algo, pods, dirpath, mtime) for each experiment directory."""
     pattern = re.compile(r"^(?P<algo>[^_]+?)(?:_(?P<mode>op|proportional|uniform))?_(?P<pods>\d+)pods_")
+    fallback_pattern = re.compile(r"^(?P<algo>heuristic|global-optimal|vanilla)(?:_(?P<mode>op|proportional|uniform))?_experiment_session_")
     for current_root, dirnames, _ in os.walk(experiments_root):
         dirnames.sort()
         next_level = []
@@ -262,14 +263,50 @@ def _discover_experiments(experiments_root: str):
                     mtime = 0.0
                 yield algo, pods, dir_path, mtime
             else:
-                next_level.append(entry)
+                # Fallback: support session dirs like 'heuristic_op_experiment_session_...'
+                fm = fallback_pattern.match(entry)
+                if not fm:
+                    next_level.append(entry)
+                    continue
+                algo = fm.group('algo')
+                mode = fm.group('mode') or ''
+                if mode:
+                    algo = f"{algo}-{mode}"
+                # Try to parse pods from placement_summary.log inside this dir
+                pods = None
+                summary_path = os.path.join(dir_path, 'placement_summary.log')
+                try:
+                    if os.path.isfile(summary_path):
+                        with open(summary_path, 'r') as sf:
+                            for line in sf:
+                                # Example lines:
+                                # '📈 Placed: 192/200 pods (96.0%)' or 'Dynamically calculated total pods (sum of replicas): 200'
+                                m1 = re.search(r"Placed:\s*\d+/(\d+)\s+pods", line)
+                                if m1:
+                                    pods = int(m1.group(1))
+                                    break
+                                m2 = re.search(r"total\s+pods.*?:\s*(\d+)", line, flags=re.I)
+                                if m2:
+                                    pods = int(m2.group(1))
+                                    break
+                except Exception:
+                    pods = None
+                if pods is None:
+                    # As a last resort, skip if we cannot determine pod count
+                    next_level.append(entry)
+                    continue
+                try:
+                    mtime = os.path.getmtime(dir_path)
+                except Exception:
+                    mtime = 0.0
+                yield algo, pods, dir_path, mtime
         dirnames[:] = next_level
 
 
 def _should_include_algo(algo: str, selection: str) -> bool:
     """Return True if this algo key should be included under selection.
 
-    selection in { 'proportional', 'uniform', 'both' }
+    selection in { 'proportional', 'uniform', 'both', 'op' }
     """
     if algo == 'vanilla':
         return True
@@ -277,6 +314,8 @@ def _should_include_algo(algo: str, selection: str) -> bool:
         return algo.endswith('-proportional') or algo.endswith('-uniform')
     if selection == 'uniform':
         return algo.endswith('-uniform')
+    if selection == 'op':
+        return algo.endswith('-op')
     # Default: proportional-only
     return algo.endswith('-proportional')
 
@@ -288,6 +327,7 @@ def _find_placement_csv(algo: str, dir_path: str):
     if algo.startswith('heuristic'):
         # try mode-specific file first
         candidates = [
+            'heuristic_op_placements_session.csv',
             'heuristic_prop_placements_session.csv',
             'heuristic_uniform_placements_session.csv',
             'heuristic_placements_session.csv',
@@ -406,34 +446,44 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
 
     colors = {
         'vanilla': '#2ca02c',
+        'vanilla-op': '#2ca02c',
         'heuristic': '#ff7f0e',
         'heuristic-proportional': '#ff7f0e',
         'heuristic-uniform': '#ffbb78',
+        'heuristic-op': '#ff7f0e',  # operational-only uses heuristic's classic orange
         'global-optimal': '#d62728',
         'global-optimal-proportional': '#d62728',
         'global-optimal-uniform': '#ff9896',
+        'global-optimal-op': '#d62728',  # operational-only uses oracle's classic red
     }
     markers = {
         'vanilla': '^',
+        'vanilla-op': '^',
         'heuristic': 's',
         'heuristic-proportional': 's',
         'heuristic-uniform': 'D',
+        'heuristic-op': 's',
         'global-optimal': 'o',
         'global-optimal-proportional': 'o',
         'global-optimal-uniform': '^',
+        'global-optimal-op': 'o',
     }
     labels = {
         'vanilla': 'Vanilla (Baseline)',
+        'vanilla-op': 'Vanilla (Baseline)',
         'heuristic': 'Heuristic (Carbon-Aware)',
         'heuristic-proportional': 'Heuristic (Proportional)',
         'heuristic-uniform': 'Heuristic (Uniform)',
+        'heuristic-op': 'Heuristic (Operational-Only)',
         'global-optimal': 'Global-Optimal (MILP Oracle)',
         'global-optimal-proportional': 'Global-Optimal (Proportional)',
         'global-optimal-uniform': 'Global-Optimal (Uniform)',
+        'global-optimal-op': 'Global-Optimal (Operational-Only)',
     }
 
     preferred = [
-        'vanilla',
+        'vanilla', 'vanilla-op',
+        'heuristic-op', 'global-optimal-op',
         'heuristic-proportional', 'heuristic-uniform',
         'global-optimal-proportional', 'global-optimal-uniform',
         'heuristic', 'global-optimal',
@@ -579,9 +629,10 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--uniform', action='store_true', help='Plot uniform embodied allocation only (plus vanilla)')
     group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
+    group.add_argument('--op', action='store_true', help='Plot operational-only runs (suffix -op) (plus vanilla)')
     parser.add_argument('--all', action='store_true', help='Include all experiments (default: latest-only per algo and pod count)')
     parser.add_argument('--exclude-idle', action='store_true', help='Exclude idle power from operational emissions (default: included)')
     parser.add_argument('--exclude-emb', action='store_true', help='Exclude embodied emissions (default: included)')
     args = parser.parse_args()
-    selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
+    selection = 'both' if args.both else ('uniform' if args.uniform else ('op' if args.op else 'proportional'))
     create_emissions_plot(selection, include_all=args.all, ignore_idle=args.exclude_idle, ignore_embodied=args.exclude_emb)

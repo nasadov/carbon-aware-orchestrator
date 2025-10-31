@@ -24,6 +24,7 @@ EXPERIMENTS_ROOT="$REPO_ROOT/experiments/precompute_sweeps"
 START=20
 END=200
 MODES=("proportional")
+OPERATIONAL_ONLY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --both)
@@ -48,17 +49,26 @@ while [[ $# -gt 0 ]]; do
       END="$1"
       shift
       ;;
+    --operational-only)
+      OPERATIONAL_ONLY=true
+      shift
+      ;;
     -h|--help)
-      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N]" >&2
+      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N] [--operational-only]" >&2
       exit 0
       ;;
     *)
       echo "Unknown argument: $1" >&2
-      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N]" >&2
+      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N] [--operational-only]" >&2
       exit 1
       ;;
   esac
 done
+
+if [[ "$OPERATIONAL_ONLY" == true ]]; then
+  MODES=("operational-only")
+  echo "[sweep] Operational-only mode enabled: embodied emissions will be ignored."
+fi
 
 # Run identifiers and timing
 RUN_START_ID=$(date +%Y%m%d_%H%M%S)
@@ -201,22 +211,37 @@ for P in "${POD_VALUES[@]}"; do
   PODS=$(count_pods)
   NODES=$(count_nodes)
 
-  # Heuristic (selected embodied modes)
+  # Heuristic (selected embodied/operational modes)
   for MODE in "${MODES[@]}"; do
     TAG="prop"
-    [[ "$MODE" == "uniform" ]] && TAG="uniform"
-    echo "-- heuristic precompute ($MODE) (pods=$P) --"
+    MODE_LABEL="$MODE"
+    MODE_DESC="$MODE"
+    if [[ "$MODE" == "uniform" ]]; then
+      TAG="uniform"
+    elif [[ "$MODE" == "operational-only" ]]; then
+      TAG="op"
+      MODE_LABEL="op"
+      MODE_DESC="operational-only"
+    fi
+    echo "-- heuristic precompute ($MODE_DESC) (pods=$P) --"
     begin_h="$(date +%Y-%m-%dT%H:%M:%S)"
     start_h=$(date +%s%N)
-    python3 "$SERVER_MAIN" \
-      --algorithm heuristic \
-      --precompute \
-      --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
-      --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
-      --forecasts-file "$FORECASTS_FILE" \
-      --experiment-dir "$RUN_DIR" \
-      --embodied-mode "$MODE" \
-      --loglevel INFO | sed -u "s/.*/[heuristic-$TAG] &/"
+    cmd=(
+      python3 "$SERVER_MAIN"
+      --algorithm heuristic
+      --precompute
+      --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads"
+      --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml"
+      --forecasts-file "$FORECASTS_FILE"
+      --experiment-dir "$RUN_DIR"
+      --loglevel INFO
+    )
+    if [[ "$MODE" == "operational-only" ]]; then
+      cmd+=(--operational-only)
+    else
+      cmd+=(--embodied-mode "$MODE")
+    fi
+    "${cmd[@]}" | sed -u "s/.*/[heuristic-$TAG] &/"
     end_h=$(date +%s%N)
     end_iso_h="$(date +%Y-%m-%dT%H:%M:%S)"
     elapsed_h=$(python3 - "$start_h" "$end_h" <<'PY'
@@ -225,25 +250,40 @@ s=int(sys.argv[1]); e=int(sys.argv[2])
 print(f"{(e-s)/1e9:.3f}")
 PY
 )
-    echo "$RUN_ID,$begin_h,$end_iso_h,$P,heuristic-$MODE,$PODS,$NODES,$elapsed_h" >> "$SUMMARY_CSV"
+    echo "$RUN_ID,$begin_h,$end_iso_h,$P,heuristic-$MODE_LABEL,$PODS,$NODES,$elapsed_h" >> "$SUMMARY_CSV"
   done
 
-  # Global-optimal (selected embodied modes)
+  # Global-optimal (selected embodied/operational modes)
   for MODE in "${MODES[@]}"; do
     TAG="prop"
-    [[ "$MODE" == "uniform" ]] && TAG="uniform"
-    echo "-- global-optimal precompute ($MODE) (pods=$P) --"
+    MODE_LABEL="$MODE"
+    MODE_DESC="$MODE"
+    if [[ "$MODE" == "uniform" ]]; then
+      TAG="uniform"
+    elif [[ "$MODE" == "operational-only" ]]; then
+      TAG="op"
+      MODE_LABEL="op"
+      MODE_DESC="operational-only"
+    fi
+    echo "-- global-optimal precompute ($MODE_DESC) (pods=$P) --"
     begin_g="$(date +%Y-%m-%dT%H:%M:%S)"
     start_g=$(date +%s%N)
-    python3 "$SERVER_MAIN" \
-      --algorithm global-optimal \
-      --precompute \
-      --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
-      --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
-      --forecasts-file "$FORECASTS_FILE" \
-      --experiment-dir "$RUN_DIR" \
-      --embodied-mode "$MODE" \
-      --loglevel INFO | sed -u "s/.*/[global-$TAG] &/"
+    cmd=(
+      python3 "$SERVER_MAIN"
+      --algorithm global-optimal
+      --precompute
+      --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads"
+      --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml"
+      --forecasts-file "$FORECASTS_FILE"
+      --experiment-dir "$RUN_DIR"
+      --loglevel INFO
+    )
+    if [[ "$MODE" == "operational-only" ]]; then
+      cmd+=(--operational-only)
+    else
+      cmd+=(--embodied-mode "$MODE")
+    fi
+    "${cmd[@]}" | sed -u "s/.*/[global-$TAG] &/"
     end_g=$(date +%s%N)
     end_iso_g="$(date +%Y-%m-%dT%H:%M:%S)"
     elapsed_g=$(python3 - "$start_g" "$end_g" <<'PY'
@@ -252,21 +292,34 @@ s=int(sys.argv[1]); e=int(sys.argv[2])
 print(f"{(e-s)/1e9:.3f}")
 PY
 )
-    echo "$RUN_ID,$begin_g,$end_iso_g,$P,global-optimal-$MODE,$PODS,$NODES,$elapsed_g" >> "$SUMMARY_CSV"
+    echo "$RUN_ID,$begin_g,$end_iso_g,$P,global-optimal-$MODE_LABEL,$PODS,$NODES,$elapsed_g" >> "$SUMMARY_CSV"
   done
 
   # Vanilla
-  echo "-- vanilla precompute (pods=$P) --"
+  VANILLA_DESC="vanilla"
+  VANILLA_LABEL="vanilla"
+  if [[ "$OPERATIONAL_ONLY" == true ]]; then
+    VANILLA_DESC="vanilla (operational-only)"
+    VANILLA_LABEL="vanilla-op"
+  fi
+  echo "-- $VANILLA_DESC (pods=$P) --"
   begin_v="$(date +%Y-%m-%dT%H:%M:%S)"
   start_v=$(date +%s%N)
-  python3 "$SERVER_MAIN" \
-    --algorithm vanilla \
-    --precompute \
-    --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads" \
-    --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml" \
-    --forecasts-file "$FORECASTS_FILE" \
-    --experiment-dir "$RUN_DIR" \
-    --loglevel INFO | sed -u 's/.*/[vanilla] &/'
+  cmd=(
+    python3 "$SERVER_MAIN"
+    --algorithm vanilla
+    --precompute
+    --workloads-dir "$REPO_ROOT/pkg/carbon-aware/workloads"
+    --nodes-file "$REPO_ROOT/pkg/carbon-aware/nodes.yaml"
+    --forecasts-file "$FORECASTS_FILE"
+    --experiment-dir "$RUN_DIR"
+    --loglevel INFO
+  )
+  if [[ "$OPERATIONAL_ONLY" == true ]]; then
+    cmd+=(--operational-only)
+  fi
+  VANILLA_TAG="$VANILLA_LABEL"
+  "${cmd[@]}" | sed -u "s/.*/[$VANILLA_TAG] &/"
   end_v=$(date +%s%N)
   end_iso_v="$(date +%Y-%m-%dT%H:%M:%S)"
   elapsed_v=$(python3 - "$start_v" "$end_v" <<'PY'
@@ -275,7 +328,7 @@ s=int(sys.argv[1]); e=int(sys.argv[2])
 print(f"{(e-s)/1e9:.3f}")
 PY
 )
-  echo "$RUN_ID,$begin_v,$end_iso_v,$P,vanilla,$PODS,$NODES,$elapsed_v" >> "$SUMMARY_CSV"
+  echo "$RUN_ID,$begin_v,$end_iso_v,$P,$VANILLA_LABEL,$PODS,$NODES,$elapsed_v" >> "$SUMMARY_CSV"
 
   # Tag latest per-algo with pods.txt
   for algo in heuristic global-optimal vanilla; do
@@ -288,4 +341,3 @@ PY
 done
 
 echo "Sweep complete. Results stored under $RUN_DIR (timing CSV renamed with end timestamp on exit)"
-

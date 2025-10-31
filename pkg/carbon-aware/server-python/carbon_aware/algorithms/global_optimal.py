@@ -84,6 +84,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         # Embodied allocation mode ("proportional" or "uniform")
         self.embodied_allocation_mode = "proportional"
 
+        # Flag: when True, ignore embodied emissions in objectives and reporting
+        # and optimize using operational emissions only (idle + dynamic)
+        self.operational_only = False
+
         # Objective weighting knobs (config-driven)
         # - weight_dynamic: scales per-pod dynamic emissions (k_watts * u * intensity)
         # - weight_activation: scales per-(node,slot) activation cost (idle + embodied)
@@ -130,6 +134,16 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             mode = "proportional"
         self.embodied_allocation_mode = mode
         logging.info(f"GlobalOptimalAlgorithm: embodied_allocation_mode set to {self.embodied_allocation_mode}")
+
+    def set_operational_only(self, operational_only: bool):
+        """Enable or disable operational-only optimization.
+
+        When enabled, embodied emissions are excluded from solver objectives and
+        from the per-pod emissions reported to CSV/logs. Idle and dynamic operational
+        terms remain included.
+        """
+        self.operational_only = bool(operational_only)
+        logging.info(f"GlobalOptimalAlgorithm: operational_only mode set to {self.operational_only}")
 
     def _load_config(self) -> Dict:
         """Load configuration from the infra-workload-config.yaml file."""
@@ -368,7 +382,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             emb_per_h = (flv.embodiedCarbon / flv.lifetime) if flv.lifetime else 0.0
             for ts in timeslots:
                 intensity = flv.forecast.get(ts.id, 200.0)
-                coef_milli = int(round(self.weight_activation * ((intensity * (idle_w / 1000.0) + emb_per_h)) * 1000))
+                activation_g = intensity * (idle_w / 1000.0)
+                if not getattr(self, 'operational_only', False):
+                    activation_g += emb_per_h
+                coef_milli = int(round(self.weight_activation * activation_g * 1000))
                 obj_terms.append(coef_milli * Y[(flv.id, ts.id)])
 
         model.Minimize(sum(obj_terms))
@@ -1044,7 +1061,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     for ts in timeslots:
                         intensity = get_carbon_intensity(flv, ts.id)
                         idle_oper_g = intensity * (idle_w / 1000.0)
-                        idle_embodied_terms.append(self.weight_activation * (idle_oper_g + embodied_per_h) * y[(flv.id, ts.id)])
+                        add_emb = 0.0 if getattr(self, 'operational_only', False) else embodied_per_h
+                        idle_embodied_terms.append(self.weight_activation * (idle_oper_g + add_emb) * y[(flv.id, ts.id)])
 
                 emissions_objective = pulp.lpSum(dynamic_terms) + pulp.lpSum(idle_embodied_terms)
                 prob2 += emissions_objective
@@ -1150,7 +1168,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         intensity = get_carbon_intensity(flv_obj, slot)
                         k_watts = compute_node_dynamic_coeff_watts(flv_obj)
                         idle_w = flv_obj.power.get('idle', 0.0)
-                        embodied_per_h = compute_embodied_per_hour_g(flv_obj)
+                        embodied_per_h = 0.0 if getattr(self, 'operational_only', False) else compute_embodied_per_hour_g(flv_obj)
                         U = sum(u for _, u in items)
                         if U <= 0:
                             continue
@@ -1249,7 +1267,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                 # Surrogate activation: small per-slot penalty proportional to idle+embodied to discourage scattering
                                 if self.weight_fallback_surrogate_activation and self.weight_fallback_surrogate_activation > 0.0:
                                     idle_w = flv_obj.power.get('idle', 0.0)
-                                    embodied_per_h = compute_embodied_per_hour_g(flv_obj)
+                                    embodied_per_h = 0.0 if getattr(self, 'operational_only', False) else compute_embodied_per_hour_g(flv_obj)
                                     idle_embodied_g = intensity * (idle_w / 1000.0) + embodied_per_h
                                     surrogate_activation_terms.append(
                                         self.weight_fallback_surrogate_activation * idle_embodied_g * x[(pod_id, flv_id, ts_id)]
@@ -1317,7 +1335,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             intensity = get_carbon_intensity(flv_obj, slot)
                             k_watts = compute_node_dynamic_coeff_watts(flv_obj)
                             idle_w = flv_obj.power.get('idle', 0.0)
-                            embodied_per_h = compute_embodied_per_hour_g(flv_obj)
+                            embodied_per_h = 0.0 if getattr(self, 'operational_only', False) else compute_embodied_per_hour_g(flv_obj)
                             U = sum(u for _, u in items)
                             if U <= 0:
                                 continue
@@ -1418,7 +1436,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 for ts in timeslots:
                     intensity = get_carbon_intensity(flv, ts.id)
                     idle_oper_g = intensity * (idle_w / 1000.0)
-                    idle_embodied_terms.append(self.weight_activation * (idle_oper_g + embodied_per_h) * y[(flv.id, ts.id)])
+                    add_emb = 0.0 if getattr(self, 'operational_only', False) else embodied_per_h
+                    idle_embodied_terms.append(self.weight_activation * (idle_oper_g + add_emb) * y[(flv.id, ts.id)])
             if idle_embodied_terms:
                 objective_terms.append(pulp.lpSum(idle_embodied_terms))
 
@@ -1633,7 +1652,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     intensity = get_carbon_intensity(flv_obj, slot)
                     k_watts = compute_node_dynamic_coeff_watts(flv_obj)
                     idle_w = flv_obj.power.get('idle', 0.0)
-                    embodied_per_h = compute_embodied_per_hour_g(flv_obj)
+                    embodied_per_h = 0.0 if getattr(self, 'operational_only', False) else compute_embodied_per_hour_g(flv_obj)
                     U = sum(u for _, u in items)
                     if U <= 0:
                         continue
