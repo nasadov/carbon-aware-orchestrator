@@ -58,6 +58,13 @@ docs/paper-two/
 # Track figures under paper-two
 !docs/paper-two/figures/
 !docs/paper-two/figures/**
+# Track schemes (TikZ diagrams and sources) under paper-two
+!docs/paper-two/Schemes/
+!docs/paper-two/Schemes/**
+# Exclude build/cache artifacts under Schemes
+docs/paper-two/Schemes/**/__pycache__/
+docs/paper-two/Schemes/**/*.aux
+docs/paper-two/Schemes/**/*.log
 
 # Generated experiment results
 **/experiment_results/
