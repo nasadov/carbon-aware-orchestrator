@@ -1,0 +1,134 @@
+\usetikzlibrary{positioning,arrows.meta,calc,fit,backgrounds,shapes.multipart,shadows.blur}
+
+\begin{tikzpicture}[
+  scale=0.88,
+  every node/.style={scale=0.88},
+  font=\small,
+  node distance=13mm,
+  forwardarrow/.style={-{Latex[length=3.5mm]}, line width=1.2pt, color=teal!75!black},
+  looparrow/.style={-{Latex[length=2.5mm]}, line width=0.8pt, color=orange!80!red, dashed},
+  stage/.style={
+    rectangle split,
+    rectangle split parts=2,
+    rectangle split part align={left,left},
+    rectangle split part fill={teal!25!white,teal!3},
+    draw=teal!70!black,
+    rounded corners=5pt,
+    line width=1pt,
+    text width=68mm,
+    minimum width=68mm,
+    inner ysep=6pt,
+    inner xsep=6pt,
+    align=left,
+    drop shadow={shadow xshift=0.8mm, shadow yshift=-0.8mm, opacity=0.15}
+  },
+  stepbadge/.style={
+    circle,
+    minimum size=8mm,
+    inner sep=0pt,
+    draw=white,
+    line width=1.5pt,
+    fill=teal!80!black,
+    font=\small\bfseries,
+    text=white,
+    drop shadow={shadow xshift=0.5mm, shadow yshift=-0.5mm, opacity=0.2}
+  },
+  groupbox/.style={
+    rounded corners=10pt,
+    fill=teal!5,
+    draw=teal!30!black,
+    line width=0.7pt,
+    inner sep=9pt
+  },
+  grouplabel/.style={
+    font=\small\bfseries\color{teal!75!black},
+    anchor=west
+  },
+  narrow/.style={text width=68mm, minimum width=68mm}
+]
+
+% Inputs
+\node[stage,narrow] (inputs) at (0,3.4)
+  {\textbf{\large Inputs \& Live State}
+   \nodepart{second}
+   $\triangleright$ \textbf{Pods:} CPU, RAM, duration, earliest start, deadline\\
+   $\triangleright$ \textbf{Nodes:} capacity, idle/peak power, embodied footprint\\
+   $\triangleright$ \textbf{Forecast:} hourly carbon intensity per region\\
+   $\triangleright$ \textbf{Residual:} CPU/RAM per node$\times$slot (initially full)};
+
+% Stage 1
+\node[stage,narrow, below=11mm of inputs] (queue)
+  {\textbf{\large Build Priority Queue}
+   \nodepart{second}
+   $\triangleright$ Compute scheduling window $w_i = D_i - d_i$\\
+   $\triangleright$ Sort pods by $(w_i \!\uparrow,\, \mathrm{CPU} \!\downarrow,\, \mathrm{RAM} \!\downarrow,\, d_i \!\downarrow)$\\
+   $\triangleright$ Stable ordering keeps runs deterministic};
+\node[stepbadge] at ($(queue.north west)+(-4.5mm,-5mm)$) {1};
+
+% Stage 2
+\node[stage,narrow, below=of queue] (enumerate)
+  {\textbf{\large Enumerate Feasible Windows}
+   \nodepart{second}
+   $\triangleright$ Scan timeslots between earliest start and deadline\\
+   $\triangleright$ Require CPU/RAM headroom for each occupied hour\\
+   $\triangleright$ Visit hours in increasing forecasted carbon};
+\node[stepbadge] at ($(enumerate.north west)+(-4.5mm,-5mm)$) {2};
+
+% Stage 3
+\node[stage,narrow, below=of enumerate] (score)
+  {\textbf{\large Carbon-Aware Scoring}
+   \nodepart{second}
+   $\triangleright$ Score $e_{ijt} = \sum_{\tau=0}^{d_i-1}\!\big( p_{ij}\, \mathrm{CI}_{j,t+\tau} + \mathrm{EC}_j/L_j \big)$\\
+   $\triangleright$ Operational term uses shared idle attribution\\
+   $\triangleright$ Embodied term amortised per hour; tie-break on slack};
+\node[stepbadge] at ($(score.north west)+(-4.5mm,-5mm)$) {3};
+
+% Stage 4
+\node[stage,narrow, below=of score] (commit)
+  {\textbf{\large Commit Placement \& Update State}
+   \nodepart{second}
+   $\triangleright$ Select minimum-emission candidate within tolerance $\epsilon$\\
+   $\triangleright$ Update residual CPU/RAM on chosen node for pod duration\\
+   $\triangleright$ No feasible match $\Rightarrow$ pod re-enters queue next sweep};
+\node[stepbadge] at ($(commit.north west)+(-4.5mm,-5mm)$) {4};
+
+% Outputs block
+\node[stage,narrow, below=of commit, rectangle split part fill={teal!25!white,teal!3}] (outputs)
+  {\textbf{\large Outputs \& Artefacts}
+   \nodepart{second}
+   $\triangleright$ CSV placements per algorithm + pods.txt metadata\\
+   $\triangleright$ Session logs, emission metrics, performance traces\\
+   $\triangleright$ Updated state feeding subsequent scheduling sweeps};
+
+% Primary flow arrows
+\draw[forwardarrow] (inputs.south) -- (queue.north);
+\draw[forwardarrow] (queue.south) -- (enumerate.north);
+\draw[forwardarrow] (enumerate.south) -- (score.north);
+\draw[forwardarrow] (score.south) -- (commit.north);
+\draw[forwardarrow] (commit.south) -- (outputs.north);
+
+% Loop-back arrow (compact)
+\coordinate (loopA) at ($(commit.west)+(-3.5mm,0)$);
+\coordinate (loopB) at ($(queue.west)+(-3.5mm,0)$);
+\draw[looparrow]
+  (loopA)
+    .. controls ($(loopA)+(-7mm,-7mm)$) and ($(loopB)+(-7mm,7mm)$) ..
+  node[pos=0.47, xshift=-7mm, yshift=1mm, align=center, font=\small\bfseries\color{orange!85!red}]
+    {Unschedulable\\pods rejoin}
+  (loopB);
+
+% Iteration note
+\node[font=\small\itshape\color{teal!75!black}, align=center] at ($(enumerate.south)!0.5!(score.north)+(0.5,0)$)
+  {Iterate while queue non-empty};
+
+% Group highlights
+\begin{scope}[on background layer]
+  \node[groupbox, fit=(inputs)(queue)] (prepbox) {};
+  \node[groupbox, fit=(enumerate)(score)(commit)] (runbox) {};
+  \node[groupbox, fit=(outputs)] (deliverbox) {};
+\end{scope}
+\node[grouplabel] at ($(prepbox.north west)+(2mm,2mm)$) {Preparation \& Ordering};
+\node[grouplabel] at ($(runbox.north west)+(2mm,2mm)$) {Evaluation \& Placement Loop};
+\node[grouplabel] at ($(deliverbox.north west)+(2mm,2mm)$) {Results \& Artefacts};
+
+\end{tikzpicture}
