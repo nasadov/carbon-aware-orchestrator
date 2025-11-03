@@ -25,6 +25,7 @@ START=20
 END=200
 MODES=("proportional")
 OPERATIONAL_ONLY=false
+IDENTICAL_PODS=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --both)
@@ -53,13 +54,17 @@ while [[ $# -gt 0 ]]; do
       OPERATIONAL_ONLY=true
       shift
       ;;
+    --identical-pods)
+      IDENTICAL_PODS=true
+      shift
+      ;;
     -h|--help)
-      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N] [--operational-only]" >&2
+      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N] [--operational-only] [--identical-pods]" >&2
       exit 0
       ;;
     *)
       echo "Unknown argument: $1" >&2
-      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N] [--operational-only]" >&2
+      echo "Usage: $0 [--proportional|--uniform|--both] [--start N --end N] [--operational-only] [--identical-pods]" >&2
       exit 1
       ;;
   esac
@@ -152,6 +157,42 @@ print(f"Updated exact_total_pods to {val} in {path}")
 PY
 }
 
+# Function to force identical pod characteristics (CPU, memory, duration, deadline flexibility)
+force_identical_pods() {
+  python3 - "$CONFIG_FILE" <<'PY'
+import sys, yaml
+path = sys.argv[1]
+with open(path, 'r') as f:
+    cfg = yaml.safe_load(f)
+
+if not isinstance(cfg, dict):
+    raise SystemExit("Invalid YAML structure: expected mapping at top level")
+
+wl = cfg.get('workload') or {}
+
+def midpoint(lst):
+    if isinstance(lst, list) and len(lst) > 0:
+        return lst[len(lst)//2]
+    return None
+
+# Collapse lists to their middle value
+for key in ['cpu_options', 'mem_options', 'durations', 'deadline_flexibility_hours']:
+    val = wl.get(key)
+    m = midpoint(val)
+    if m is not None:
+        wl[key] = [m]
+
+# Make assignment deterministic
+wl['deadline_strategy'] = 'flexible'
+wl['duration_assignment_method'] = 'cycle'
+
+cfg['workload'] = wl
+with open(path, 'w') as f:
+    yaml.safe_dump(cfg, f, sort_keys=False)
+print('Configured identical pods in workload using middle values in workload.* lists')
+PY
+}
+
 # Function to count pods in workloads directory
 count_pods() {
   python3 - <<'PY'
@@ -194,6 +235,12 @@ PY
 if [[ ! -f "$FORECASTS_FILE" ]]; then
   echo "Forecasts file not found: $FORECASTS_FILE" >&2
   exit 1
+fi
+
+# If requested, enforce identical pod characteristics across the generated workload
+if [[ "$IDENTICAL_PODS" == true ]]; then
+  echo "[sweep] Identical pods mode enabled: forcing uniform CPU/MEM/duration/deadline (middle values)."
+  force_identical_pods
 fi
 
 for P in "${POD_VALUES[@]}"; do
