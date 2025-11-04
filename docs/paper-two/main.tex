@@ -118,12 +118,11 @@ In this paper, we adopt a refined, SCI-consistent allocation: we attribute embod
 
 \section{Our Carbon-Aware Scheduler}
 
-This section defines carbon accounting models, the MILP formulation (oracle), the heuristic carbon-aware scheduler, and the carbon-agnostic baseline used for comparison. \pk{As stated from the outset, the aim of the ASADOV scheduler is to minimize the carbon impact/FP/emissions for a random collection of nodes and pods. The carbon FP consists of operation and embodied carbon. The former is the sum of energy required for pod execution (Section 3.1.2) and carbon intensity of electricity (Section 3.1.1) for all pods blah blah. The latter is ... (Section 3.3).
-The problem is formally described in Section 3.2. ...}
+As stated from the outset, the aim of our carbon-aware scheduler is to minimize the carbon FP (footprint) for a random collection of nodes and pods. The carbon FP consists of operation and embodied carbon and therefore first and foremost we describe our model that accounts for both in Section \ref{sec:carbon-accounting-models}. We continue with problem formulation in Section~\ref{sec:problem-formulation} that states the exact scheduling problem under those rules, so every solution faces the same constraints. Section~\ref{subsec:milp-oracle-for-benchmarking} adds a MILP oracle—not for deployment, but to show what "best possible" looks like and to validate the model. Finally, after setting the stage with formalities we continue with our heuristic scheduler that captures most of the benefit at practical scale in Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler} to tackle the NP-hard problem just described.
 
-\subsection{Carbon Accounting Models}
+\subsection{Carbon Accounting Models}\label{sec:carbon-accounting-models}
 
-This subsection defines the inputs and components of our emissions accounting: the carbon-intensity signal (Section~\ref{subsubsec:carbon-signals}), the node power model (Section~\ref{subsubsec:power-model}), and the embodied-emissions amortization (Section~\ref{subsubsec:embodied}).
+As we need to define the operational carbon footprint before allocating it, we first establish the accounting foundations: the actionable carbon-intensity signal (Section~\ref{subsubsec:carbon-signals})is multiplied by the energy consumption of the workload. For this purpose we use a node power model that maps pod requests to energy (Section~\ref{subsubsec:power-model}). We elaborate on the actual amortization and allocation of embodied emissions in (Section~\ref{subsubsec:embodied}). These components compose the per-candidate emissions objective used in the problem formulation (Section~\ref{sec:problem-formulation}).
 
 \subsubsection{Operational: Carbon Signals}\label{subsubsec:carbon-signals}
 
@@ -191,22 +190,31 @@ We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Progr
 
 \textbf{Sets:} Let $i \in \mathcal{P}$ denote the set of pods, $j \in \mathcal{F}$ the set of nodes, and $t \in \mathcal{T}$ the set of timeslots.
 
-\textbf{Parameters:}
-\begin{align}
-& D_i \in \mathbb{N}^+ & \text{Deadline timeslot for pod $i$} \\
-& s_{i} \in \mathbb{N}^+ & \text{Earliest timeslot for pod $i$} \\
-& d_i \in \mathbb{N}^+ & \text{Duration of pod $i$ (in timeslots)} \\
-& w_i \in \mathbb{N}^+ & \text{Temporal slack for pod $i$} \\
-& c_{i} \in \mathbb{R}^+ & \text{CPU request of pod $i$} \\
-& r_{i} \in \mathbb{R}^+ & \text{RAM request of pod $i$} \\
-& C_{jt} \in \mathbb{R}^+ & \text{Available CPU of node $j$ in timeslot $t$} \\
-& R_{jt} \in \mathbb{R}^+ & \text{Available RAM of node $j$ in timeslot $t$} \\
-& p_{ij} \in \mathbb{R}^+ & \text{Power consumption of pod $i$ on node $j$} \\
-& \text{CI}_{j,t} \in \mathbb{R}^+ & \text{Carbon intensity of node $j$ in timeslot $t$} \\
-& \text{EC}_j \in \mathbb{R}^+ & \text{Embodied carbon of node $j$} \\
-& L_j \in \mathbb{R}^+ & \text{Expected lifetime of node $j$} \\
-& u_j \in \mathbb{R}^+ & \text{Utilization factor of node $j$}
-\end{align}
+\textbf{Parameters:} Table~\ref{tab:problem-parameters} lists the notation and description of the inputs used in the formulation.
+\begin{table}[!t]
+\centering
+\caption{Problem parameters and notation}
+\label{tab:problem-parameters}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Description} \\
+\midrule
+$D_i \in \mathbb{N}^+$ & Deadline timeslot for pod $i$ \\
+$s_i \in \mathbb{N}^+$ & Earliest timeslot for pod $i$ \\
+$d_i \in \mathbb{N}^+$ & Duration of pod $i$ (in timeslots) \\
+$w_i \in \mathbb{N}^+$ & Temporal slack for pod $i$ \\
+$c_i \in \mathbb{R}^+$ & CPU request of pod $i$ \\
+$r_i \in \mathbb{R}^+$ & RAM request of pod $i$ \\
+$C_{jt} \in \mathbb{R}^+$ & Available CPU of node $j$ in timeslot $t$ \\
+$R_{jt} \in \mathbb{R}^+$ & Available RAM of node $j$ in timeslot $t$ \\
+$p_{ij} \in \mathbb{R}^+$ & Power consumption of pod $i$ on node $j$ \\
+$\mathrm{CI}_{j,t} \in \mathbb{R}^+$ & Carbon intensity of node $j$ in timeslot $t$ \\
+$\mathrm{EC}_j \in \mathbb{R}^+$ & Embodied carbon of node $j$ \\
+$L_j \in \mathbb{R}^+$ & Expected lifetime of node $j$ \\
+$u_j \in \mathbb{R}^+$ & Utilization factor of node $j$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \textbf{Decision Variables:} The binary decision variable is defined as:
 \begin{align}
@@ -358,11 +366,6 @@ If no feasible $(j,t)$ exists for a pod (e.g., due to capacity or window constra
 
 The heuristic algorithm has time complexity $O(|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|)$ for each scheduling iteration, where $|\mathcal{P}|$ is the number of pending pods, $|\mathcal{F}|$ is the number of nodes, and $|\mathcal{T}|$ is the number of timeslots. This represents a significant improvement over the MILP formulation while maintaining solution quality for practical deployment scenarios.
 
-\subsection{Carbon-Agnostic Baseline Scheduler}\label{subsec:baseline-scheduler}
-\pk{move to experimental setup}
-
- The baseline simulates a Kubernetes-default–inspired scheduler for apples-to-apples comparisons over the same spatiotemporal horizon. It follows the standard \emph{filter → score → select} flow: filter nodes that satisfy CPU/RAM feasibility across the pod’s duration for a candidate start; score feasible nodes with a LeastAllocated-like metric (equal CPU/RAM weights); and select the best-scoring node at the earliest feasible start. It explicitly enforces earliest/deadline windows and is carbon-agnostic in scoring. For parity with upstream behavior, we apply kube-inspired pruning (node sampling and early-feasible stop) so runtime and selection align with the default scheduler; otherwise the baseline differs only in its capacity-only objective.
-
 \section{Experimental Setup}\label{sec:experimental-setup}
 \pk{top down introduction}
 
@@ -453,13 +456,13 @@ We evaluate all algorithms on a shared synthetic testbed with consistent infrast
 
 Workloads consist of pods with CPU and RAM requests, integer-hour durations, and earliest start slots derived from their originating timeslot files. Deadlines are set as earliest + duration + slack to create bounded scheduling windows. We generate realistic mixes to induce nontrivial packing, with per-scale pod counts ranging from tens to hundreds.
 
-\subsection{Implementation Details: MILP Oracle and Carbon-Agnostic Baseline}\label{subsec:impl-oracle-baseline}
+\subsection{Benchmarking Baselines}\label{subsec:benchmarking-baselines}
 
-This subsection complements the conceptual descriptions in Section~\ref{subsec:milp-oracle-for-benchmarking} (oracle) and Section~\ref{subsec:baseline-scheduler} (baseline) by documenting the concrete implementation and runtime configuration used in our experiments.
+This subsection lays out the two reference points we use in all comparisons and how we configure them. We keep it simple on purpose: a global MILP oracle to show what “best possible under our model” looks like, and a plain carbon-agnostic scheduler to represent a reasonable vanilla choice. Together they bracket the space our heuristic aims to operate in.
 
 \textbf{MILP oracle.} We instantiate the two-phase oracle with the following solver setup: OR-Tools CP-SAT by default (per-phase time limit 60 s, 8 threads, relative gap 0.05), with PuLP fallbacks for HiGHS/Gurobi/CPLEX/CBC using equivalent limits. Phase~2 uses binary activation variables to charge idle+embodied once per active (node, timeslot) with standard linking; we warm-start from Phase~1 where supported and, on timeout, run a dynamic-only fallback to return a usable bound. We log solver status, iteration counts (when available), and wall time.
 
-\textbf{Carbon-agnostic baseline.} We configure node sampling and early stop for runtime parity: \texttt{percentage\_of\_nodes\_to\_score}=50\%, \texttt{min\_nodes\_to\_score}=50, \texttt{max\_nodes\_to\_score}=1000, and early stop after \(k=16\) feasible candidates. Feasibility uses a sliding-window check across the pod’s duration on each node. The baseline logs placements with zero on-the-fly emissions; totals are recomputed offline with the shared accounting.
+\textbf{Carbon-agnostic baseline.} For a straightforward reference, we mirror Kubernetes’ \emph{filter → score → select} path: (i) filter nodes that satisfy CPU/RAM across the pod’s duration at a candidate start, (ii) score feasible nodes with a LeastAllocated-like metric (equal CPU/RAM weights), and (iii) pick the best score at the earliest feasible start. It enforces earliest/deadline windows and ignores carbon in scoring. To keep behavior close to upstream, we enable node sampling and early feasible-stop so runtime and choices look like vanilla. Configuration: \texttt{percentage\_of\_nodes\_to\_score}=50\%, \texttt{min\_nodes\_to\_score}=50, \texttt{max\_nodes\_to\_score}=1000, early stop after \(k=16\) feasible candidates. Feasibility uses a sliding-window check across the pod’s duration on each node. The baseline logs placements with zero on-the-fly emissions; totals are recomputed offline with the shared accounting.
 
 \subsection{Evaluation Metrics}
 
