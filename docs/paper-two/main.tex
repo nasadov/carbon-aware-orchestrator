@@ -276,7 +276,7 @@ Temporal feasibility is encoded by the feasible set $\mathcal{V}_i$ defined earl
 
 \subsection{Theoretical Solution: MILP Oracle}\label{subsec:milp-oracle-for-benchmarking}
 
-\pk{Before Section 3.4 below presents our proposed algorithm, the current section first discusses the theoretically ideal solution: global oracle, with knowledge of all current and future scheduling needs, and which thus globally -- and with future knowledge -- optimizes the scheduling for minimum carbon. The role of this oracle is twofold: First, to introduce [HAUPTROLLE HIER]. Secondly, as theoretical but ideal solution, it will also be used in Sections 4 and 5 as one of the two benchmarks for our algorithm.} Before we continue with presenting our solution we introduce a MILP oracle to: (i) upper-bound achievable emissions under identical data and constraints; (ii) validate the model/implementation and isolate operational vs. embodied effects; and (iii) benchmark runtime–quality trade-offs for heuristic calibration. The MILP runs only at moderate scales with solver time limits; the heuristic (see Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler}) serves production-like use while the MILP provides reference points.
+Before Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler} presents our proposed algorithm, the current section first discusses the theoretically ideal solution: global oracle, with knowledge of all current and future scheduling needs, and which thus globally -- and with future knowledge -- optimizes the scheduling for minimum carbon. The role of this oracle is twofold: First, to introduce upper-bound achievable emissions under identical data and constraints. Secondly, as theoretical but ideal solution, it will also be used in Sections~\ref{sec:results} and~\ref{sec:discussion} as one of the two benchmarks for our algorithm.
 
 \subsubsection{Feasibility and Relaxations}\label{subsec:feasibility-and-relaxations}
 
@@ -367,11 +367,10 @@ If no feasible $(j,t)$ exists for a pod (e.g., due to capacity or window constra
 The heuristic algorithm has time complexity $O(|\mathcal{P}| \times |\mathcal{F}| \times |\mathcal{T}|)$ for each scheduling iteration, where $|\mathcal{P}|$ is the number of pending pods, $|\mathcal{F}|$ is the number of nodes, and $|\mathcal{T}|$ is the number of timeslots. This represents a significant improvement over the MILP formulation while maintaining solution quality for practical deployment scenarios.
 
 \section{Experimental Setup}\label{sec:experimental-setup}
-\pk{top down introduction}
 
-This section describes the system architecture (Fig.~\ref{fig:architecture}), testbed configuration, workloads, evaluation metrics, the evaluation protocol, and the runtime measurement setup.
+To ensure clarity and reproducibility, we document the evaluation setup in the same order used to present results. Section~4.1 summarizes the system architecture (Fig.~\ref{fig:architecture}) to show where each scheduler runs. Section~4.2 defines the testbed—nodes, regions, carbon forecasts, and the scheduling horizon. Section~4.3 specifies the workloads: pod mixes with CPU/RAM requests, durations, and earliest/deadline windows. Section~\ref{subsec:benchmarking-baselines} introduces the benchmarking baselines—a global MILP oracle (upper bound) and a carbon‑agnostic scheduler (vanilla reference). Section~4.5 states the metrics we report, Section~4.6 details the protocol for fair, like‑for‑like comparisons, and Section~4.7 describes the runtime measurement setup.
 
-\subsection{System Architecture Overview}\pk{move to the section before}
+\subsection{System Architecture Overview}
 
 Our carbon-aware orchestration system is implemented as a distributed architecture that integrates with Kubernetes through a custom gRPC-based interface. The system decouples carbon-aware scheduling logic from the underlying orchestration platform, enabling algorithmic experimentation while maintaining production-grade performance and reliability.
 
@@ -582,9 +581,8 @@ With 32 nodes held constant, runtime grows approximately linearly with total pod
 
 \noindent\textit{Takeaways.} (i) Empirical scaling matches the intended design: linear in pods at fixed nodes, and close to linear in nodes at fixed pods; (ii) kube-inspired pruning (node sampling and early feasible stop) keeps growth in check; (iii) simulator-specific accelerations (tight timeslot windowing, sliding-window feasibility, array-backed capacity) reduce constant factors, shifting the vanilla curve downward without changing its qualitative scaling; (iv) MILP remains orders of magnitude slower and is best treated as an oracle for bounds rather than a production scheduler.
 
-
-
 \section{Discussion}
+\label{sec:discussion}
 
 We interpret the emissions patterns (why per-pod curves are flat and why the vanilla baseline starts high), discuss implications and limitations, and outline threats to validity, tying back to the methods in Section~\ref{sec:experimental-setup} and results in Section~\ref{sec:results}.
 

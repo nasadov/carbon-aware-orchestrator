@@ -664,6 +664,43 @@ Visualization outputs are saved to the `figures/` directory in a timestamped fol
   bash scripts/sweep_podcounts_and_precompute.sh
   ```
 
+  High-scale synthetic sweep (publication-ready, per-algorithm):
+  ```bash
+  # Heuristic (preset expands nodes/pods; homogeneous pods recommended)
+  python scripts/time_complexity_sweep.py \
+    --algorithm heuristic \
+    --preset highscale \
+    --replicates 3 \
+    --timeslots 12 \
+    --min-density 2 --max-density 200 \
+    # (homogeneous pods and knee detection are applied automatically under this preset)
+
+  # Vanilla
+  python scripts/time_complexity_sweep.py \
+    --algorithm vanilla \
+    --preset highscale \
+    --replicates 3 \
+    --timeslots 12 \
+    --min-density 2 --max-density 200 \
+    # (homogeneous pods and knee detection are applied automatically under this preset)
+
+  # Global-optimal (more conservative; optional time budget annotations)
+  python scripts/time_complexity_sweep.py \
+    --algorithm global-optimal \
+    --preset highscale \
+    --replicates 1 \
+    --timeslots 12 \
+    --min-density 2 --max-density 200 \
+    # (homogeneous pods and knee detection are applied automatically under this preset)
+  ```
+
+  Fixed-axis multi‑algorithm plots (nodes fixed and pods fixed overlays):
+  ```bash
+  python analysis/time_complexity_fixed_axes_plot.py --latest-only
+  python analysis/time_complexity_fixed_axes_plot.py --fixed-node 64 --latest-only
+  python analysis/time_complexity_fixed_axes_plot.py --fixed-pods 3200 --latest-only
+  ```
+
 ### Heuristic Time Complexity (sweep script)
 
 We provide a focused sweep for the heuristic algorithm that synthesizes infrastructures/workloads and measures precompute runtime across pods and nodes, writing a publication‑ready plot and CSVs.
@@ -682,7 +719,6 @@ python scripts/time_complexity_sweep.py \
 #   --output-dir                 base folder for artifacts (default: experiments/time_complexity)
 #   --run-name                   custom run stamp
 #   --keep-artifacts             keep generated nodes/workloads
-#   --prioritize-efficiency      (heuristic only)
 #   --operational-only           (heuristic/global-optimal)
 #   --embodied-mode              proportional|uniform (heuristic/global-optimal; default: proportional)
 ```

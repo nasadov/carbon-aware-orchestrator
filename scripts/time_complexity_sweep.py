@@ -225,7 +225,13 @@ def build_sweep_plan(
     return plan
 
 
-def synthesize_inputs(config: SweepConfig, timeslots: int) -> None:
+def synthesize_inputs(
+    config: SweepConfig,
+    timeslots: int,
+    homogeneous_pods: bool = False,
+    pod_cpu: str | None = None,
+    pod_mem: str | None = None,
+) -> None:
     """Generate nodes/workloads for a single run."""
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     vanilla_dir = config.artifact_dir / "workloads-vanilla"
@@ -250,6 +256,16 @@ def synthesize_inputs(config: SweepConfig, timeslots: int) -> None:
             "random_seed": config.seed,
         }
     )
+
+    # Optional homogeneous pod configuration for scaling to higher pod counts
+    if homogeneous_pods:
+        if pod_cpu:
+            generator_workload_cfg["cpu_options"] = [pod_cpu]
+        if pod_mem:
+            generator_workload_cfg["mem_options"] = [pod_mem]
+        generator_workload_cfg["duration_assignment_method"] = "cycle"
+        generator_workload_cfg["deadline_strategy"] = "flexible"
+        generator_workload_cfg["deadline_flexibility_hours"] = [1]
 
     generate_nodes_file(generator_nodes_cfg)
     generate_timeslot_files(generator_workload_cfg)
@@ -326,7 +342,15 @@ def aggregate_run_metrics(perf_log_path: Path) -> Tuple[int, float, float, float
     return total_calls, total_ms, mean_ms, max_ms
 
 
-def create_publication_plot(results: pd.DataFrame, output_dir: Path, algorithm: str) -> Path:
+def create_publication_plot(
+    results: pd.DataFrame,
+    output_dir: Path,
+    algorithm: str,
+    *,
+    knee_detection: bool = False,
+    knee_slope_multiplier: float = 3.0,
+    time_budget_seconds: float | None = None,
+) -> Path:
     """Create and save the runtime scaling plot for the specified algorithm."""
     if results.empty:
         raise ValueError("No successful runs available to plot.")
@@ -349,6 +373,8 @@ def create_publication_plot(results: pd.DataFrame, output_dir: Path, algorithm: 
     plt.style.use("seaborn-v0_8-colorblind")
     fig, ax = plt.subplots(figsize=(7.0, 4.5))
 
+    knees_records = []
+
     for node_count, group in summary.groupby("node_count"):
         group = group.sort_values("total_pods")
         ax.errorbar(
@@ -360,6 +386,68 @@ def create_publication_plot(results: pd.DataFrame, output_dir: Path, algorithm: 
             linewidth=2,
             capsize=3,
         )
+
+        # Optional: knee detection per series (time vs pods)
+        if knee_detection and group.shape[0] >= 3:
+            xs = group["total_pods"].to_list()
+            ys = group["median_elapsed"].to_list()
+            # Compute adjacent slopes Δy/Δx
+            slopes: List[float] = []
+            for i in range(1, len(xs)):
+                dx = float(xs[i] - xs[i - 1]) or 1.0
+                slopes.append((ys[i] - ys[i - 1]) / dx)
+            knee_idx = None
+            for i in range(1, len(slopes)):
+                prev = slopes[:i]
+                baseline = float(pd.Series(prev).median()) if prev else 0.0
+                if baseline <= 0:
+                    # Fall back to mean if median is zero or negative
+                    baseline = float(pd.Series(prev).mean()) if prev else 0.0
+                if baseline > 0 and slopes[i] >= knee_slope_multiplier * baseline:
+                    knee_idx = i + 1  # slopes index i corresponds to point i+1
+                    break
+            if knee_idx is not None and 0 <= knee_idx < len(xs):
+                kx = xs[knee_idx]
+                ky = ys[knee_idx]
+                ax.scatter([kx], [ky], s=80, marker="X", color="#d62728", zorder=5)
+                ax.axvline(kx, linestyle=":", color="#d62728", alpha=0.6)
+                knees_records.append(
+                    {
+                        "algorithm": algorithm,
+                        "node_count": int(node_count),
+                        "total_pods": int(kx),
+                        "median_elapsed": float(ky),
+                        "index": int(knee_idx),
+                        "time_budget_hit": False,
+                    }
+                )
+
+        # Optional: mark time-budget hits
+        if time_budget_seconds is not None and time_budget_seconds > 0:
+            over = group[group["median_elapsed"] >= time_budget_seconds]
+            if not over.empty:
+                ax.scatter(
+                    over["total_pods"],
+                    over["median_elapsed"],
+                    s=70,
+                    marker="^",
+                    color="#9467bd",
+                    edgecolor="black",
+                    zorder=6,
+                    label=None,
+                )
+                # If we also recorded knees, update time budget flags for matching points
+                for _, row in over.iterrows():
+                    knees_records.append(
+                        {
+                            "algorithm": algorithm,
+                            "node_count": int(node_count),
+                            "total_pods": int(row["total_pods"]),
+                            "median_elapsed": float(row["median_elapsed"]),
+                            "index": -1,
+                            "time_budget_hit": True,
+                        }
+                    )
 
     ax.set_xlabel("Total pods scheduled", fontsize=12)
     ax.set_ylabel("Runtime (s)", fontsize=12)
@@ -399,6 +487,16 @@ def create_publication_plot(results: pd.DataFrame, output_dir: Path, algorithm: 
     fig.savefig(pdf_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
+    # Write knees file if requested
+    if knee_detection or (time_budget_seconds is not None and time_budget_seconds > 0):
+        try:
+            knees_df = pd.DataFrame(knees_records)
+            if not knees_df.empty:
+                knees_path = output_dir / f"{base}_knees.csv"
+                knees_df.to_csv(knees_path, index=False)
+        except Exception:  # pragma: no cover - non-critical
+            pass
+
     return png_path
 
 
@@ -409,6 +507,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=["heuristic", "vanilla", "global-optimal"],
         default="heuristic",
         help="Algorithm to evaluate in the sweep (default: heuristic)",
+    )
+    parser.add_argument(
+        "--preset",
+        choices=["standard", "highscale"],
+        default="standard",
+        help="Optional preset for node/pod ranges (default: standard)",
     )
     parser.add_argument(
         "--node-counts",
@@ -470,11 +574,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Preserve generated nodes/workloads; otherwise they are cleaned after each run",
     )
     parser.add_argument(
-        "--prioritize-efficiency",
-        action="store_true",
-        help="Enable heuristic efficiency prioritization flag",
-    )
-    parser.add_argument(
         "--operational-only",
         action="store_true",
         help="Use operational emissions only during heuristic evaluation",
@@ -505,6 +604,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("Density bounds must be positive")
     if args.min_density > args.max_density:
         raise ValueError("--min-density cannot exceed --max-density")
+
+    # Normalize node/pod counts in case defaults were not converted by argparse
+    if isinstance(args.node_counts, str):
+        args.node_counts = parse_int_series(args.node_counts)
+    if isinstance(args.pod_counts, str):
+        args.pod_counts = parse_int_series(args.pod_counts)
+
+    # Apply presets only if user did not override defaults
+    if args.preset == "highscale":
+        default_nodes = parse_int_series("8,16,32,64")
+        default_pods = parse_int_series("50,100,200,400")
+        if args.node_counts == default_nodes:
+            args.node_counts = [8, 16, 32, 64, 128, 256]
+        if args.pod_counts == default_pods:
+            args.pod_counts = [200, 400, 800, 1600, 3200, 6400, 12800]
 
     repo_root, server_python_dir = add_repo_modules_to_path()
     lazy_import_dependencies(args.algorithm)
@@ -571,11 +685,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
         try:
-            synthesize_inputs(sweep_cfg, args.timeslots)
+            # Use homogeneous pods automatically for highscale preset
+            use_homogeneous = args.preset == "highscale"
+            synthesize_inputs(
+                sweep_cfg,
+                args.timeslots,
+                homogeneous_pods=use_homogeneous,
+                pod_cpu="100m" if use_homogeneous else None,
+                pod_mem="128Mi" if use_homogeneous else None,
+            )
             success, elapsed, perf_log_path = run_single_precompute(
                 sweep_cfg,
                 forecasts_file,
-                args.prioritize_efficiency,
+                False,
                 args.operational_only,
                 args.embodied_mode,
                 args.algorithm,
@@ -642,7 +764,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     try:
-        plot_path = create_publication_plot(results_df, base_output_dir, args.algorithm)
+        # Always enable knee detection with a sensible default; omit time budget annotations
+        plot_path = create_publication_plot(
+            results_df,
+            base_output_dir,
+            args.algorithm,
+            knee_detection=True,
+            knee_slope_multiplier=3.0,
+            time_budget_seconds=None,
+        )
         logging.info("Saved runtime plot to %s", plot_path)
     except ValueError as exc:
         logging.warning("Plot generation skipped: %s", exc)
