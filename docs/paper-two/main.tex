@@ -126,7 +126,9 @@ As we need to define the operational carbon footprint before allocating it, we f
 
 \subsubsection{Operational: Carbon Signals}\label{subsubsec:carbon-signals}
 
-We use average carbon intensity (ACI) as the actionable carbon signal and denote it by $\mathrm{CI}_{j,t}$ for region (node) $j$ at timeslot $t$. This signal varies over geography and time and enters the operational-emissions term of our objective (see Section~\ref{sec:problem-formulation}). \pk{mention in advance why we need forecasting} Forecasts are treated as exogenous inputs; details on data source, geographical coverage, horizon, and preprocessing are provided in Section~\ref{sec:experimental-setup}.
+We use average carbon intensity (ACI) as the actionable signal that varies by region and hour. Forecasts are essential because our scheduler chooses not just where to run a pod, but when, within its earliest-start and deadline window. With a forward view of the grid, it can push flexible jobs toward cleaner hours, steer away from expected spikes, and, when options exist, favor greener regions.
+
+We therefore treat a time- and location-indexed forecast as a shared input to all algorithms. Both the Oracle and our Heuristic use it to score candidate placements; the Heuristic also uses it to quickly rank hours and to break ties consistently across nodes. We align the forecast horizon with the scheduling horizon (12–24 h in our experiments). Forecasts are imperfect, but using the same input for all algorithms keeps comparisons fair. Section~\ref{sec:experimental-setup} details sources, coverage, and preprocessing.
 
 \subsubsection{Operational: Power Consumption of Workloads}\label{subsubsec:power-model}
 
@@ -193,7 +195,7 @@ We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Progr
 \textbf{Parameters:} Table~\ref{tab:problem-parameters} lists the notation and description of the inputs used in the formulation.
 \begin{table}[!t]
 \centering
-\caption{Problem parameters and notation}
+\caption{Glossary of parameters}
 \label{tab:problem-parameters}
 \begin{tabular}{ll}
 \toprule
@@ -585,6 +587,9 @@ With 32 nodes held constant, runtime grows approximately linearly with total pod
 \label{sec:discussion}
 
 We interpret the emissions patterns (why per-pod curves are flat and why the vanilla baseline starts high), discuss implications and limitations, and outline threats to validity, tying back to the methods in Section~\ref{sec:experimental-setup} and results in Section~\ref{sec:results}.
+
+\paragraph*{Revisiting our questions.}
+Our results indicate that (i) feasibility remains high under carbon-aware placement with realistic slack, (ii) the heuristic approaches the MILP's carbon outcome across scales while running orders of magnitude faster, and (iii) precompute latency remains compatible with nearline or periodic admission control, suggesting practical deployability.
 
 \subsection{Interpreting Emissions Patterns}
 \paragraph*{Why per-pod curves are flat.}

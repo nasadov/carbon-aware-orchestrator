@@ -177,13 +177,14 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         If earliest_timeslot is not set, it extracts it from the timeslot YAML file
         that contains this pod's definition.
         """
-        # 🔧 FORCE re-extraction from YAML files to get correct earliest_timeslot
-        # Don't trust the default value of 0 - always check the actual YAML source
-        pod.earliest_timeslot = self._extract_earliest_timeslot_from_yaml_files(pod.id)
-        logging.warning(f"⚠️ Pod {pod.id} had no earliest_timeslot set, extracted from YAML: {pod.earliest_timeslot}")
-        
-        logging.info(f"🔒 Pod {pod.id} has earliest_timeslot={pod.earliest_timeslot}")
-        
+        current_ts = getattr(pod, "earliest_timeslot", None)
+        if current_ts is None or current_ts < 0:
+            extracted_ts = self._extract_earliest_timeslot_from_yaml_files(pod.id)
+            pod.earliest_timeslot = extracted_ts
+            logging.info(f"🔒 Pod {pod.id} earliest_timeslot set from YAML lookup: {pod.earliest_timeslot}")
+        else:
+            logging.debug(f"🔒 Pod {pod.id} retaining existing earliest_timeslot={pod.earliest_timeslot}")
+
         # Calculate deadline_slot relative to earliest_timeslot
         pod.calculate_deadline_slot()
         logging.info(f"⏰ Pod {pod.id} deadline_slot calculated as {pod.deadline_slot}")
@@ -199,7 +200,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         import re
         
         # Look in the workloads directory for timeslot_*.yaml files
-        workloads_dir = "/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads"
+        workloads_dir = getattr(self, "_workloads_dir", None) or "/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads"
         
         try:
             for filename in os.listdir(workloads_dir):
@@ -225,7 +226,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             logging.warning(f"⚠️ Error scanning workloads directory {workloads_dir}: {e}")
         
         # Fallback: if not found in any timeslot file, default to 0
-        logging.warning(f"⚠️ Pod {pod_id} not found in any timeslot_X.yaml file, defaulting to earliest_timeslot=0")
+        logging.warning(f"⚠️ Pod {pod_id} not found in any timeslot_X.yaml file under {workloads_dir}, defaulting to earliest_timeslot=0")
         return 0
 
     def __del__(self):
@@ -995,6 +996,14 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 opt_unplaced = len(unplaced_phase1)
                 logging.info(f"  - [Phase 1] Optimal unplaced pods: {opt_unplaced} (placed={len(s)-opt_unplaced}/{len(s)})")
 
+                solution_dict_phase1: Dict[str, Tuple[str, int, float]] = {}
+                for pod_id in placed_phase1:
+                    for flv_id, ts_id, _ in placements.get(pod_id, []):
+                        var = x.get((pod_id, flv_id, ts_id))
+                        if var is not None and var.value() and var.value() > 0.5:
+                            solution_dict_phase1[pod_id] = (flv_id, ts_id, 0.0)
+                            break
+
                 # -----------------
                 # Phase 2: minimize activated node-hours (packing) with fixed unplaced pods
                 # -----------------
@@ -1083,6 +1092,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 time_limit_cfg = solver_cfg.get('time_limit', 60)
                 gap_tolerance_cfg = solver_cfg.get('gap_tolerance', 0.05)
                 threads_cfg = int(solver_cfg.get('threads', 4))
+                solution_dict: Dict[str, Tuple[str, int, float]] = dict(solution_dict_phase1)
+
                 if self.solver_name.lower() == 'cp_sat':
                     logging.info(f"  - [Phase 2] Using OR-Tools CP-SAT with time_limit={time_limit_cfg}s")
                     cpsat_ok, cpsat_solution_dict, solution_time = self._solve_phase2_with_cpsat(
@@ -1131,6 +1142,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     # Extract placed pods
                     # Note: for CP-SAT path, solution_dict is already returned from the solver
                     unplaced_pods = []
+                    solution_dict_local: Dict[str, Tuple[str, int, float]] = dict(solution_dict)
                     if self.solver_name.lower() == 'cp_sat':
                         unplaced_pods = list(unplaced_phase1)
                         # solution_dict already built by CP-SAT path
@@ -1141,11 +1153,11 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         for var_name, var in x.items():
                             if var.value() and var.value() > 0.5:
                                 pod_id, flv_id, ts_id = var_name
-                                solution_dict[pod_id] = (flv_id, ts_id, 0.0)
+                                solution_dict_local[pod_id] = (flv_id, ts_id, 0.0)
 
                     # Compute per-pod emissions using allocation
                     occupancy = {}
-                    for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
+                    for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict_local.items():
                         pod_obj = pending_pods_dict.get(pod_id_sol)
                         if not pod_obj:
                             continue
@@ -1160,7 +1172,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                 break
                             occupancy.setdefault((flv_id_sol, slot), []).append((pod_id_sol, u_i))
 
-                    pod_total_g = {pid: 0.0 for pid in solution_dict.keys()}
+                    pod_total_g = {pid: 0.0 for pid in solution_dict_local.keys()}
                     for (flv_id, slot), items in occupancy.items():
                         flv_obj = next((f for f in flavours if f.id == flv_id), None)
                         if not flv_obj:
@@ -1179,7 +1191,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             share = u / U
                             pod_total_g[pid] += idle_embodied_g * share
 
-                    for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
+                    for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict_local.items():
                         current_pod = pending_pods_dict.get(pod_id_sol)
                         if not current_pod:
                             continue
@@ -3033,6 +3045,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             logging.info(f"📂 STEP 4: Loading pods from timeslot YAML files in {workloads_dir}")
             
             all_pods = []
+            self._workloads_dir = workloads_dir
             if not os.path.isdir(workloads_dir):
                 logging.error(f"❌ FAILED: Workloads directory {workloads_dir} does not exist")
                 return False

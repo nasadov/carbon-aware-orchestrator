@@ -23,11 +23,11 @@ optimization:
   # Candidate pruning to focus MILP on greener placements (reduces variables)
   # DISABLED to preserve packing synergies - oracle needs full search space
   pruning:
-    enable: false
+    enable: true
     # Keep at most this many best options per pod (0 = unlimited)
-    top_k_per_pod: 0
+    top_k_per_pod: 6
     # Also keep any option within this relative margin to the best emissions (e.g., 0.15 = +15%)
-    emissions_margin: 0.8
+    emissions_margin: 0.35
   
   # Hard constraints to enforce minimum success rate in multi-objective mode
   constraints:
@@ -39,7 +39,7 @@ optimization:
   # Solver configuration
   solver:
     name: cp_sat
-    time_limit: 360  # seconds per phase for lexicographic, total for standard
+    time_limit:  900  # seconds per phase for lexicographic, total for standard
     gap_tolerance: 0.05
     threads: 8
 
