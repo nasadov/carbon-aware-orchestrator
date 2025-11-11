@@ -43,12 +43,14 @@
 % author names and affiliations
 \author{Nasir~Asadov,
         Vlad~C.~Coroam\u{a},
+        Martin~Roch-Neirey,
         Marco~Zambianco,
         Silvio~Cretti,
         and~Matthias~Finkbeiner% <-this % stops a space
 \thanks{N. Asadov, V. C. Coroam\u{a}, and M. Finkbeiner are with the Department
 of Environmental Technology, Technische Universit\"at Berlin, Strasse des 17. Juni 135, 10623 Berlin, Germany
 (e-mail: nasir.asadov@tu-berlin.de; coroama@tu-berlin.de; matthias.finkbeiner@tu-berlin.de).}% <-this % stops a space
+\thanks{M. Roch-Neirey is with the Department of Computer Systems Networking and Telecommunications, Polytechnique Montréal, Montreal, Canada (e-mail: martin.roch-neirey@hefr.ch).}% <-this % stops a space
 \thanks{M. Zambianco and S. Cretti are with Fondazione Bruno Kessler,
 38123 Trento, Italy (e-mail: zambianco@fbk.eu; cretti@fbk.eu).}% <-this % stops a space
 \thanks{Corresponding author: Nasir Asadov (e-mail: nasir.asadov@tu-berlin.de).}% <-this % stops a space
@@ -74,13 +76,17 @@ Carbon-aware computing, container orchestration, Kubernetes, sustainable computi
 
 \section{Introduction}
 
-Cloud and edge data centers consume vast amounts of electricity\cite{IEA2024DataCenters, Masanet2020Science}, and their carbon footprint continues to grow with the proliferation of containerized services and AI workloads. Today’s container orchestration stacks, exemplified by Kubernetes, optimize primarily for resource utilization and service-level objectives while ignoring carbon-intensity signals that vary across regions and time\cite{Ember2024GlobalElectricity}. At the same time, hardware manufacturing ("embodied" carbon) and operational emissions both contribute materially to the environmental impact of running distributed systems. This gap between what orchestrators optimize and what matters environmentally motivates a principled, system-level approach to carbon-aware scheduling, as increasingly demonstrated in industry practice\cite{Google2020CarbonIntelligent}.
+Cloud and edge data centers consume vast amounts of electricity\cite{IEA2024DataCenters, Masanet2020Science}, and their carbon footprint continues to grow with the proliferation of containerized services and AI workloads. Today’s container orchestration stacks, exemplified by Kubernetes, optimize primarily for resource utilization and service-level objectives while ignoring carbon-intensity signals that vary across regions and time\cite{Ember2024GlobalElectricity}. At the same time, hardware manufacturing ("embodied" carbon) and operational emissions both contribute materially to the environmental impact of running distributed systems \cite{cao2024}. This gap between what orchestrators optimize and what matters environmentally motivates a principled, system-level approach to carbon-aware scheduling, as increasingly demonstrated in industry practice\cite{Google2020CarbonIntelligent} and recent research \cite{gu2023}.
 
 However, making container orchestration carbon-aware is nontrivial. Practical schedulers must respect placement feasibility (CPU/RAM), temporal constraints (earliest start and deadlines), and dynamic demand patterns, all while coping with carbon signals that change over time and across regions. Incorporating both operational and embodied carbon into placement decisions further complicates the objective, and any approach must remain computationally tractable at cluster scale. This raises the central research question: can we reduce total carbon emissions through orchestration decisions without sacrificing feasibility or incurring prohibitive precomputation costs?
 
 To this end, we present a carbon-aware orchestration framework that explores a fast heuristic scheduler that greedily minimizes a combined operational+embodied carbon objective under resource and timing constraints. Complementarily, we also explore a global-optimal formulation that solves a mixed-integer program (MILP) with a lexicographic objective (first maximize successful placements, then minimize emissions); and a carbon-agnostic vanilla baseline that mirrors Kubernetes’ resource-only scoring in order to provide upper and lower bounds for our heuristic scheduler \cite{KubernetesSchedulingFramework2025}. We integrate carbon-intensity forecasts with a co-location–aware power and embodied-carbon model, enforce earliest-start and deadline constraints, and evaluate all approaches in an offline precomputation mode that simulates multi-timeslot scheduling. Our experimental design systematically varies pods and nodes to assess both effectiveness and time complexity, producing apples-to-apples comparisons across algorithms.
 
+We implemented a prototype scheduler and evaluated it offline on controlled workloads across 12–24 hour horizons while varying pod and node scales; in a representative 80-pod run, average per-pod emissions dropped from 10.1 to 3.3 g CO\textsubscript{2}e (\(-67.5\%\)) relative to a vanilla baseline, while end-to-end precompute remained in single-digit seconds.
+
 Our results show that carbon-aware scheduling can substantially reduce emissions while preserving high placement success and practical runtime. The heuristic approach achieves favorable carbon–performance trade-offs and scales efficiently across realistic pod and node counts, while the MILP establishes an upper bound on achievable carbon reductions at a higher computational cost. Beyond demonstrating feasibility, we provide a reusable evaluation methodology—covering emissions modeling, constraint handling, and time-complexity sweeps—that enables rigorous, reproducible comparisons of carbon-aware orchestration strategies.
+
+The remainder of this paper is organized as follows: Section~\ref{sec:related} reviews related work. Section~\ref{sec:our-scheduler} introduces our carbon-aware scheduler, including accounting models (Section~\ref{sec:carbon-accounting-models}), problem formulation (Section~\ref{sec:problem-formulation}), a MILP oracle (Section~\ref{subsec:milp-oracle-for-benchmarking}), and the heuristic algorithm (Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler}). Section~\ref{sec:experimental-setup} details the experimental setup. Section~\ref{sec:results} presents results. Section~\ref{sec:discussion} discusses implications and limitations. Section~\ref{sec:conclusion} concludes with sustainability implications and future work.
 
 \section{Related Work}
 \label{sec:related}
@@ -116,7 +122,7 @@ where $TE$ is total device embodied emissions from LCA, $TS$ is the time share (
 
 In this paper, we adopt a refined, SCI-consistent allocation: we attribute embodied emissions using time-in-use and resource share derived from hourly CPU utilization, and we report results alongside a lifetime-amortization baseline to quantify how allocation choice affects scheduler decisions and total carbon efficiency. \pk{leave the baseline comparison out? would it be relevant to the reader?}
 
-\section{Our Carbon-Aware Scheduler}
+\section{Our Carbon-Aware Scheduler}\label{sec:our-scheduler}
 
 As stated from the outset, the aim of our carbon-aware scheduler is to minimize the carbon FP (footprint) for a random collection of nodes and pods. The carbon FP consists of operation and embodied carbon and therefore first and foremost we describe our model that accounts for both in Section \ref{sec:carbon-accounting-models}. We continue with problem formulation in Section~\ref{sec:problem-formulation} that states the exact scheduling problem under those rules, so every solution faces the same constraints. Section~\ref{subsec:milp-oracle-for-benchmarking} adds a MILP oracle—not for deployment, but to show what "best possible" looks like and to validate the model. Finally, after setting the stage with formalities we continue with our heuristic scheduler that captures most of the benefit at practical scale in Section~\ref{subsec:proposed-heuristic-carbon-aware-scheduler} to tackle the NP-hard problem just described.
 
@@ -623,7 +629,7 @@ We can reduce overheads further by caching per-node energy/carbon curves, reusin
 
 \textbf{Conclusion validity.} We report multiple scales and pair emissions with success rate and runtime to avoid over-attributing gains to any single metric.
 
-\section{Conclusion and Future Work}
+\section{Conclusion and Future Work}\label{sec:conclusion}
 
 This paper shows that container orchestration can reduce \emph{total} emissions—operational and embodied—without sacrificing feasibility or incurring prohibitive runtime. Across controlled scales, our carbon-aware heuristic consistently lowers emissions relative to a carbon-agnostic baseline while closely tracking a global MILP oracle. In a representative 80-pod evaluation, average per-pod emissions dropped from 10.1 to 3.3 g CO\textsubscript{2}e (\(-67.5\%\)) versus baseline, approaching the oracle at 2.6 g. Runtime grows smoothly with pods and nodes and remains within single-digit seconds at our largest settings, indicating practicality for precompute or nearline use.
 
@@ -631,7 +637,7 @@ For practitioners, these results suggest an actionable path: integrate forecaste
 
 Our study has limitations. We evaluate on synthetic workloads and consolidated forecasts; real clusters introduce additional constraints (e.g., affinity, topology spread, storage) and dynamic interference. We use ACI as the operational signal and amortized embodied accounting; alternative signals (e.g., marginal intensity, excess-renewable availability) and allocation choices may shift outcomes. Network and migration energy are not modeled, and our experiments run in an offline precomputation mode.
 
-Future work will: (i) integrate alternative grid signals (marginal, excess-renewable) and quantify sensitivity; (ii) evaluate on production traces and in live clusters with online admission; and (iii) deepen embodied modeling with allocation modes and hardware aging/heterogeneity. Together, these steps move carbon-aware orchestration from controlled studies toward robust production deployments.
+Future work will: (i) integrate additional environmental indicators (e.g., water footprint, land use etc.); and (ii) evaluate on production traces and in live clusters with online admission. Together, these steps move carbon-aware orchestration from controlled studies toward robust production deployments.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
