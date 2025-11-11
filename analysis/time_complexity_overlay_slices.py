@@ -2,7 +2,7 @@
 """
 Time Complexity Overlay Slices (multi-algorithm)
 
-Generates two comparison plots across heuristic, global-optimal, and vanilla:
+Generates two comparison plots across heuristic, oracle, and carbon-agnostic baselines:
 1) Time vs Nodes for a fixed number of Pods
 2) Time vs Pods for a fixed number of Nodes
 
@@ -42,8 +42,8 @@ OUTPUT_DIR = f"{REPO_ROOT}/figures/TimeComplexity"
 # Algorithm config: label, color, marker, file key
 ALGOS = {
     "heuristic": {"label": "Heuristic", "color": "#ff7f0e", "marker": "s", "key": "heuristic"},
-    "global-optimal": {"label": "Global-Optimal", "color": "#1f77b4", "marker": "s", "key": "global_optimal"},
-    "vanilla": {"label": "Vanilla", "color": "#2ca02c", "marker": "s", "key": "vanilla"},
+    "global-optimal": {"label": "Oracle", "color": "#2ca02c", "marker": "s", "key": "global_optimal"},
+    "vanilla": {"label": "Carbon-Agnostic", "color": "#d62728", "marker": "s", "key": "vanilla"},
 }
 
 # Floor to avoid log(0) and to keep tiny values visible in log scale

@@ -6,7 +6,7 @@ Parses precompute timing CSVs and generates:
 - Precompute time (s) vs number of pods (x-axis)
 - Precompute time (s) vs number of nodes (x-axis)
 
-Supports plotting for `heuristic`, `global-optimal`, and `vanilla` algorithms.
+Supports plotting for `heuristic`, `global-optimal` (oracle), and `vanilla` (carbon-agnostic) algorithms.
 
 Usage examples:
     # Default: plot all three algorithms, using the latest timing CSV
@@ -197,13 +197,13 @@ def _create_time_plots_for_algorithm(algorithm: str, latest_only: bool = False):
         base_pods = 'heuristic_time_vs_pods'
         base_nodes = 'heuristic_time_vs_nodes'
     elif algorithm == 'global-optimal':
-        color = '#1f77b4'
-        label = 'Global-Optimal'
+        color = '#2ca02c'
+        label = 'Oracle'
         base_pods = 'global_optimal_time_vs_pods'
         base_nodes = 'global_optimal_time_vs_nodes'
     else:
-        color = '#2ca02c'
-        label = 'Vanilla'
+        color = '#d62728'
+        label = 'Carbon-Agnostic'
         base_pods = 'vanilla_time_vs_pods'
         base_nodes = 'vanilla_time_vs_nodes'
 
@@ -242,8 +242,8 @@ def _plot_combined_time_vs_pods(alg_to_by_pods: dict, cap_seconds: float = 60.0)
     # Visual settings per algorithm
     styles = {
         'heuristic': {'color': '#ff7f0e', 'marker': 's', 'label': 'Heuristic'},
-        'global-optimal': {'color': '#1f77b4', 'marker': 'o', 'label': 'Global-Optimal'},
-        'vanilla': {'color': '#2ca02c', 'marker': 'D', 'label': 'Vanilla'},
+        'global-optimal': {'color': '#2ca02c', 'marker': 'o', 'label': 'Oracle'},
+        'vanilla': {'color': '#d62728', 'marker': 'D', 'label': 'Carbon-Agnostic'},
     }
 
     plt.figure(figsize=(12, 8))

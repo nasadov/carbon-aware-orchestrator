@@ -4,9 +4,9 @@ Success Rate Plot Generator
 
 Generates success rate comparison plots by parsing experiment results.
 
-Default: proportional-only (plus vanilla). Use flags to change selection:
-  --uniform  Plot only uniform (plus vanilla)
-  --both     Plot both proportional and uniform (plus vanilla)
+Default: proportional-only (plus carbon-agnostic baseline). Use flags to change selection:
+  --uniform  Plot only uniform (plus carbon-agnostic)
+  --both     Plot both proportional and uniform (plus carbon-agnostic)
 
 Usage:
     python analysis/success_rate_plot_generator.py [--uniform | --both]
@@ -22,7 +22,7 @@ import argparse
 from collections import defaultdict
 
 
-EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
+DEFAULT_EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
 
 
 def _read_pods_txt_if_present(session_dir: str, pods_count_from_dir: int) -> int | None:
@@ -217,10 +217,11 @@ def _aggregate_results(results):
     return algos_order, pod_counts_sorted, mean_rates, std_errs
 
 
-def create_success_rate_plot(selection: str = 'proportional', include_all: bool = False):
+def create_success_rate_plot(selection: str = 'proportional', include_all: bool = False, experiments_root: str | None = None):
+    experiments_root = experiments_root or DEFAULT_EXPERIMENTS_ROOT
     """Generate success rate comparison plot by parsing experiment outputs."""
     # Parse dynamic results
-    parsed = _parse_success_rates_from_experiments(EXPERIMENTS_ROOT, selection, include_all)
+    parsed = _parse_success_rates_from_experiments(experiments_root, selection, include_all)
     if not parsed:
         print(f"❌ No experiment results found in: {EXPERIMENTS_ROOT}")
         return
@@ -232,13 +233,13 @@ def create_success_rate_plot(selection: str = 'proportional', include_all: bool 
 
     # Define colors and markers for consistency
     colors = {
-        'vanilla': '#2ca02c',
+        'vanilla': '#d62728',
         'heuristic': '#ff7f0e',
         'heuristic-proportional': '#ff7f0e',
         'heuristic-uniform': '#ffbb78',
-        'global-optimal': '#d62728',
-        'global-optimal-proportional': '#d62728',
-        'global-optimal-uniform': '#ff9896',
+        'global-optimal': '#2ca02c',
+        'global-optimal-proportional': '#2ca02c',
+        'global-optimal-uniform': '#98df8a',
     }
 
     markers = {
@@ -252,13 +253,13 @@ def create_success_rate_plot(selection: str = 'proportional', include_all: bool 
     }
 
     labels = {
-        'vanilla': 'Vanilla (Baseline)',
-        'heuristic': 'Heuristic (Carbon-Aware)',
-        'heuristic-proportional': 'Heuristic (Proportional)',
-        'heuristic-uniform': 'Heuristic (Uniform)',
-        'global-optimal': 'Global-Optimal (MILP Oracle)',
-        'global-optimal-proportional': 'Global-Optimal (Proportional)',
-        'global-optimal-uniform': 'Global-Optimal (Uniform)',
+        'vanilla': 'Carbon-Agnostic',
+        'heuristic': 'Heuristic',
+        'heuristic-proportional': 'Heuristic Proportional',
+        'heuristic-uniform': 'Heuristic Uniform',
+        'global-optimal': 'Oracle Upper Bound',
+        'global-optimal-proportional': 'Oracle Proportional',
+        'global-optimal-uniform': 'Oracle Uniform',
     }
 
     # Plot each algorithm
@@ -294,7 +295,7 @@ def create_success_rate_plot(selection: str = 'proportional', include_all: bool 
 
     plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Scheduling Success Rate (%)', fontsize=14, fontweight='bold')
-    plt.title('Scheduling Success Rate vs. Pod Count\nComparison of Three Algorithms', 
+    plt.title('Scheduling Success Rate vs. Pod Count\nCarbon-Agnostic vs Heuristic vs Oracle', 
               fontsize=16, fontweight='bold', pad=20)
 
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
@@ -334,6 +335,7 @@ if __name__ == "__main__":
     group.add_argument('--uniform', action='store_true', help='Plot uniform embodied allocation only (plus vanilla)')
     group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
     parser.add_argument('--all', action='store_true', help='Include all experiments (default: latest-only per algo and pod count)')
+    parser.add_argument('--experiments-root', type=str, default=None, help='Override experiments root directory (default: repository experiments)')
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
-    create_success_rate_plot(selection, include_all=args.all) 
+    create_success_rate_plot(selection, include_all=args.all, experiments_root=args.experiments_root) 

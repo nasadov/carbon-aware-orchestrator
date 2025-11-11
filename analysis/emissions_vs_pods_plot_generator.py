@@ -2,7 +2,7 @@
 """
 Carbon Emissions vs Pod Count Plot Generator
 
-Generates a plot with three curves (Vanilla, Heuristic, Global-Optimal),
+Generates a plot with three curves (Carbon-Agnostic, Heuristic, Oracle),
 with x-axis as number of pods in the experiment and y-axis as total carbon
 emissions (kg CO2e) per experiment. Data is parsed dynamically from
 /root/carbon-aware-orchestrator/experiments and its subdirectories.
@@ -48,7 +48,7 @@ except Exception as e:
     CarbonAwarePod = None
     compute_emissions = None
 
-EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
+DEFAULT_EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
 NODES_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
 FORECASTS_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/all_forecasts.json"
 
@@ -355,7 +355,8 @@ def _find_placement_csv(algo: str, dir_path: str):
     return None
 
 
-def create_emissions_plot(selection: str = 'proportional', include_all: bool = False, ignore_idle: bool = False, ignore_embodied: bool = False):
+def create_emissions_plot(selection: str = 'proportional', include_all: bool = False, ignore_idle: bool = False, ignore_embodied: bool = False, experiments_root: str | None = None):
+    experiments_root = experiments_root or DEFAULT_EXPERIMENTS_ROOT
     # Prepare nodes and forecasts for computed emissions
     nodes = _load_nodes_from_yaml(NODES_FILE)
     forecasts = _load_carbon_forecasts(FORECASTS_FILE)
@@ -366,12 +367,12 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
     totals = defaultdict(lambda: defaultdict(list))      # algo -> pods -> [kg]
     per_pod = defaultdict(lambda: defaultdict(list))     # algo -> pods -> [kg/pod]
 
-    if not os.path.isdir(EXPERIMENTS_ROOT):
-        print(f"❌ Experiments directory not found: {EXPERIMENTS_ROOT}")
+    if not os.path.isdir(experiments_root):
+        print(f"❌ Experiments directory not found: {experiments_root}")
         return
 
     # Optionally filter to latest-only per (algo,pods)
-    discovered = list(_discover_experiments(EXPERIMENTS_ROOT))
+    discovered = list(_discover_experiments(experiments_root))
     if not include_all:
         latest_map = {}  # (algo,pods) -> (dir_path, mtime)
         for algo, pods, dir_path, mtime in discovered:
@@ -396,7 +397,7 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
         per_pod[algo][pods].append(total_kg / rows)
 
     if not totals:
-        print(f"⚠️ No emissions data found in experiments: {EXPERIMENTS_ROOT}")
+        print(f"⚠️ No emissions data found in experiments: {experiments_root}")
         return
 
     # Aggregate mean and std error (totals)
@@ -445,16 +446,16 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
     plt.figure(figsize=(12, 8))
 
     colors = {
-        'vanilla': '#2ca02c',
-        'vanilla-op': '#2ca02c',
+        'vanilla': '#d62728',
+        'vanilla-op': '#d62728',
         'heuristic': '#ff7f0e',
         'heuristic-proportional': '#ff7f0e',
         'heuristic-uniform': '#ffbb78',
         'heuristic-op': '#ff7f0e',  # operational-only uses heuristic's classic orange
-        'global-optimal': '#d62728',
-        'global-optimal-proportional': '#d62728',
-        'global-optimal-uniform': '#ff9896',
-        'global-optimal-op': '#d62728',  # operational-only uses oracle's classic red
+        'global-optimal': '#2ca02c',
+        'global-optimal-proportional': '#2ca02c',
+        'global-optimal-uniform': '#98df8a',
+        'global-optimal-op': '#2ca02c',  # operational-only uses oracle's classic green
     }
     markers = {
         'vanilla': '^',
@@ -469,16 +470,16 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
         'global-optimal-op': 'o',
     }
     labels = {
-        'vanilla': 'Vanilla (Baseline)',
-        'vanilla-op': 'Vanilla (Baseline)',
-        'heuristic': 'Heuristic (Carbon-Aware)',
-        'heuristic-proportional': 'Heuristic (Proportional)',
-        'heuristic-uniform': 'Heuristic (Uniform)',
-        'heuristic-op': 'Heuristic (Operational-Only)',
-        'global-optimal': 'Global-Optimal (MILP Oracle)',
-        'global-optimal-proportional': 'Global-Optimal (Proportional)',
-        'global-optimal-uniform': 'Global-Optimal (Uniform)',
-        'global-optimal-op': 'Global-Optimal (Operational-Only)',
+        'vanilla': 'Carbon-Agnostic',
+        'vanilla-op': 'Carbon-Agnostic Operational-Only',
+        'heuristic': 'Heuristic',
+        'heuristic-proportional': 'Heuristic Proportional',
+        'heuristic-uniform': 'Heuristic Uniform',
+        'heuristic-op': 'Heuristic Operational-Only',
+        'global-optimal': 'Oracle Upper Bound',
+        'global-optimal-proportional': 'Oracle Proportional',
+        'global-optimal-uniform': 'Oracle Uniform',
+        'global-optimal-op': 'Oracle Operational-Only',
     }
 
     preferred = [
@@ -516,7 +517,7 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
     if ignore_embodied:
         title_flags.append('Embodied Excluded')
     title_suffix = f" ({', '.join(title_flags)})" if title_flags else ''
-    plt.title(f'Total Carbon Emissions vs. Pod Count{title_suffix}\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
+    plt.title(f'Total Carbon Emissions vs. Pod Count{title_suffix}\nCarbon-Agnostic vs Heuristic vs Oracle', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
         plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
@@ -569,7 +570,7 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
 
     plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Emissions per Placed Pod (kg CO₂e/pod)', fontsize=14, fontweight='bold')
-    plt.title(f'Emissions per Pod vs. Pod Count{title_suffix}\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
+    plt.title(f'Emissions per Pod vs. Pod Count{title_suffix}\nCarbon-Agnostic vs Heuristic vs Oracle', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
         plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
@@ -633,6 +634,7 @@ if __name__ == "__main__":
     parser.add_argument('--all', action='store_true', help='Include all experiments (default: latest-only per algo and pod count)')
     parser.add_argument('--exclude-idle', action='store_true', help='Exclude idle power from operational emissions (default: included)')
     parser.add_argument('--exclude-emb', action='store_true', help='Exclude embodied emissions (default: included)')
+    parser.add_argument('--experiments-root', type=str, default=None, help='Override experiments root directory (default: repository experiments)')
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else ('op' if args.op else 'proportional'))
-    create_emissions_plot(selection, include_all=args.all, ignore_idle=args.exclude_idle, ignore_embodied=args.exclude_emb)
+    create_emissions_plot(selection, include_all=args.all, ignore_idle=args.exclude_idle, ignore_embodied=args.exclude_emb, experiments_root=args.experiments_root)

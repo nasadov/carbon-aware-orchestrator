@@ -172,21 +172,21 @@ Server                     & 1230.66                    & 3.87 \\
 
 The dataset encompasses over 200 hardware configurations from major manufacturers including Dell, Lenovo, and others, providing representative embodied carbon values and expected lifetimes across different hardware categories. We computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{tab:embodied-carbon}.
 
-The core challenge in embodied carbon accounting is properly amortizing the upfront manufacturing emissions over the hardware's operational lifetime and allocating them to individual workloads. Our model follows the temporal amortization approach:
+The core challenge in embodied carbon accounting is properly amortizing the upfront manufacturing emissions over the hardware's operational lifetime and allocating them to individual workloads. Consistent with SCI's time-and-resource attribution, we amortize per \emph{active} device-hour and allocate by time-in-use and resource share:
 
 \begin{equation}
-E_{emb,hourly} = \frac{E_{emb,total}}{L_{lifetime} \times 365 \times 24}
+E_{emb,hourly} = \frac{E_{emb,total}}{L_{lifetime} \times 365 \times 24 \times u_j}
 \end{equation}
 
-where $E_{emb,total}$ represents the total embodied emissions for a hardware unit (in grams CO\textsubscript{2}e), $L_{lifetime}$ is the expected operational lifetime in years, and $E_{emb,hourly}$ is the amortized hourly embodied carbon cost.
+where $E_{emb,total}$ represents the total embodied emissions for a hardware unit (in grams CO\textsubscript{2}e), $L_{lifetime}$ is the expected operational lifetime in years, $u_j \in (0,1]$ is the expected active-time utilization of node $j$, and $E_{emb,hourly}$ is the amortized embodied carbon per \emph{active} hour of device use.
 
-For workload allocation, embodied emissions are attributed proportionally to the workload duration:
+For workload allocation, embodied emissions are attributed proportionally to both the time scheduled and the resource share within each active slot:
 
 \begin{equation}
-E_{emb,workload} = E_{emb,hourly} \times t_{duration}
+E_{emb,workload} = \sum_{k=0}^{d_i-1} E_{emb,hourly} \cdot \theta_{ij,\,t+k}
 \end{equation}
 
-where $t_{duration}$ represents the workload execution time in hours. This allocation model ensures that longer-running workloads bear a proportionally larger share of the embodied carbon costs, creating appropriate incentives for efficient resource utilization.
+where $\theta_{ij,t}$ is the allocation share for pod $i$ on node $j$ at slot $t$ (proportional to its resource share, with $\sum_i \theta_{ij,t}=1$ for active slots). This allocation model reduces to uniform time-based amortization when detailed shares are unavailable (i.e., $\theta_{ij,t}=1$ for a single active workload), and ensures that longer-running and higher-share workloads bear proportionally larger embodied carbon.
 
 The embodied carbon calculation is integrated directly into the scheduling objective function, where it combines with operational emissions to provide a comprehensive carbon footprint assessment for each placement decision. This integrated approach ensures that both emission components influence scheduling decisions simultaneously, rather than treating them as separate optimization phases. We quantify the effect on placement patterns in Section~\ref{subsec:hidden-impact}.
 
@@ -516,9 +516,9 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
 
 \subsection{Carbon Reduction}\label{subsec:carbon-reduction}
 % Bind figures to latest generated PDFs (define before input)
-\newcommand{\EmissionsVsPodsInclusive}{\detokenize{figures/emissions_vs_pods_20251003_081848.pdf}}
-\newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{figures/emissions_per_pod_vs_pods_20251008_173253.pdf}}
-\providecommand{\SuccessRateVsPods}{\detokenize{figures/success_rate_comparison_20251003_082028.pdf}}
+\newcommand{\EmissionsVsPodsInclusive}{\detokenize{figures/emissions_vs_pods_20251111_220205.pdf}}
+\newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{figures/emissions_per_pod_vs_pods_20251111_220205.pdf}}
+\providecommand{\SuccessRateVsPods}{\detokenize{figures/success_rate_comparison_20251111_220212.pdf}}
 
 Figure~\ref{fig:emissions-inclusive} shows total emissions versus pod count (coverage-inclusive). As load increases, the carbon-aware schedulers reduce emissions relative to the vanilla baseline; the MILP oracle consistently provides a lower bound, and the heuristic tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{fig:success-rate} (protocol in Section~\ref{sec:experimental-setup}).
 
@@ -550,7 +550,7 @@ Across both views we use the same emissions accounting (operational + embodied).
 
 \subsection{Placement Success Rate}\label{subsec:success-rate}
 % Update to newest success-rate plot (computed from per-run CSVs; ignores stale pods.txt)
-\renewcommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_20251003_082028.pdf}}
+\renewcommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_20251111_220212.pdf}}
 Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At low load, all three methods are near 100\%; as load increases, the heuristic remains above the vanilla baseline and close to the MILP oracle.
 \begin{figure}[t]
   \centering
@@ -562,8 +562,8 @@ Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At
 \subsection{Runtime Cost: Time Complexity}\label{subsec:time-complexity}
 Figures~\ref{fig:time-overlay-nodes} and~\ref{fig:time-overlay-pods} summarise runtime. It grows roughly with the number of pods and remains compatible with online use at our largest scales. The MILP approach is far slower and sensitive to solver limits, so we treat it as a benchmarking oracle rather than a production scheduler. Following the vanilla baseline optimizations described above, the vanilla series shifts down substantially in both overlays.
 % Overlay time complexity plots (multi-algorithm)
-\newcommand{\TimeOverlayNodesFixedPods}{\detokenize{figures/overlay_time_vs_nodes_fixed_pods_200_20251022_115342.pdf}}
-\newcommand{\TimeOverlayPodsFixedNodes}{\detokenize{figures/overlay_time_vs_pods_fixed_nodes_32_20251022_115342.pdf}}
+\newcommand{\TimeOverlayNodesFixedPods}{\detokenize{figures/overlay_time_vs_nodes_fixed_pods_200_20251111_170850.pdf}}
+\newcommand{\TimeOverlayPodsFixedNodes}{\detokenize{figures/overlay_time_vs_pods_fixed_nodes_32_20251111_170850.pdf}}
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{\TimeOverlayNodesFixedPods}
@@ -588,6 +588,8 @@ With 200 pods held constant, both vanilla and heuristic exhibit near-linear grow
 With 32 nodes held constant, runtime grows approximately linearly with total pods for both vanilla and heuristic, as expected from per-pod evaluation over a bounded timeslot window. The optimized vanilla reduces both the intercept and the slope relative to the prior implementation, reflecting cheaper feasibility checks and less I/O in the hot path. The heuristic maintains a roughly constant factor overhead versus vanilla across scales—primarily from additional feasibility and scoring work—while remaining far below the MILP oracle, which grows faster-than-linearly and exhibits higher variance.
 
 \noindent\textit{Takeaways.} (i) Empirical scaling matches the intended design: linear in pods at fixed nodes, and close to linear in nodes at fixed pods; (ii) kube-inspired pruning (node sampling and early feasible stop) keeps growth in check; (iii) simulator-specific accelerations (tight timeslot windowing, sliding-window feasibility, array-backed capacity) reduce constant factors, shifting the vanilla curve downward without changing its qualitative scaling; (iv) MILP remains orders of magnitude slower and is best treated as an oracle for bounds rather than a production scheduler.
+
+\pk{add a subsection on sensitivity to forecast error}
 
 \section{Discussion}
 \label{sec:discussion}
