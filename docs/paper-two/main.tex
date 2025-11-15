@@ -589,7 +589,19 @@ With 32 nodes held constant, runtime grows approximately linearly with total pod
 
 \noindent\textit{Takeaways.} (i) Empirical scaling matches the intended design: linear in pods at fixed nodes, and close to linear in nodes at fixed pods; (ii) kube-inspired pruning (node sampling and early feasible stop) keeps growth in check; (iii) simulator-specific accelerations (tight timeslot windowing, sliding-window feasibility, array-backed capacity) reduce constant factors, shifting the vanilla curve downward without changing its qualitative scaling; (iv) MILP remains orders of magnitude slower and is best treated as an oracle for bounds rather than a production scheduler.
 
-\pk{add a subsection on sensitivity to forecast error}
+\subsection{Sensitivity to Forecast Error}
+\label{subsec:forecast-error}
+\newcommand{\ForecastErrorPlot}{\detokenize{figures/ForecastErrorSensitivity/carbon_savings_vs_forecast_error_20251115_132758.pdf}}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\ForecastErrorPlot}
+  \caption{Carbon savings relative to the carbon-agnostic baseline when schedulers consume noisy forecasts with various MAPE levels. Thin lines show heuristic savings for four representative pod counts; the dashed line shows the Oracle (MILP) upper bound averaged over pod counts. Decisions use the noisy traces; scoring uses the original Electricity Maps trace.}
+  \label{fig:forecast-error}
+\end{figure}
+
+\noindent\textit{Protocol.} To test robustness we introduce controlled noise into the Electricity Maps trace and regenerate schedules using the same experimental setup as in Section~\ref{sec:experimental-setup}. We inject multiplicative Gaussian noise with calibrated scale factors that reach target mean absolute percentage errors (MAPE) of 0, 5, 10, 15, and 20\%; for each level we rerun the carbon-agnostic baseline, the heuristic, and the Oracle across pod counts from 20 to 200 and three random seeds. Each scheduler observes only the noisy trace while making decisions, but we evaluate the resulting placements against the untouched trace to approximate real-world execution with forecast error. We report carbon savings relative to the optimized carbon-agnostic baseline after resampling nodes' carbon curves and recomputing operational+embodied emissions.
+
+\noindent\textit{Findings.} Figure~\ref{fig:forecast-error} shows that the heuristic’s robustness depends strongly on system scale, while the Oracle is remarkably stable. For small experiments (e.g., 20 pods), the heuristic maintains large savings even under 20\% MAPE, but as pod count increases its curve slopes downward and the spread between lines widens, indicating that forecast noise can substantially erode savings in dense regimes. In contrast, the Oracle stays near \(\approx95\%\) savings for all noise levels and pod counts, confirming that much of the remaining gap is due to limited search rather than an inherent brittleness of carbon-aware placement. Because the carbon-agnostic baseline ignores forecasts entirely, its emissions are identical across the sweep, so all variation in the figure comes from how carbon-aware schedulers respond to imperfect predictions.
 
 \section{Discussion}
 \label{sec:discussion}
