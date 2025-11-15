@@ -514,6 +514,19 @@ Taken together, Figures~\ref{fig:operational-only} and~\ref{fig:comprehensive} s
 
 The result aligns with our allocation model: embodied emissions are a fixed, time-amortized cost that incentivizes sustained, efficient hardware use. Ignoring them underestimates true impact and can create seemingly efficient but globally suboptimal utilization patterns.
 
+\subsection{Sensitivity to Embodied Assumptions}\label{subsec:embodied-sensitivity}
+
+While Table~\ref{tab:embodied-carbon} reports category-wise embodied emissions and lifetimes derived from Boavizta~\cite{boavizta2023}, LCA variability and hardware-management policies introduce uncertainty in these parameters. To gauge robustness, we perform a one-factor-at-a-time sensitivity analysis on a representative 80-pod scenario. Using the Boavizta CSVs for France and the US, we observe that for our four hardware classes (Server, Laptop, Smartphone, IoT-like networking/edge gear) the 10th–90th percentile embodied emissions span roughly \(0.56\text{--}1.55\times\) the class mean for servers, \(0.63\text{--}1.36\times\) for laptops, \(0.59\text{--}1.32\times\) for smartphones, and \(0.35\text{--}1.73\times\) for IoT. Motivated by this SKU-level spread and recent datacenter work on embodied amortization and lifetime extension~\cite{ji2025, hewage2025, zhang2025, panteleaki2025}, we choose symmetric, conservative perturbations around our baseline: we scale embodied emissions by factors \(\{0.8, 1.0, 1.2\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\), uniformly across node categories.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{../../figures/EmbodiedSensitivity/embodied_sensitivity_80pods.pdf}
+\caption{Sensitivity of average per-pod emissions (kg CO\textsubscript{2}e/pod) to embodied and lifetime scaling in the 80-pod scenario. Left: embodied scaling at fixed lifetime; right: lifetime scaling at fixed embodied emissions. Both heuristic and MILP oracle remain within a narrow band around the baseline.}
+\label{fig:embodied-sensitivity}
+\end{figure}
+
+Figure~\ref{fig:embodied-sensitivity} shows that the heuristic and oracle curves move only modestly under these perturbations. For embodied scaling, the heuristic’s per-pod emissions change by roughly \(-20\%\) (0.80x) to \(-7\%\) (1.20x) relative to the baseline; the oracle moves by about \(-16\%\) to \(+2\%\). Lifetime scaling has even smaller impact: with lifetime shortened to 0.75x, heuristic emissions drop by \(\approx3\%\) and oracle emissions by \(\approx15\%\) (driven by slightly different packing that shifts load toward low-carbon periods), while extending lifetime to 1.25x reduces per-pod emissions by \(\approx20\%\) for both algorithms. Across all settings, the heuristic stays close to the oracle, and the qualitative ordering from Section~\ref{subsec:carbon-reduction} is preserved. This suggests that our main conclusions—particularly the relative advantage of carbon-aware scheduling over a vanilla baseline and the small heuristic–oracle gap—are robust to reasonable uncertainty in embodied and lifetime parameters.
+
 \subsection{Carbon Reduction}\label{subsec:carbon-reduction}
 % Bind figures to latest generated PDFs (define before input)
 \newcommand{\EmissionsVsPodsInclusive}{\detokenize{figures/emissions_vs_pods_20251111_220205.pdf}}
