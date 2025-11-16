@@ -484,7 +484,7 @@ We report:
 \subsection{Evaluation Protocol and Fairness}
 To quantify carbon reductions, we evaluate three schedulers—\emph{vanilla} (baseline), \emph{heuristic} (carbon-aware), and \emph{global-optimal} (MILP oracle)—over controlled workload scales (20–200 pods) and time horizons. All algorithms operate under the same constraints (earliest timeslot, CPU/Memory, node capacity/affinity) and the same emissions model (operational + amortized embodied carbon; identical regional carbon-intensity forecasts and node power profiles). We fix seeds where stochasticity is used and report confidence intervals when averaging over multiple runs.
 
-Apples-to-apples comparison is non-trivial because algorithms can schedule different subsets of pods under the same load, confounding emissions with feasibility. We therefore present the \textbf{coverage-inclusive} view: emissions computed over all pods each algorithm successfully schedules, reflecting end-to-end impact (quality and coverage).
+Apples-to-apples comparison is non-trivial because algorithms can schedule different subsets of pods under the same load, confounding emissions with feasibility. We therefore present the coverage-inclusive view: emissions computed over all pods each algorithm successfully schedules, reflecting end-to-end impact (quality and coverage).
 
 \subsection{Runtime Measurement Protocol}
 We report median precompute runtime in offline mode with a 12-slot horizon. For node-scaling overlays, we fix pods at 200 and vary node count; for pod-scaling overlays, we fix nodes at 16 and vary pod count. Curves overlay multiple schedulers; error bars (when present) denote $\pm1\sigma$ over three replicates.
@@ -533,7 +533,7 @@ Figure~\ref{fig:embodied-sensitivity} shows that the heuristic and oracle curves
 \newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{figures/emissions_per_pod_vs_pods_20251111_220205.pdf}}
 \providecommand{\SuccessRateVsPods}{\detokenize{figures/success_rate_comparison_20251111_220212.pdf}}
 
-Figure~\ref{fig:emissions-inclusive} shows total emissions versus pod count (coverage-inclusive). As load increases, the carbon-aware schedulers reduce emissions relative to the vanilla baseline; the MILP oracle consistently provides a lower bound, and the heuristic tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{fig:success-rate} (protocol in Section~\ref{sec:experimental-setup}).
+Figure~\ref{fig:emissions-inclusive} shows total emissions versus workload intensity, expressed as implied average cluster CPU utilization over a 24-hour horizon (coverage-inclusive). For each pod count, utilization is computed once from the workload generator as total requested CPU-core hours across all pods divided by the cluster’s available CPU-core hours (30 cores \(\times\) 24 hours); this mapping is shared across all algorithms. As load increases, the carbon-aware schedulers reduce emissions relative to the vanilla baseline; the MILP oracle consistently provides a lower bound, and the heuristic tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{fig:success-rate} (protocol in Section~\ref{sec:experimental-setup}).
 
 % Matched-set analysis removed
 
@@ -542,7 +542,7 @@ Across both views we use the same emissions accounting (operational + embodied).
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{\EmissionsVsPodsInclusive}
-  \caption{Total carbon emissions vs. pod count (\textbf{coverage-inclusive}). Emissions are computed using a shared model (operational + amortized embodied). Inclusive results reflect each algorithm’s \emph{actual} coverage at a given scale.}
+  \caption{Total carbon emissions vs. implied average cluster CPU utilization over 24 hours (coverage-inclusive). Emissions are computed using a shared model (operational + amortized embodied). Inclusive results reflect each algorithm’s \emph{actual} coverage at a given workload intensity.}
   \label{fig:emissions-inclusive}
 \end{figure}
 
@@ -551,7 +551,7 @@ Across both views we use the same emissions accounting (operational + embodied).
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{\EmissionsPerPodVsPodsLatest}
-  \caption{Average emissions per placed pod (kg CO\textsubscript{2}e/pod) vs. pod count (coverage-inclusive). Carbon-aware methods remain nearly flat; vanilla starts high.}
+  \caption{Average emissions per placed pod (kg CO\textsubscript{2}e/pod) vs. implied average cluster CPU utilization over 24 hours (coverage-inclusive). Carbon-aware methods remain nearly flat; vanilla starts high.}
   \label{fig:emissions-per-pod-inclusive}
 \end{figure}
 
@@ -564,11 +564,11 @@ Across both views we use the same emissions accounting (operational + embodied).
 \subsection{Placement Success Rate}\label{subsec:success-rate}
 % Update to newest success-rate plot (computed from per-run CSVs; ignores stale pods.txt)
 \renewcommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_20251111_220212.pdf}}
-Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At low load, all three methods are near 100\%; as load increases, the heuristic remains above the vanilla baseline and close to the MILP oracle.
+Figure~\ref{fig:success-rate} shows scheduling success rate versus implied average cluster CPU utilization over 24 hours. At low load, all three methods are near 100\%; as load increases, the heuristic remains above the vanilla baseline and close to the MILP oracle.
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{\SuccessRateVsPods}
-  \caption{Scheduling success rate vs. pod count. Higher is better. Used jointly with inclusive emissions to disambiguate feasibility from carbon efficiency.}
+  \caption{Scheduling success rate vs. implied average cluster CPU utilization over 24 hours. Higher is better. Used jointly with inclusive emissions to disambiguate feasibility from carbon efficiency.}
   \label{fig:success-rate}
 \end{figure}
 

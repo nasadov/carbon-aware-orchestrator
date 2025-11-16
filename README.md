@@ -639,11 +639,17 @@ Visualization outputs are saved to the `figures/` directory in a timestamped fol
   ```
   Outputs saved under `figures/EmissionsVsPods/`.
 
+  By default the x-axis is **implied average cluster CPU utilization over 24h (%)**, not raw pod count. For each pod count P, we:
+  1. Recreate the exact-total workload (same `infra-workload-config.yaml` and seed).
+  2. Sum `cpu_request_cores × duration_hours` over all P pods (requested CPU-core·hours).
+  3. Divide by `(sum node cores) × 24h` to obtain a single utilization value shared by all algorithms.
+
 - Success Rate vs Pods:
   ```bash
   python analysis/success_rate_plot_generator.py
   ```
   Outputs saved under `figures/SuccessRate/`.
+  Uses the same utilization-based x-axis mapping as the emissions plots, so the curves are directly comparable in load.
 
 - Time Complexity (runtime vs pods and vs nodes):
   ```bash

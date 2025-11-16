@@ -23,6 +23,7 @@ import csv
 import math
 import os
 import re
+import random
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -30,10 +31,12 @@ from typing import Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import argparse
+import yaml
 
 
 EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
 NODES_YAML_PATH = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
+WORKLOAD_CONFIG_PATH = "/root/carbon-aware-orchestrator/pkg/carbon-aware/infra-workload-config.yaml"
 
 
 def parse_cpu_to_cores(cpu_str: str) -> float:
@@ -158,6 +161,98 @@ def parse_total_cluster_memory_bytes(nodes_yaml_path: str) -> float:
     for mem_str in _iter_allocatable_value_lines(nodes_yaml_path, "memory"):
         total_bytes += parse_memory_to_bytes(mem_str)
     return total_bytes
+
+
+def _simulate_total_core_hours_exact_total(
+    pods_count: int,
+    workload_cfg: Dict,
+) -> float:
+    """
+    Deterministically simulate total requested CPU-core*hours for a workload
+    with generation_strategy == 'exact_total' and exact_total_pods == pods_count,
+    using the same randomization logic as infra_workload_gen.py but without
+    writing any YAML files.
+    """
+    wl = workload_cfg or {}
+    durations = wl.get("durations", [1, 3, 6])
+    duration_assignment_method = wl.get("duration_assignment_method", "cycle")
+    cpu_options = wl.get("cpu_options", ["2000m", "1000m", "500m", "250m", "100m"])
+    random_seed = wl.get("random_seed", 42)
+
+    # Mirror generator seeding
+    random.seed(random_seed)
+    np.random.seed(random_seed)
+
+    total_services = int(pods_count)
+    duration_counter = 0
+    total_core_hours = 0.0
+
+    for _ in range(total_services):
+        cpu_req = random.choice(cpu_options)
+        if duration_assignment_method == "cycle":
+            duration_hours = durations[duration_counter % len(durations)]
+            duration_counter += 1
+        else:
+            duration_hours = random.choice(durations)
+
+        cpu_cores = parse_cpu_to_cores(cpu_req)
+        if cpu_cores <= 0 or duration_hours <= 0:
+            continue
+        total_core_hours += cpu_cores * float(duration_hours)
+
+    return total_core_hours
+
+
+def compute_pods_to_24h_cpu_utilization(
+    experiments_root: str,
+    nodes_yaml_path: str,
+    prefer_algo: str = "vanilla",  # kept for backward compatibility; unused now
+    horizon_hours: float = 24.0,
+) -> Dict[int, float]:
+    """
+    Compute a mapping from pod count -> average CPU utilization over a fixed horizon,
+    based on requested capacity (workload), not on placements.
+
+    For each pod count P that appears under experiments_root, we:
+      - Simulate the exact_total workload with P pods using the workload
+        configuration from infra-workload-config.yaml.
+      - Sum cpu_request_cores * duration_hours over all pods.
+      - Divide by (total_cluster_cores * horizon_hours) and convert to percent.
+
+    Because the generator is deterministic with a fixed seed and exact_total,
+    total requested CPU-core*hours is monotone in P, so utilization is monotone.
+    """
+    total_cores = parse_total_cluster_cores(nodes_yaml_path)
+    if total_cores <= 0 or horizon_hours <= 0:
+        return {}
+
+    if not os.path.isdir(experiments_root):
+        return {}
+
+    # Discover pod counts present under this experiments_root
+    discovered = list(_discover_experiments(experiments_root, selection="proportional"))
+    pod_counts = sorted({pods for (_, pods, _, _) in discovered}) if discovered else []
+    if not pod_counts:
+        return {}
+
+    # Load workload configuration (same one used by infra_workload_gen.py)
+    workload_cfg: Dict = {}
+    try:
+        with open(WORKLOAD_CONFIG_PATH, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        workload_cfg = cfg.get("workload", {})
+    except Exception:
+        workload_cfg = {}
+
+    pods_to_util: Dict[int, float] = {}
+    for pods_count in pod_counts:
+        total_core_hours = _simulate_total_core_hours_exact_total(pods_count, workload_cfg)
+        if total_core_hours <= 0:
+            continue
+        util_percent = (total_core_hours / (total_cores * horizon_hours)) * 100.0
+        pods_to_util[pods_count] = float(util_percent)
+
+    return pods_to_util
 
 
 def _placement_csv_candidates(algo_key: str) -> List[str]:
@@ -590,4 +685,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
     create_utilization_plots(selection, include_all=args.all)
-

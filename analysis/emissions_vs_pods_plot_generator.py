@@ -32,6 +32,8 @@ import json
 import yaml
 import sys
 
+import utilization_plot_generator as util_mod
+
 # Ensure carbon_aware modules are importable
 CARBON_AWARE_SERVER_PY_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -355,7 +357,14 @@ def _find_placement_csv(algo: str, dir_path: str):
     return None
 
 
-def create_emissions_plot(selection: str = 'proportional', include_all: bool = False, ignore_idle: bool = False, ignore_embodied: bool = False, experiments_root: str | None = None):
+def create_emissions_plot(
+    selection: str = 'proportional',
+    include_all: bool = False,
+    ignore_idle: bool = False,
+    ignore_embodied: bool = False,
+    experiments_root: str | None = None,
+    x_axis: str = 'utilization',
+):
     experiments_root = experiments_root or DEFAULT_EXPERIMENTS_ROOT
     # Prepare nodes and forecasts for computed emissions
     nodes = _load_nodes_from_yaml(NODES_FILE)
@@ -421,6 +430,22 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
             mean_per_pod[algo][pods] = float(np.mean(arr))
             stderr_per_pod[algo][pods] = float(np.std(arr, ddof=1) / np.sqrt(arr.size)) if arr.size > 1 else 0.0
     pod_counts_sorted = sorted(all_pods)
+
+    # Map pod counts to a shared x-axis (default: 24h-normalized CPU utilization).
+    x_axis_mode = x_axis or 'utilization'
+    pods_to_x = {}
+    if x_axis_mode == 'utilization':
+        pods_to_x = util_mod.compute_pods_to_24h_cpu_utilization(
+            experiments_root,
+            NODES_FILE,
+            prefer_algo='vanilla',
+            horizon_hours=24.0,
+        )
+        if not pods_to_x:
+            print(f"⚠️ Could not compute utilization mapping from experiments at {experiments_root}; falling back to pod count on x-axis.")
+            x_axis_mode = 'pods'
+    if x_axis_mode != 'utilization':
+        pods_to_x = {p: float(p) for p in pod_counts_sorted}
 
     # Compute percentage improvement vs vanilla baseline (per-pod emissions)
     improvement_vs_vanilla = defaultdict(dict)
@@ -496,7 +521,7 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
         x_vals, y_vals, y_errs = [], [], []
         for pods in pod_counts_sorted:
             if pods in mean_vals[algo]:
-                x_vals.append(pods)
+                x_vals.append(pods_to_x.get(pods, float(pods)))
                 y_vals.append(mean_vals[algo][pods])
                 y_errs.append(stderr_vals[algo][pods])
         if not x_vals:
@@ -509,7 +534,10 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
         else:
             plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9)
 
-    plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
+    if x_axis_mode == 'utilization':
+        plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+    else:
+        plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Total Carbon Emissions per Experiment (kg CO₂e)', fontsize=14, fontweight='bold')
     title_flags = []
     if ignore_idle:
@@ -520,9 +548,21 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
     plt.title(f'Total Carbon Emissions vs. Pod Count{title_suffix}\nCarbon-Agnostic vs Heuristic vs Oracle', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
-        plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+        if x_axis_mode == 'utilization':
+            x_coords = [pods_to_x.get(p, float(p)) for p in pod_counts_sorted]
+            xmin = min(x_coords)
+            xmax = max(x_coords)
+            lo = max(0, 5 * int(xmin // 5))
+            hi = 5 * int((xmax + 4.9999) // 5)
+            if hi <= lo:
+                hi = lo + 5
+            hi = min(100, hi)
+            plt.xlim(lo, hi)
+            plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+        else:
+            plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+            plt.xticks(pod_counts_sorted, fontsize=12)
     plt.ylim(bottom=0)
-    plt.xticks(pod_counts_sorted, fontsize=12)
     plt.yticks(fontsize=12)
     plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
     plt.tight_layout()
@@ -555,7 +595,7 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
         x_vals, y_vals, y_errs = [], [], []
         for pods in pod_counts_sorted:
             if pods in mean_per_pod[algo]:
-                x_vals.append(pods)
+                x_vals.append(pods_to_x.get(pods, float(pods)))
                 y_vals.append(mean_per_pod[algo][pods])
                 y_errs.append(stderr_per_pod[algo][pods])
         if not x_vals:
@@ -568,14 +608,29 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
         else:
             plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9)
 
-    plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
+    if x_axis_mode == 'utilization':
+        plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+    else:
+        plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Emissions per Placed Pod (kg CO₂e/pod)', fontsize=14, fontweight='bold')
     plt.title(f'Emissions per Pod vs. Pod Count{title_suffix}\nCarbon-Agnostic vs Heuristic vs Oracle', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
-        plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+        if x_axis_mode == 'utilization':
+            x_coords = [pods_to_x.get(p, float(p)) for p in pod_counts_sorted]
+            xmin = min(x_coords)
+            xmax = max(x_coords)
+            lo = max(0, 5 * int(xmin // 5))
+            hi = 5 * int((xmax + 4.9999) // 5)
+            if hi <= lo:
+                hi = lo + 5
+            hi = min(100, hi)
+            plt.xlim(lo, hi)
+            plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+        else:
+            plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+            plt.xticks(pod_counts_sorted, fontsize=12)
     plt.ylim(bottom=0)
-    plt.xticks(pod_counts_sorted, fontsize=12)
     plt.yticks(fontsize=12)
     plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
     plt.tight_layout()
@@ -596,7 +651,7 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
                 x_vals, y_vals = [], []
                 for pods in pod_counts_sorted:
                     if pods in improvement_vs_vanilla[algo]:
-                        x_vals.append(pods)
+                        x_vals.append(pods_to_x.get(pods, float(pods)))
                         y_vals.append(improvement_vs_vanilla[algo][pods])
                 if not x_vals:
                     continue
@@ -606,13 +661,29 @@ def create_emissions_plot(selection: str = 'proportional', include_all: bool = F
                 plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9)
 
             plt.axhline(0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
-            plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
+            if x_axis_mode == 'utilization':
+                plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+            else:
+                plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
             plt.ylabel('Emissions Improvement vs Vanilla (%)', fontsize=14, fontweight='bold')
             plt.title(f'Carbon Emissions Reduction vs Vanilla Baseline{title_suffix}', fontsize=16, fontweight='bold', pad=20)
             plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
             if pod_counts_sorted:
-                plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
-            plt.xticks(pod_counts_sorted, fontsize=12)
+                if x_axis_mode == 'utilization':
+                    x_coords = [pods_to_x.get(p, float(p)) for p in pod_counts_sorted if p in improvement_vs_vanilla.get(compare_algos[0], {})]
+                    if x_coords:
+                        xmin = min(x_coords)
+                        xmax = max(x_coords)
+                        lo = max(0, 5 * int(xmin // 5))
+                        hi = 5 * int((xmax + 4.9999) // 5)
+                        if hi <= lo:
+                            hi = lo + 5
+                        hi = min(100, hi)
+                        plt.xlim(lo, hi)
+                        plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+                else:
+                    plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+                    plt.xticks(pod_counts_sorted, fontsize=12)
             plt.yticks(fontsize=12)
             plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
             plt.tight_layout()
@@ -635,6 +706,19 @@ if __name__ == "__main__":
     parser.add_argument('--exclude-idle', action='store_true', help='Exclude idle power from operational emissions (default: included)')
     parser.add_argument('--exclude-emb', action='store_true', help='Exclude embodied emissions (default: included)')
     parser.add_argument('--experiments-root', type=str, default=None, help='Override experiments root directory (default: repository experiments)')
+    parser.add_argument(
+        '--x-axis',
+        choices=['utilization', 'pods'],
+        default='utilization',
+        help='X-axis mode: 24h-normalized CPU utilization (default) or raw pod count',
+    )
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else ('op' if args.op else 'proportional'))
-    create_emissions_plot(selection, include_all=args.all, ignore_idle=args.exclude_idle, ignore_embodied=args.exclude_emb, experiments_root=args.experiments_root)
+    create_emissions_plot(
+        selection,
+        include_all=args.all,
+        ignore_idle=args.exclude_idle,
+        ignore_embodied=args.exclude_emb,
+        experiments_root=args.experiments_root,
+        x_axis=args.x_axis,
+    )

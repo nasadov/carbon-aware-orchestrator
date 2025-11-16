@@ -21,6 +21,8 @@ import csv
 import argparse
 from collections import defaultdict
 
+import utilization_plot_generator as util_mod
+
 
 DEFAULT_EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
 
@@ -217,7 +219,12 @@ def _aggregate_results(results):
     return algos_order, pod_counts_sorted, mean_rates, std_errs
 
 
-def create_success_rate_plot(selection: str = 'proportional', include_all: bool = False, experiments_root: str | None = None):
+def create_success_rate_plot(
+    selection: str = 'proportional',
+    include_all: bool = False,
+    experiments_root: str | None = None,
+    x_axis: str = 'utilization',
+):
     experiments_root = experiments_root or DEFAULT_EXPERIMENTS_ROOT
     """Generate success rate comparison plot by parsing experiment outputs."""
     # Parse dynamic results
@@ -227,6 +234,22 @@ def create_success_rate_plot(selection: str = 'proportional', include_all: bool 
         return
 
     algos_order, pod_counts_sorted, mean_rates, std_errs = _aggregate_results(parsed)
+
+    # Map pod counts to x-axis values (default: 24h-normalized CPU utilization).
+    x_axis_mode = x_axis or 'utilization'
+    pods_to_x = {}
+    if x_axis_mode == 'utilization':
+        pods_to_x = util_mod.compute_pods_to_24h_cpu_utilization(
+            experiments_root,
+            util_mod.NODES_YAML_PATH,
+            prefer_algo='vanilla',
+            horizon_hours=24.0,
+        )
+        if not pods_to_x:
+            print(f"⚠️ Could not compute utilization mapping from experiments at {experiments_root}; falling back to pod count on x-axis.")
+            x_axis_mode = 'pods'
+    if x_axis_mode != 'utilization':
+        pods_to_x = {p: float(p) for p in pod_counts_sorted}
 
     # Create publication-quality figure
     plt.figure(figsize=(12, 8))
@@ -273,7 +296,7 @@ def create_success_rate_plot(selection: str = 'proportional', include_all: bool 
         y_errs = []
         for pods in pod_counts_sorted:
             if pods in mean_rates[algo]:
-                x_vals.append(pods)
+                x_vals.append(pods_to_x.get(pods, float(pods)))
                 y_vals.append(mean_rates[algo][pods])
                 y_errs.append(std_errs[algo][pods])
 
@@ -293,16 +316,31 @@ def create_success_rate_plot(selection: str = 'proportional', include_all: bool 
                 linewidth=3, markersize=10, alpha=0.9
             )
 
-    plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
+    if x_axis_mode == 'utilization':
+        plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+    else:
+        plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Scheduling Success Rate (%)', fontsize=14, fontweight='bold')
-    plt.title('Scheduling Success Rate vs. Pod Count\nCarbon-Agnostic vs Heuristic vs Oracle', 
+    plt.title('Scheduling Success Rate vs. Cluster Utilization\nCarbon-Agnostic vs Heuristic vs Oracle', 
               fontsize=16, fontweight='bold', pad=20)
 
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
-        plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+        if x_axis_mode == 'utilization':
+            x_coords = [pods_to_x.get(p, float(p)) for p in pod_counts_sorted]
+            xmin = min(x_coords)
+            xmax = max(x_coords)
+            lo = max(0, 5 * int(xmin // 5))
+            hi = 5 * int((xmax + 4.9999) // 5)
+            if hi <= lo:
+                hi = lo + 5
+            hi = min(100, hi)
+            plt.xlim(lo, hi)
+            plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+        else:
+            plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+            plt.xticks(pod_counts_sorted, fontsize=12)
     plt.ylim(0, 105)
-    plt.xticks(pod_counts_sorted, fontsize=12)
     plt.yticks(range(0, 101, 10), fontsize=12)
     plt.legend(fontsize=12, loc='lower left', framealpha=0.9, shadow=True, fancybox=True)
     plt.tight_layout()
@@ -336,6 +374,17 @@ if __name__ == "__main__":
     group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
     parser.add_argument('--all', action='store_true', help='Include all experiments (default: latest-only per algo and pod count)')
     parser.add_argument('--experiments-root', type=str, default=None, help='Override experiments root directory (default: repository experiments)')
+    parser.add_argument(
+        '--x-axis',
+        choices=['utilization', 'pods'],
+        default='utilization',
+        help='X-axis mode: 24h-normalized CPU utilization (default) or raw pod count',
+    )
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else 'proportional')
-    create_success_rate_plot(selection, include_all=args.all, experiments_root=args.experiments_root) 
+    create_success_rate_plot(
+        selection,
+        include_all=args.all,
+        experiments_root=args.experiments_root,
+        x_axis=args.x_axis,
+    ) 

@@ -23,6 +23,8 @@ import json
 import yaml
 import sys
 
+import utilization_plot_generator as util_mod
+
 # Ensure carbon_aware modules are importable
 CARBON_AWARE_SERVER_PY_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -283,7 +285,7 @@ def _compute_total_emissions_for_common_pods(csv_path: str, nodes_dict: dict, al
     return total_kg, placed_rows
 
 
-def create_common_pods_emissions_plot():
+def create_common_pods_emissions_plot(x_axis: str = 'utilization'):
     nodes = _load_nodes_from_yaml(NODES_FILE)
     forecasts = _load_carbon_forecasts(FORECASTS_FILE)
     nodes = _attach_forecasts(nodes, forecasts)
@@ -383,6 +385,22 @@ def create_common_pods_emissions_plot():
             stderr_per_pod[algo][pods] = float(np.std(arr, ddof=1) / np.sqrt(arr.size)) if arr.size > 1 else 0.0
     pod_counts_sorted = sorted(all_pods)
 
+    # Map pod counts to x-axis values (default: 24h-normalized CPU utilization).
+    x_axis_mode = x_axis or 'utilization'
+    pods_to_x = {}
+    if x_axis_mode == 'utilization':
+        pods_to_x = util_mod.compute_pods_to_24h_cpu_utilization(
+            EXPERIMENTS_ROOT,
+            NODES_FILE,
+            prefer_algo='vanilla',
+            horizon_hours=24.0,
+        )
+        if not pods_to_x:
+            print(f"⚠️ Could not compute utilization mapping from experiments at {EXPERIMENTS_ROOT}; falling back to pod count on x-axis.")
+            x_axis_mode = 'pods'
+    if x_axis_mode != 'utilization':
+        pods_to_x = {p: float(p) for p in pod_counts_sorted}
+
     # Plot 1: total emissions (kg) for common pods only
     plt.figure(figsize=(12, 8))
 
@@ -421,7 +439,7 @@ def create_common_pods_emissions_plot():
         x_vals, y_vals, y_errs = [], [], []
         for pods in pod_counts_sorted:
             if pods in mean_vals[algo]:
-                x_vals.append(pods)
+                x_vals.append(pods_to_x.get(pods, float(pods)))
                 y_vals.append(mean_vals[algo][pods])
                 y_errs.append(stderr_vals[algo][pods])
         if not x_vals:
@@ -434,14 +452,29 @@ def create_common_pods_emissions_plot():
         else:
             plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9)
 
-    plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
+    if x_axis_mode == 'utilization':
+        plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+    else:
+        plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Total Carbon Emissions for Common Pods (kg CO₂e)', fontsize=14, fontweight='bold')
-    plt.title('Total Emissions vs. Pod Count (Common Pods Only)\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
+    plt.title('Total Emissions vs. Cluster Utilization (Common Pods Only)\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
-        plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+        if x_axis_mode == 'utilization':
+            x_coords = [pods_to_x.get(p, float(p)) for p in pod_counts_sorted]
+            xmin = min(x_coords)
+            xmax = max(x_coords)
+            lo = max(0, 5 * int(xmin // 5))
+            hi = 5 * int((xmax + 4.9999) // 5)
+            if hi <= lo:
+                hi = lo + 5
+            hi = min(100, hi)
+            plt.xlim(lo, hi)
+            plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+        else:
+            plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+            plt.xticks(pod_counts_sorted, fontsize=12)
     plt.ylim(bottom=0)
-    plt.xticks(pod_counts_sorted, fontsize=12)
     plt.yticks(fontsize=12)
     plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
     plt.tight_layout()
@@ -462,7 +495,7 @@ def create_common_pods_emissions_plot():
         x_vals, y_vals, y_errs = [], [], []
         for pods in pod_counts_sorted:
             if pods in mean_per_pod[algo]:
-                x_vals.append(pods)
+                x_vals.append(pods_to_x.get(pods, float(pods)))
                 y_vals.append(mean_per_pod[algo][pods])
                 y_errs.append(stderr_per_pod[algo][pods])
         if not x_vals:
@@ -475,14 +508,29 @@ def create_common_pods_emissions_plot():
         else:
             plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9)
 
-    plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
+    if x_axis_mode == 'utilization':
+        plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+    else:
+        plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Emissions per Common Pod (kg CO₂e/pod)', fontsize=14, fontweight='bold')
-    plt.title('Emissions per Pod vs. Pod Count (Common Pods Only)\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
+    plt.title('Emissions per Pod vs. Cluster Utilization (Common Pods Only)\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
-        plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+        if x_axis_mode == 'utilization':
+            x_coords = [pods_to_x.get(p, float(p)) for p in pod_counts_sorted]
+            xmin = min(x_coords)
+            xmax = max(x_coords)
+            lo = max(0, 5 * int(xmin // 5))
+            hi = 5 * int((xmax + 4.9999) // 5)
+            if hi <= lo:
+                hi = lo + 5
+            hi = min(100, hi)
+            plt.xlim(lo, hi)
+            plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+        else:
+            plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
+            plt.xticks(pod_counts_sorted, fontsize=12)
     plt.ylim(bottom=0)
-    plt.xticks(pod_counts_sorted, fontsize=12)
     plt.yticks(fontsize=12)
     plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
     plt.tight_layout()
@@ -497,4 +545,3 @@ if __name__ == "__main__":
     print("🚀 COMMON-PODS EMISSIONS VS PODS PLOT GENERATOR")
     print("=" * 50)
     create_common_pods_emissions_plot()
-
