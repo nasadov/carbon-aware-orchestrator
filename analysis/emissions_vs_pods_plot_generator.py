@@ -447,7 +447,7 @@ def create_emissions_plot(
     if x_axis_mode != 'utilization':
         pods_to_x = {p: float(p) for p in pod_counts_sorted}
 
-    # Compute percentage improvement vs vanilla baseline (per-pod emissions)
+    # Compute percentage improvement vs carbon-agnostic baseline (per-pod emissions)
     improvement_vs_vanilla = defaultdict(dict)
     vanilla_key = None
     for key in mean_per_pod.keys():
@@ -455,7 +455,7 @@ def create_emissions_plot(
             vanilla_key = key
             break
     if vanilla_key is None:
-        print("⚠️ Vanilla baseline missing; skipping percentage improvement plot.")
+        print("⚠️ Carbon-agnostic (vanilla) baseline missing; skipping percentage improvement plot.")
     else:
         for algo, by_pods in mean_per_pod.items():
             if algo == vanilla_key:
@@ -495,14 +495,14 @@ def create_emissions_plot(
         'global-optimal-op': 'o',
     }
     labels = {
-        'vanilla': 'Carbon-Agnostic',
+        'vanilla': 'Carbon-Agnostic Baseline',
         'vanilla-op': 'Carbon-Agnostic Operational-Only',
         'heuristic': 'Heuristic',
-        'heuristic-proportional': 'Heuristic Proportional',
+        'heuristic-proportional': 'Heuristic',
         'heuristic-uniform': 'Heuristic Uniform',
         'heuristic-op': 'Heuristic Operational-Only',
-        'global-optimal': 'Oracle Upper Bound',
-        'global-optimal-proportional': 'Oracle Proportional',
+        'global-optimal': 'Oracle',
+        'global-optimal-proportional': 'Oracle',
         'global-optimal-uniform': 'Oracle Uniform',
         'global-optimal-op': 'Oracle Operational-Only',
     }
@@ -665,8 +665,8 @@ def create_emissions_plot(
                 plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
             else:
                 plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
-            plt.ylabel('Emissions Improvement vs Vanilla (%)', fontsize=14, fontweight='bold')
-            plt.title(f'Carbon Emissions Reduction vs Vanilla Baseline{title_suffix}', fontsize=16, fontweight='bold', pad=20)
+            plt.ylabel('Emissions Improvement vs Carbon-Agnostic Baseline (%)', fontsize=14, fontweight='bold')
+            plt.title(f'Carbon Emissions Reduction vs Carbon-Agnostic Baseline{title_suffix}', fontsize=16, fontweight='bold', pad=20)
             plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
             if pod_counts_sorted:
                 if x_axis_mode == 'utilization':
@@ -681,6 +681,13 @@ def create_emissions_plot(
                         hi = min(100, hi)
                         plt.xlim(lo, hi)
                         plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+                        # Highlight typical edge/cloud utilization band (e.g., 10--35%)
+                        typical_lo, typical_hi = 10.0, 35.0
+                        band_lo = max(lo, typical_lo)
+                        band_hi = min(hi, typical_hi)
+                        if band_hi > band_lo:
+                            # Stronger highlight for typical edge/cloud utilization band
+                            plt.axvspan(band_lo, band_hi, color='#d0e2ff', alpha=0.5, zorder=0)
                 else:
                     plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
                     plt.xticks(pod_counts_sorted, fontsize=12)
