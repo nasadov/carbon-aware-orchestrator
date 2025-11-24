@@ -21,9 +21,8 @@ optimization:
     fallback_surrogate_activation_weight: 0.0
   
   # Candidate pruning to focus MILP on greener placements (reduces variables)
-  # DISABLED to preserve packing synergies - oracle needs full search space
   pruning:
-    enable: true
+    enable: false
     # Keep at most this many best options per pod (0 = unlimited)
     top_k_per_pod: 6
     # Also keep any option within this relative margin to the best emissions (e.g., 0.15 = +15%)
@@ -50,10 +49,10 @@ nodes:
   # Regions configuration with exact counts
   regions:
     region_counts:
-      DE: 1
       FR: 1
       ES: 1
       IT-NO: 1
+      DE: 1
   
   # Method to assign regions to nodes
   assignment_method: exact_counts
@@ -61,14 +60,14 @@ nodes:
   # Explicit region-to-hardware assignments override auto assignment
   # Each region -> hardware -> count
   explicit_assignments:
-    DE:
-      IoT: 1
     FR:
-      Server: 1
+      IoT: 1
     ES:
       Smartphone: 1
     IT-NO:
       Laptop: 1
+    DE:
+      Server: 1
   
   # Hardware assignment configuration (kept for backward compatibility; ignored when explicit_assignments is set)
   hardware_assignment:
@@ -141,7 +140,7 @@ workload:
   
   # Total number of pods to generate across all timeslots
   # Used only when generation_strategy == "exact_total"
-  exact_total_pods: 140
+  exact_total_pods: 80
   
   # Minimum number of services per timeslot, regardless of Poisson distribution
   min_services: 1

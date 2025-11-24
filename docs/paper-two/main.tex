@@ -461,7 +461,7 @@ We evaluate all algorithms on a shared synthetic testbed with consistent infrast
 
 \subsection{Workload Characteristics}
 
-Workloads consist of pods with CPU and RAM requests, integer-hour durations, and earliest start slots derived from their originating timeslot files. Deadlines are set as earliest + duration + slack to create bounded scheduling windows. We generate realistic mixes to induce nontrivial packing, with per-scale pod counts ranging from tens to hundreds.
+Workloads are synthetically generated to simulate a heterogeneous cluster environment. Pods are assigned CPU and RAM requests sampled from a set of standard sizes (CPU: 0.1--2.0 cores; RAM: 128~MiB--2~GiB). Durations are selected from $\{1, 3, 6\}$ hours, and deadlines are defined as $D_i = s_i + d_i + w_i$, where the slack $w_i \in \{1, 3, 6\}$ hours. This structure creates bounded scheduling windows with varying flexibility. For controlled scaling experiments, we use an "exact total" generation strategy that distributes a fixed number of pods (ranging from 20 to 400) across the scheduling horizon to precisely control workload density.
 
 \subsection{Benchmarking Baselines}\label{subsec:benchmarking-baselines}
 
@@ -665,6 +665,9 @@ For practitioners, these results suggest an actionable path: integrate forecaste
 Our study has limitations. We evaluate on synthetic workloads and consolidated forecasts; real clusters introduce additional constraints (e.g., affinity, topology spread, storage) and dynamic interference. We use ACI as the operational signal and amortized embodied accounting; alternative signals (e.g., marginal intensity, excess-renewable availability) and allocation choices may shift outcomes. Network and migration energy are not modeled, and our experiments run in an offline precomputation mode.
 
 Future work will: (i) integrate additional environmental indicators (e.g., water footprint, land use etc.); and (ii) evaluate on production traces and in live clusters with online admission. Together, these steps move carbon-aware orchestration from controlled studies toward robust production deployments.
+
+\section*{Acknowledgments}
+The authors would like to extend their gratitude to Electricity Maps for providing access to their carbon intensity data, which was invaluable for the development of this work.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}

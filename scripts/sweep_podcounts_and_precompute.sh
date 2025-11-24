@@ -11,6 +11,9 @@ fi
 # Sweep values for exact total pods
 POD_VALUES=(20 40 60 80 100 120 140 160 180 200)
 
+# Preserve original invocation (for metadata)
+ORIG_CMDLINE="$0 $*"
+
 REPO_ROOT=/root/carbon-aware-orchestrator
 CONFIG_FILE="$REPO_ROOT/pkg/carbon-aware/infra-workload-config.yaml"
 GENERATOR="$REPO_ROOT/pkg/carbon-aware/infra_workload_gen.py"
@@ -90,6 +93,9 @@ fi
 mkdir -p "$RUN_DIR"
 SUMMARY_CSV="$RUN_DIR/precompute_timing_${RUN_ID}.csv"
 
+# Metadata file for this sweep run
+META_FILE="$RUN_DIR/metadata.yaml"
+
 # Save original config to restore after sweep
 ORIG_TMP=$(mktemp)
 cp "$CONFIG_FILE" "$ORIG_TMP"
@@ -107,6 +113,82 @@ trap cleanup EXIT
 
 # Initialize summary CSV with header
 echo "run_id,begin_time,end_time,target_pods,algorithm,pods,nodes,elapsed_seconds" > "$SUMMARY_CSV"
+
+# Write sweep-level metadata (focus on config parameters)
+{
+  echo "run_id: \"$RUN_ID\""
+  echo "created_at: \"$(date -Iseconds)\""
+  echo "script: \"$(basename "$0")\""
+  echo "command_line: \"$ORIG_CMDLINE\""
+  echo "config_file: \"$CONFIG_FILE\""
+  echo "pod_values: [$(printf "%s" "${POD_VALUES[*]}" | sed 's/ /, /g')]"
+  echo "sweep_range:"
+  echo "  start: ${START}"
+  echo "  end: ${END}"
+  echo "embodied_modes: [$(printf "%s" "${MODES[*]}" | sed 's/ /, /g')]"
+  echo "operational_only: ${OPERATIONAL_ONLY}"
+  echo "identical_pods: ${IDENTICAL_PODS}"
+  echo "git_commit: \"$(cd "$REPO_ROOT" && git rev-parse --short HEAD 2>/dev/null || echo unknown)\""
+} > "$META_FILE"
+
+# Append key parameters from infra-workload-config.yaml (hardware, regions, workload)
+python3 - "$CONFIG_FILE" "$META_FILE" <<'PY'
+import sys, yaml
+
+cfg_path, out_path = sys.argv[1], sys.argv[2]
+try:
+    with open(cfg_path, "r") as f:
+        cfg = yaml.safe_load(f) or {}
+except Exception:
+    cfg = {}
+
+nodes = cfg.get("nodes") or {}
+work = cfg.get("workload") or {}
+
+regions_cfg = nodes.get("regions") or {}
+if isinstance(regions_cfg, dict) and "region_counts" in regions_cfg:
+    regions = sorted(regions_cfg["region_counts"].keys())
+elif isinstance(regions_cfg, dict) and "region_list" in regions_cfg:
+    regions = sorted(regions_cfg["region_list"])
+elif isinstance(regions_cfg, list):
+    regions = sorted(regions_cfg)
+else:
+    regions = []
+
+hardware_cfg = nodes.get("hardware_subcategories") or {}
+hardware_categories = sorted(hardware_cfg.keys())
+
+out_lines = []
+out_lines.append("nodes_config:")
+out_lines.append(f"  regions: {regions if regions else []}")
+out_lines.append(f"  hardware_categories: {hardware_categories if hardware_categories else []}")
+
+work_cfg = {
+    "generation_strategy": work.get("generation_strategy"),
+    "exact_total_pods": work.get("exact_total_pods"),
+    "num_timeslots": work.get("num_timeslots"),
+    "durations": work.get("durations"),
+    "deadline_strategy": work.get("deadline_strategy"),
+    "deadline_flexibility_hours": work.get("deadline_flexibility_hours"),
+    "cpu_options": work.get("cpu_options"),
+    "mem_options": work.get("mem_options"),
+    "random_seed": work.get("random_seed"),
+}
+
+out_lines.append("workload_config:")
+for key, val in work_cfg.items():
+    if isinstance(val, list):
+        out_lines.append(f"  {key}: {val}")
+    elif val is not None:
+        out_lines.append(f"  {key}: {val}")
+    else:
+        out_lines.append(f"  {key}: null")
+
+with open(out_path, "a", encoding="utf-8") as out_f:
+    out_f.write("\n")
+    out_f.write("\n".join(out_lines))
+    out_f.write("\n")
+PY
 
 # Apply partial sweep filter if requested
 if [[ -n "$START" && -n "$END" ]]; then

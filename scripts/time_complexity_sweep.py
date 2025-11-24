@@ -23,6 +23,7 @@ import math
 import shutil
 import sys
 import time
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -757,6 +758,76 @@ def main(argv: Sequence[str] | None = None) -> int:
     algo_key = args.algorithm.replace("-", "_")
     results_csv = base_output_dir / f"{algo_key}_time_complexity_results.csv"
     results_df.to_csv(results_csv, index=False)
+
+    # Write sweep-level metadata capturing adjustable parameters
+    meta = {
+        "run_id": run_stamp,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "script": "time_complexity_sweep.py",
+        "algorithm": args.algorithm,
+        "preset": args.preset,
+        "node_counts": list(args.node_counts),
+        "pod_counts": list(args.pod_counts),
+        "replicates": int(args.replicates),
+        "timeslots": int(args.timeslots),
+        "seed": int(args.seed),
+        "min_density": float(args.min_density),
+        "max_density": float(args.max_density),
+        "output_dir": str(base_output_dir),
+        "keep_artifacts": bool(args.keep_artifacts),
+        "operational_only": bool(args.operational_only),
+        "embodied_mode": str(args.embodied_mode),
+        "quiet": bool(args.quiet),
+        "repo_root": str(repo_root),
+        "forecasts_file": str(forecasts_file),
+        "git_commit": (
+            shutil.which("git")
+            and __import__("subprocess")
+            .run(["git", "rev-parse", "--short", "HEAD"], cwd=repo_root, capture_output=True, text=True)
+            .stdout.strip()
+        )
+        or "unknown",
+    }
+
+    # Attach key generator/workload configuration from DEFAULT_CONFIG
+    if DEFAULT_CONFIG is not None:
+        try:
+            nodes_cfg = DEFAULT_CONFIG.get("nodes", {})
+            work_cfg = DEFAULT_CONFIG.get("workload", {})
+        except Exception:  # pragma: no cover - defensive
+            nodes_cfg = {}
+            work_cfg = {}
+
+        regions_cfg = nodes_cfg.get("regions")
+        if isinstance(regions_cfg, dict) and "region_counts" in regions_cfg:
+            regions = sorted(regions_cfg["region_counts"].keys())
+        elif isinstance(regions_cfg, dict) and "region_list" in regions_cfg:
+            regions = sorted(regions_cfg["region_list"])
+        elif isinstance(regions_cfg, list):
+            regions = sorted(regions_cfg)
+        else:
+            regions = regions_cfg
+
+        hardware_cfg = nodes_cfg.get("hardware_subcategories") or {}
+        hardware_categories = sorted(hardware_cfg.keys())
+
+        meta["nodes_config"] = {
+            "regions": regions,
+            "hardware_categories": hardware_categories,
+        }
+        meta["workload_config"] = {
+            "num_timeslots": work_cfg.get("num_timeslots"),
+            "generation_strategy": work_cfg.get("generation_strategy"),
+            "exact_total_pods": work_cfg.get("exact_total_pods"),
+            "durations": work_cfg.get("durations"),
+            "deadline_strategy": work_cfg.get("deadline_strategy"),
+            "deadline_flexibility_hours": work_cfg.get("deadline_flexibility_hours"),
+            "cpu_options": work_cfg.get("cpu_options"),
+            "mem_options": work_cfg.get("mem_options"),
+        }
+    metadata_path = base_output_dir / "metadata.json"
+    with metadata_path.open("w", encoding="utf-8") as mf:
+        json.dump(meta, mf, indent=2, sort_keys=True)
 
     successful_runs = results_df[results_df["status"] == "success"].shape[0]
     if successful_runs == 0:

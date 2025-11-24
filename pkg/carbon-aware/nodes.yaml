@@ -13,69 +13,23 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-0-de-iot
-    kubernetes.io/os: linux
-    kubernetes.io/role: agent
-    node-role.kubernetes.io/agent: ''
-    type: kwok
-    topology.kubernetes.io/region: DE
-    hardware.carbon/subcategory: IoT
-  name: node-0-de-iot
-spec: {}
-status:
-  allocatable:
-    cpu: '2'
-    memory: 2Gi
-    pods: 110
-  capacity:
-    cpu: '2'
-    memory: 2Gi
-    pods: 110
-  nodeInfo:
-    architecture: amd64
-    bootID: ''
-    containerRuntimeVersion: ''
-    kernelVersion: ''
-    kubeProxyVersion: fake
-    kubeletVersion: fake
-    machineID: ''
-    operatingSystem: linux
-    osImage: ''
-    systemUUID: ''
-  phase: Running
----
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    node.alpha.kubernetes.io/ttl: '0'
-    kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '1230.656'
-    hardware.carbon/lifetime_years: '3.87'
-    hardware.power/idle_watts: '100.0'
-    hardware.power/active_watts: '200.0'
-    hardware.power/max_watts: '400.0'
-  labels:
-    beta.kubernetes.io/arch: amd64
-    beta.kubernetes.io/os: linux
-    kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-1-fr-server
+    kubernetes.io/hostname: node-0-fr-iot
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: FR
-    hardware.carbon/subcategory: Server
-  name: node-1-fr-server
+    hardware.carbon/subcategory: IoT
+  name: node-0-fr-iot
 spec: {}
 status:
   allocatable:
-    cpu: '16'
-    memory: 16Gi
+    cpu: '2'
+    memory: 2Gi
     pods: 110
   capacity:
-    cpu: '16'
-    memory: 16Gi
+    cpu: '2'
+    memory: 2Gi
     pods: 110
   nodeInfo:
     architecture: amd64
@@ -105,14 +59,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-2-es-smartphone
+    kubernetes.io/hostname: node-1-es-smartphone
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: ES
     hardware.carbon/subcategory: Smartphone
-  name: node-2-es-smartphone
+  name: node-1-es-smartphone
 spec: {}
 status:
   allocatable:
@@ -151,14 +105,14 @@ metadata:
     beta.kubernetes.io/arch: amd64
     beta.kubernetes.io/os: linux
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: node-3-it-no-laptop
+    kubernetes.io/hostname: node-2-it-no-laptop
     kubernetes.io/os: linux
     kubernetes.io/role: agent
     node-role.kubernetes.io/agent: ''
     type: kwok
     topology.kubernetes.io/region: IT-NO
     hardware.carbon/subcategory: Laptop
-  name: node-3-it-no-laptop
+  name: node-2-it-no-laptop
 spec: {}
 status:
   allocatable:
@@ -168,6 +122,52 @@ status:
   capacity:
     cpu: '8'
     memory: 8Gi
+    pods: 110
+  nodeInfo:
+    architecture: amd64
+    bootID: ''
+    containerRuntimeVersion: ''
+    kernelVersion: ''
+    kubeProxyVersion: fake
+    kubeletVersion: fake
+    machineID: ''
+    operatingSystem: linux
+    osImage: ''
+    systemUUID: ''
+  phase: Running
+---
+apiVersion: v1
+kind: Node
+metadata:
+  annotations:
+    node.alpha.kubernetes.io/ttl: '0'
+    kwok.x-k8s.io/node: fake
+    hardware.carbon/embodied_emissions: '1230.656'
+    hardware.carbon/lifetime_years: '3.87'
+    hardware.power/idle_watts: '100.0'
+    hardware.power/active_watts: '200.0'
+    hardware.power/max_watts: '400.0'
+  labels:
+    beta.kubernetes.io/arch: amd64
+    beta.kubernetes.io/os: linux
+    kubernetes.io/arch: amd64
+    kubernetes.io/hostname: node-3-de-server
+    kubernetes.io/os: linux
+    kubernetes.io/role: agent
+    node-role.kubernetes.io/agent: ''
+    type: kwok
+    topology.kubernetes.io/region: DE
+    hardware.carbon/subcategory: Server
+  name: node-3-de-server
+spec: {}
+status:
+  allocatable:
+    cpu: '16'
+    memory: 16Gi
+    pods: 110
+  capacity:
+    cpu: '16'
+    memory: 16Gi
     pods: 110
   nodeInfo:
     architecture: amd64

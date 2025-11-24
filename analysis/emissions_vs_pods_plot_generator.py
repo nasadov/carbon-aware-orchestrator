@@ -497,14 +497,14 @@ def create_emissions_plot(
     labels = {
         'vanilla': 'Carbon-Agnostic Baseline',
         'vanilla-op': 'Carbon-Agnostic Operational-Only',
-        'heuristic': 'Heuristic',
-        'heuristic-proportional': 'Heuristic',
-        'heuristic-uniform': 'Heuristic Uniform',
-        'heuristic-op': 'Heuristic Operational-Only',
+        'heuristic': 'Carbon-Aware Heuristic',
+        'heuristic-proportional': 'Carbon-Aware Heuristic',
+        'heuristic-uniform': 'Carbon-Aware Heuristic (Uniform)',
+        'heuristic-op': 'Carbon-Aware Heuristic (Operational-Only)',
         'global-optimal': 'Oracle',
         'global-optimal-proportional': 'Oracle',
-        'global-optimal-uniform': 'Oracle Uniform',
-        'global-optimal-op': 'Oracle Operational-Only',
+        'global-optimal-uniform': 'Oracle (Uniform)',
+        'global-optimal-op': 'Oracle (Operational-Only)',
     }
 
     preferred = [
