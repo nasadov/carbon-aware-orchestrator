@@ -778,16 +778,16 @@ def main():
         
         # Detect algorithm type from CSV filename and create appropriate directory structure
         if "global_optimal" in csv_filename.lower() or "global-optimal" in csv_filename.lower():
-            algorithm_base_dir = "Global-Optimal"
-            algorithm_subdir = f"Global-Optimal_{timestamp}"
+            algorithm_base_dir = "Oracle"
+            algorithm_subdir = f"Oracle_{timestamp}"
             plot_output_subdir_name = os.path.join(algorithm_base_dir, algorithm_subdir)
         elif "heuristic" in csv_filename.lower():
-            algorithm_base_dir = "Heuristic"
-            algorithm_subdir = f"Heuristic_{timestamp}"
+            algorithm_base_dir = "TotEm"
+            algorithm_subdir = f"TotEm_{timestamp}"
             plot_output_subdir_name = os.path.join(algorithm_base_dir, algorithm_subdir)
         elif "vanilla" in csv_filename.lower():
-            algorithm_base_dir = "Vanilla"
-            algorithm_subdir = f"Vanilla_{timestamp}"
+            algorithm_base_dir = "Carbon-Agnostic"
+            algorithm_subdir = f"Carbon-Agnostic_{timestamp}"
             plot_output_subdir_name = os.path.join(algorithm_base_dir, algorithm_subdir)
         else:
             # Fallback to original logic for unknown algorithm types

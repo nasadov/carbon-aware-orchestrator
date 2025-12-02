@@ -193,7 +193,7 @@ def _create_time_plots_for_algorithm(algorithm: str, latest_only: bool = False):
     # Select visuals per algorithm
     if algorithm == 'heuristic':
         color = '#ff7f0e'
-        label = 'Heuristic'
+        label = 'TotEm'
         base_pods = 'heuristic_time_vs_pods'
         base_nodes = 'heuristic_time_vs_nodes'
     elif algorithm == 'global-optimal':
@@ -241,7 +241,7 @@ def _collect_all_algorithms_time_data(latest_only: bool = True):
 def _plot_combined_time_vs_pods(alg_to_by_pods: dict, cap_seconds: float = 60.0):
     # Visual settings per algorithm
     styles = {
-        'heuristic': {'color': '#ff7f0e', 'marker': 's', 'label': 'Heuristic'},
+        'heuristic': {'color': '#ff7f0e', 'marker': 's', 'label': 'TotEm'},
         'global-optimal': {'color': '#2ca02c', 'marker': 'o', 'label': 'Oracle'},
         'vanilla': {'color': '#d62728', 'marker': 'D', 'label': 'Carbon-Agnostic'},
     }
@@ -293,7 +293,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate time complexity plots from precompute timing CSVs.")
     parser.add_argument('--all', action='store_true', help='Use all available timing CSV files (default: latest only)')
     parser.add_argument('--algorithms', nargs='+', choices=['heuristic', 'global-optimal', 'vanilla'], default=['heuristic', 'global-optimal', 'vanilla'], help='Algorithms to plot')
-    parser.add_argument('--cap-seconds', type=float, default=60.0, help='Time budget used by MILP; marks capped points (default: 60)')
+    parser.add_argument('--cap-seconds', type=float, default=60.0, help='Time budget used by Oracle; marks capped points (default: 60)')
     args = parser.parse_args()
 
     latest_only = not args.all

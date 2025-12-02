@@ -41,7 +41,7 @@ OUTPUT_DIR = f"{REPO_ROOT}/figures/TimeComplexity"
 
 # Algorithm config: label, color, marker, file key
 ALGOS = {
-    "heuristic": {"label": "Heuristic", "color": "#ff7f0e", "marker": "s", "key": "heuristic"},
+    "heuristic": {"label": "TotEm", "color": "#ff7f0e", "marker": "s", "key": "heuristic"},
     "global-optimal": {"label": "Oracle", "color": "#2ca02c", "marker": "s", "key": "global_optimal"},
     "vanilla": {"label": "Carbon-Agnostic", "color": "#d62728", "marker": "s", "key": "vanilla"},
 }
@@ -105,7 +105,66 @@ def _load_algo_df(algorithm: str, sweep_dir: Optional[str]) -> Optional[pd.DataF
         return None
 
 
-def create_overlays(fixed_pods: int, fixed_nodes: int, sweep_dir: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+def _create_and_save_plot(
+    alg_to_df: Dict[str, pd.DataFrame],
+    filter_col: str,
+    filter_val: int,
+    group_col: str,
+    xlabel: str,
+    title_fmt: str,
+    filename_base: str,
+    timestamp: str,
+    yscale: str
+) -> None:
+    """Helper to generate and save a single plot (log or linear)."""
+    fig, ax = plt.subplots(figsize=(7.0, 4.5))
+    
+    has_data = False
+    for algo, cfg in ALGOS.items():
+        df = alg_to_df.get(algo)
+        if df is None:
+            continue
+        slice_df = df[df[filter_col] == filter_val]
+        if slice_df.empty:
+            # print(f"ℹ️ {algo}: no data for {filter_col}={filter_val}")
+            continue
+        x, med, std = _aggregate_slice(slice_df, group_col=group_col)
+        if not x.empty:
+            has_data = True
+            _plot_overlay(ax, x, med, std, color=cfg["color"], marker=cfg["marker"], label=cfg["label"])
+
+    if not has_data:
+        print(f"⚠️ No data found for plot: {title_fmt.format(val=filter_val)}")
+        plt.close(fig)
+        return
+
+    ax.set_xlabel(xlabel, fontsize=12)
+    scale_str = "log scale" if yscale == "log" else "linear scale"
+    ax.set_ylabel(f"Precomputation Time (s, {scale_str})", fontsize=12)
+    ax.set_title(title_fmt.format(val=filter_val), fontsize=13)
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    ax.legend(fontsize=10)
+    
+    ax.set_yscale(yscale)
+    if yscale == "log":
+        ax.set_ylim(bottom=EPS_SECONDS)
+    else:
+        ax.set_ylim(bottom=0)
+
+    fig.tight_layout()
+    
+    # Naming convention: if log, keep original name style. If linear, append _linear.
+    suffix = "_linear" if yscale == "linear" else ""
+    out_png = os.path.join(OUTPUT_DIR, f"{filename_base}_{filter_val}{suffix}_{timestamp}.png")
+    out_pdf = os.path.join(OUTPUT_DIR, f"{filename_base}_{filter_val}{suffix}_{timestamp}.pdf")
+    
+    fig.savefig(out_png, dpi=300, bbox_inches="tight")
+    fig.savefig(out_pdf, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"✅ Saved: {out_png}")
+
+
+def create_overlays(fixed_pods: int, fixed_nodes: int, sweep_dir: Optional[str]) -> None:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -116,63 +175,33 @@ def create_overlays(fixed_pods: int, fixed_nodes: int, sweep_dir: Optional[str])
         if df is not None:
             alg_to_df[algo] = df
 
-    # 1) Time vs Nodes at fixed Pods
-    fig1, ax1 = plt.subplots(figsize=(7.0, 4.5))
-    for algo, cfg in ALGOS.items():
-        df = alg_to_df.get(algo)
-        if df is None:
-            continue
-        slice_df = df[df["total_pods"] == fixed_pods]
-        if slice_df.empty:
-            print(f"ℹ️ {algo}: no data for fixed pods={fixed_pods}")
-            continue
-        x, med, std = _aggregate_slice(slice_df, group_col="node_count")
-        _plot_overlay(ax1, x, med, std, color=cfg["color"], marker=cfg["marker"], label=cfg["label"])
+    # 1) Time vs Nodes at fixed Pods (Log & Linear)
+    for scale in ["log", "linear"]:
+        _create_and_save_plot(
+            alg_to_df=alg_to_df,
+            filter_col="total_pods",
+            filter_val=fixed_pods,
+            group_col="node_count",
+            xlabel="Number of Nodes",
+            title_fmt="Time vs Nodes (fixed pods = {val})",
+            filename_base="overlay_time_vs_nodes_fixed_pods",
+            timestamp=timestamp,
+            yscale=scale
+        )
 
-    ax1.set_xlabel("Number of Nodes", fontsize=12)
-    ax1.set_ylabel("Precomputation Time (s, log scale)", fontsize=12)
-    ax1.set_title(f"Time vs Nodes (fixed pods = {fixed_pods})", fontsize=13)
-    ax1.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-    ax1.legend(fontsize=10)
-    ax1.set_yscale('log')
-    ax1.set_ylim(bottom=EPS_SECONDS)
-    fig1.tight_layout()
-    out1_png = os.path.join(OUTPUT_DIR, f"overlay_time_vs_nodes_fixed_pods_{fixed_pods}_{timestamp}.png")
-    out1_pdf = os.path.join(OUTPUT_DIR, f"overlay_time_vs_nodes_fixed_pods_{fixed_pods}_{timestamp}.pdf")
-    fig1.savefig(out1_png, dpi=300, bbox_inches="tight")
-    fig1.savefig(out1_pdf, dpi=300, bbox_inches="tight")
-    plt.close(fig1)
-
-    # 2) Time vs Pods at fixed Nodes
-    fig2, ax2 = plt.subplots(figsize=(7.0, 4.5))
-    for algo, cfg in ALGOS.items():
-        df = alg_to_df.get(algo)
-        if df is None:
-            continue
-        slice_df = df[df["node_count"] == fixed_nodes]
-        if slice_df.empty:
-            print(f"ℹ️ {algo}: no data for fixed nodes={fixed_nodes}")
-            continue
-        x, med, std = _aggregate_slice(slice_df, group_col="total_pods")
-        _plot_overlay(ax2, x, med, std, color=cfg["color"], marker=cfg["marker"], label=cfg["label"])
-
-    ax2.set_xlabel("Number of Pods", fontsize=12)
-    ax2.set_ylabel("Precomputation Time (s, log scale)", fontsize=12)
-    ax2.set_title(f"Time vs Pods (fixed nodes = {fixed_nodes})", fontsize=13)
-    ax2.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-    ax2.legend(fontsize=10)
-    ax2.set_yscale('log')
-    ax2.set_ylim(bottom=EPS_SECONDS)
-    fig2.tight_layout()
-    out2_png = os.path.join(OUTPUT_DIR, f"overlay_time_vs_pods_fixed_nodes_{fixed_nodes}_{timestamp}.png")
-    out2_pdf = os.path.join(OUTPUT_DIR, f"overlay_time_vs_pods_fixed_nodes_{fixed_nodes}_{timestamp}.pdf")
-    fig2.savefig(out2_png, dpi=300, bbox_inches="tight")
-    fig2.savefig(out2_pdf, dpi=300, bbox_inches="tight")
-    plt.close(fig2)
-
-    print(f"✅ Saved: {out1_png}")
-    print(f"✅ Saved: {out2_png}")
-    return out1_png, out2_png
+    # 2) Time vs Pods at fixed Nodes (Log & Linear)
+    for scale in ["log", "linear"]:
+        _create_and_save_plot(
+            alg_to_df=alg_to_df,
+            filter_col="node_count",
+            filter_val=fixed_nodes,
+            group_col="total_pods",
+            xlabel="Number of Pods",
+            title_fmt="Time vs Pods (fixed nodes = {val})",
+            filename_base="overlay_time_vs_pods_fixed_nodes",
+            timestamp=timestamp,
+            yscale=scale
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -186,5 +215,3 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = parse_args()
     create_overlays(args.fixed_pods, args.fixed_nodes, args.sweep_dir)
-
-

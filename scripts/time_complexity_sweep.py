@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parameter sweep for precompute runtime scaling (heuristic, vanilla, global-optimal).
+"""Parameter sweep for precompute runtime scaling (heuristic, vanilla, oracle).
 
 This script generates synthetic infrastructures and workloads, runs the selected
 algorithm's precomputation pipeline for a grid of node/pod configurations, and
@@ -454,9 +454,9 @@ def create_publication_plot(
     ax.set_ylabel("Runtime (s)", fontsize=12)
     # Title per algorithm
     algo_label = (
-        "Heuristic" if algorithm == "heuristic" else
-        "Global-Optimal" if algorithm == "global-optimal" else
-        "Vanilla"
+        "TotEm" if algorithm == "heuristic" else
+        "Oracle" if algorithm == "global-optimal" else
+        "Carbon-Agnostic"
     )
     ax.set_title(f"{algo_label} precompute runtime scaling", fontsize=13)
     ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.6)
@@ -665,8 +665,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     label = (
         "Heuristic" if args.algorithm == "heuristic" else
-        "Global-Optimal" if args.algorithm == "global-optimal" else
-        "Vanilla"
+        "Oracle" if args.algorithm == "global-optimal" else
+        "Carbon-Agnostic"
     )
     if tqdm is not None:
         progress = tqdm(total=total_runs, desc=f"{label} sweep", unit="run")

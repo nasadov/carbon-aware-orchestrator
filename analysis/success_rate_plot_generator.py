@@ -277,9 +277,9 @@ def create_success_rate_plot(
 
     labels = {
         'vanilla': 'Carbon-Agnostic',
-        'heuristic': 'Heuristic',
-        'heuristic-proportional': 'Heuristic Proportional',
-        'heuristic-uniform': 'Heuristic Uniform',
+        'heuristic': 'TotEm',
+        'heuristic-proportional': 'TotEm Proportional',
+        'heuristic-uniform': 'TotEm Uniform',
         'global-optimal': 'Oracle Upper Bound',
         'global-optimal-proportional': 'Oracle Proportional',
         'global-optimal-uniform': 'Oracle Uniform',
@@ -321,7 +321,7 @@ def create_success_rate_plot(
     else:
         plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Scheduling Success Rate (%)', fontsize=14, fontweight='bold')
-    plt.title('Scheduling Success Rate vs. Cluster Utilization\nCarbon-Agnostic vs Heuristic vs Oracle', 
+    plt.title('Scheduling Success Rate vs. Cluster Utilization\nCarbon-Agnostic vs TotEm vs Oracle', 
               fontsize=16, fontweight='bold', pad=20)
 
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)

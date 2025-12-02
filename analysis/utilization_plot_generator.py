@@ -564,13 +564,13 @@ def _plot_utilization(ax, algos_order, pod_counts_sorted, mean_vals, std_errs, y
         'global-optimal-uniform': '^',
     }
     labels = {
-        'vanilla': 'Vanilla (Baseline)',
-        'heuristic': 'Heuristic (Carbon-Aware)',
-        'heuristic-proportional': 'Heuristic (Proportional)',
-        'heuristic-uniform': 'Heuristic (Uniform)',
-        'global-optimal': 'Global-Optimal (MILP Oracle)',
-        'global-optimal-proportional': 'Global-Optimal (Proportional)',
-        'global-optimal-uniform': 'Global-Optimal (Uniform)',
+        'vanilla': 'Carbon-Agnostic (Baseline)',
+        'heuristic': 'TotEm (Carbon-Aware)',
+        'heuristic-proportional': 'TotEm (Proportional)',
+        'heuristic-uniform': 'TotEm (Uniform)',
+        'global-optimal': 'Oracle',
+        'global-optimal-proportional': 'Oracle (Proportional)',
+        'global-optimal-uniform': 'Oracle (Uniform)',
     }
 
     for algo in algos_order:

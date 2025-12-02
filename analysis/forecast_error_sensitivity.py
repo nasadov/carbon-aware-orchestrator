@@ -529,7 +529,7 @@ def plot_carbon_savings(runs_df: pd.DataFrame, summary_df: pd.DataFrame, figure_
         x = grouped["noise_mape"].values
         y = grouped["carbon_savings_pct"].values
         color = cmap(idx % 10)
-        label = f"Heuristic {int(pods)} pods"
+        label = f"TotEm {int(pods)} pods"
         plt.plot(x, y, marker="o", linewidth=1.8, color=color, alpha=0.85, label=label)
 
     # Optional: overlay global-optimal mean as a thick reference line
@@ -547,7 +547,7 @@ def plot_carbon_savings(runs_df: pd.DataFrame, summary_df: pd.DataFrame, figure_
         )
     plt.xlabel("Forecast Error (MAPE %)")
     plt.ylabel("Carbon Savings vs Carbon-Agnostic (%)")
-    plt.title("Heuristic Robustness to Forecast Error\nPer-Pod-Count Savings vs Vanilla")
+    plt.title("TotEm Robustness to Forecast Error\nPer-Pod-Count Savings vs Carbon-Agnostic")
     plt.grid(True, linestyle="--", alpha=0.4)
 
     # Use only the actual noise levels as x-ticks (no 2.5, 7.5, etc.)

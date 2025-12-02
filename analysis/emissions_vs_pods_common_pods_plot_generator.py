@@ -423,13 +423,13 @@ def create_common_pods_emissions_plot(x_axis: str = 'utilization'):
         'global-optimal-uniform': '^',
     }
     labels = {
-        'vanilla': 'Vanilla (Common Pods)',
-        'heuristic': 'Heuristic (Common Pods)',
-        'heuristic-proportional': 'Heuristic (Common Pods, Proportional)',
-        'heuristic-uniform': 'Heuristic (Common Pods, Uniform)',
-        'global-optimal': 'Global-Optimal (Common Pods)',
-        'global-optimal-proportional': 'Global-Optimal (Common Pods, Proportional)',
-        'global-optimal-uniform': 'Global-Optimal (Common Pods, Uniform)',
+        'vanilla': 'Carbon-Agnostic (Common Pods)',
+        'heuristic': 'TotEm (Common Pods)',
+        'heuristic-proportional': 'TotEm (Common Pods, Proportional)',
+        'heuristic-uniform': 'TotEm (Common Pods, Uniform)',
+        'global-optimal': 'Oracle (Common Pods)',
+        'global-optimal-proportional': 'Oracle (Common Pods, Proportional)',
+        'global-optimal-uniform': 'Oracle (Common Pods, Uniform)',
     }
 
     preferred = ['vanilla', 'heuristic-proportional', 'heuristic-uniform', 'global-optimal-proportional', 'global-optimal-uniform']
@@ -457,7 +457,7 @@ def create_common_pods_emissions_plot(x_axis: str = 'utilization'):
     else:
         plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Total Carbon Emissions for Common Pods (kg CO₂e)', fontsize=14, fontweight='bold')
-    plt.title('Total Emissions vs. Cluster Utilization (Common Pods Only)\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
+    plt.title('Total Emissions vs. Cluster Utilization (Common Pods Only)\nCarbon-Agnostic vs TotEm vs Oracle', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
         if x_axis_mode == 'utilization':
@@ -513,7 +513,7 @@ def create_common_pods_emissions_plot(x_axis: str = 'utilization'):
     else:
         plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Emissions per Common Pod (kg CO₂e/pod)', fontsize=14, fontweight='bold')
-    plt.title('Emissions per Pod vs. Cluster Utilization (Common Pods Only)\nVanilla vs Heuristic vs Global-Optimal', fontsize=16, fontweight='bold', pad=20)
+    plt.title('Emissions per Pod vs. Cluster Utilization (Common Pods Only)\nCarbon-Agnostic vs TotEm vs Oracle', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
         if x_axis_mode == 'utilization':

@@ -584,7 +584,7 @@ def plot_sensitivity(df: pd.DataFrame, figure_dir: str, pods: int) -> str:
             sub["embodied_scale"],
             sub["kg_per_pod"],
             marker="o",
-            label=algo.replace("global-optimal", "oracle"),
+            label=algo.replace("global-optimal", "Oracle"),
             color=colors.get(algo, None),
         )
     ax1.set_xlabel("Embodied scaling factor")
@@ -603,7 +603,7 @@ def plot_sensitivity(df: pd.DataFrame, figure_dir: str, pods: int) -> str:
             sub["lifetime_scale"],
             sub["kg_per_pod"],
             marker="o",
-            label=algo.replace("global-optimal", "oracle"),
+            label=algo.replace("global-optimal", "Oracle"),
             color=colors.get(algo, None),
         )
     ax2.set_xlabel("Lifetime scaling factor")

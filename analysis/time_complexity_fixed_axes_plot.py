@@ -38,7 +38,7 @@ DEFAULT_OUTPUT_DIR = "/root/carbon-aware-orchestrator/figures/TimeComplexity"
 
 
 ALG_STYLES: Dict[str, Dict[str, str]] = {
-    "heuristic": {"color": "#ff7f0e", "marker": "s", "label": "Heuristic"},
+    "heuristic": {"color": "#ff7f0e", "marker": "s", "label": "TotEm"},
     "global-optimal": {"color": "#2ca02c", "marker": "o", "label": "Oracle"},
     "vanilla": {"color": "#d62728", "marker": "D", "label": "Carbon-Agnostic"},
 }

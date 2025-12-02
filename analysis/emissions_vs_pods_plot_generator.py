@@ -497,10 +497,10 @@ def create_emissions_plot(
     labels = {
         'vanilla': 'Carbon-Agnostic Baseline',
         'vanilla-op': 'Carbon-Agnostic Operational-Only',
-        'heuristic': 'Carbon-Aware Heuristic',
-        'heuristic-proportional': 'Carbon-Aware Heuristic',
-        'heuristic-uniform': 'Carbon-Aware Heuristic (Uniform)',
-        'heuristic-op': 'Carbon-Aware Heuristic (Operational-Only)',
+        'heuristic': 'TotEm',
+        'heuristic-proportional': 'TotEm',
+        'heuristic-uniform': 'TotEm (Uniform)',
+        'heuristic-op': 'TotEm (Operational-Only)',
         'global-optimal': 'Oracle',
         'global-optimal-proportional': 'Oracle',
         'global-optimal-uniform': 'Oracle (Uniform)',
@@ -545,7 +545,7 @@ def create_emissions_plot(
     if ignore_embodied:
         title_flags.append('Embodied Excluded')
     title_suffix = f" ({', '.join(title_flags)})" if title_flags else ''
-    plt.title(f'Total Carbon Emissions vs. Pod Count{title_suffix}\nCarbon-Agnostic vs Heuristic vs Oracle', fontsize=16, fontweight='bold', pad=20)
+    plt.title(f'Total Carbon Emissions vs. Pod Count{title_suffix}\nCarbon-Agnostic vs TotEm vs Oracle', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
         if x_axis_mode == 'utilization':
@@ -613,7 +613,7 @@ def create_emissions_plot(
     else:
         plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
     plt.ylabel('Emissions per Placed Pod (kg CO₂e/pod)', fontsize=14, fontweight='bold')
-    plt.title(f'Emissions per Pod vs. Pod Count{title_suffix}\nCarbon-Agnostic vs Heuristic vs Oracle', fontsize=16, fontweight='bold', pad=20)
+    plt.title(f'Emissions per Pod vs. Pod Count{title_suffix}\nCarbon-Agnostic vs TotEm vs Oracle', fontsize=16, fontweight='bold', pad=20)
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
         if x_axis_mode == 'utilization':

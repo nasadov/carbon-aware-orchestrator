@@ -518,7 +518,7 @@ def create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats
         os.makedirs(output_dir)
     
     # Prepare data for comparison
-    algorithms = ['Heuristic', 'Global-Optimal', 'Vanilla']
+    algorithms = ['TotEm', 'Oracle', 'Carbon-Agnostic']
     colors = ['#FF6B6B', '#4ECDC4', '#FFD93D']  # Red, Teal, Yellow
     
     # 1. Total Emissions Comparison
@@ -569,7 +569,7 @@ def create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats
     
     # Execution time comparison (only for heuristic and global-optimal, vanilla has no execution time)
     median_exec_time = [heuristic_stats['median_execution_time_ms'], global_optimal_stats['median_execution_time_ms']]
-    algorithm_names_with_time = ['Heuristic', 'Global-Optimal']
+    algorithm_names_with_time = ['TotEm', 'Oracle']
     bars4 = ax4.bar(algorithm_names_with_time, median_exec_time, color=['#FF6B6B', '#4ECDC4'])
     ax4.set_title('Median Execution Time per Call\n(Outliers Excluded - Vanilla N/A)', fontsize=14, fontweight='bold')
     ax4.set_ylabel('Execution Time (ms)', fontweight='bold')
@@ -586,7 +586,7 @@ def create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats
             ha='center', va='top', fontsize=10, style='italic',
             bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.7))
     
-    plt.suptitle('Carbon Emissions & Performance Comparison\nHeuristic vs Global-Optimal vs Vanilla Algorithms', 
+    plt.suptitle('Carbon Emissions & Performance Comparison\nTotEm vs Oracle vs Carbon-Agnostic Algorithms', 
                  fontsize=16, fontweight='bold', y=0.98)
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
@@ -620,14 +620,14 @@ def create_comparison_plots(heuristic_stats, global_optimal_stats, vanilla_stats
         h_improvement = ((vanilla_efficiency - heuristic_stats['emissions_per_pod_kg']) / vanilla_efficiency) * 100
         g_improvement = ((vanilla_efficiency - global_optimal_stats['emissions_per_pod_kg']) / vanilla_efficiency) * 100
         
-        improvement_text = f"Heuristic: {h_improvement:+.1f}%, Global-Optimal: {g_improvement:+.1f}% vs Vanilla"
+        improvement_text = f"TotEm: {h_improvement:+.1f}%, Oracle: {g_improvement:+.1f}% vs Carbon-Agnostic"
         ax1.text(0.5, 0.95, improvement_text, transform=ax1.transAxes, 
                 ha='center', va='top', fontsize=10, fontweight='bold',
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7))
     
     # Time efficiency (pods per second) - only for heuristic and global-optimal
     pods_per_sec = []
-    algorithm_names_with_time = ['Heuristic', 'Global-Optimal']
+    algorithm_names_with_time = ['TotEm', 'Oracle']
     for stats in [heuristic_stats, global_optimal_stats]:
         if stats['total_execution_time_ms'] > 0:
             pods_per_sec.append(stats['total_pods_placed'] / (stats['total_execution_time_ms'] / 1000))
@@ -663,7 +663,7 @@ def create_simple_comparison(heuristic_stats, global_optimal_stats, vanilla_stat
     plt.figure(figsize=(10, 6))
     
     # Prepare data
-    algorithms = ['Heuristic', 'Global-Optimal', 'Vanilla']
+    algorithms = ['TotEm', 'Oracle', 'Carbon-Agnostic']
     emissions_per_pod_g = [
         heuristic_stats['emissions_per_pod_kg'] * 1000.0,
         global_optimal_stats['emissions_per_pod_kg'] * 1000.0,
@@ -692,7 +692,7 @@ def create_simple_comparison(heuristic_stats, global_optimal_stats, vanilla_stat
         g_improvement = ((vanilla_efficiency - global_optimal_stats['emissions_per_pod_kg']) / vanilla_efficiency) * 100
         
         plt.figtext(0.5, 0.01, 
-                   f"Improvements vs Vanilla: Heuristic {h_improvement:.1f}%, Global-Optimal {g_improvement:.1f}%",
+                   f"Improvements vs Carbon-Agnostic: TotEm {h_improvement:.1f}%, Oracle {g_improvement:.1f}%",
                    ha='center', fontsize=12, fontweight='bold',
                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7))
     
@@ -734,21 +734,21 @@ def generate_summary_report(heuristic_stats, global_optimal_stats, vanilla_stats
         per_pod_v = vanilla_stats['emissions_per_pod_kg']
 
         f.write(f"All three algorithms achieved successful pod placement:\n")
-        f.write(f"• Heuristic: {total_pods_h} pods\n")
-        f.write(f"• Global-Optimal: {total_pods_g} pods\n")
-        f.write(f"• Vanilla: {total_pods_v} pods\n\n")
+        f.write(f"• TotEm: {total_pods_h} pods\n")
+        f.write(f"• Oracle: {total_pods_g} pods\n")
+        f.write(f"• Carbon-Agnostic: {total_pods_v} pods\n\n")
 
         # Carbon efficiency comparison using vanilla as baseline
         if per_pod_v > 0:
             h_improvement = ((per_pod_v - per_pod_h) / per_pod_v) * 100
             g_improvement = ((per_pod_v - per_pod_g) / per_pod_v) * 100
-            f.write(f"🌱 CARBON EFFICIENCY vs Vanilla Baseline:\n")
-            f.write(f"   • Heuristic: {h_improvement:+.1f}% carbon efficiency change\n")
-            f.write(f"   • Global-Optimal: {g_improvement:+.1f}% carbon efficiency change\n")
+            f.write(f"🌱 CARBON EFFICIENCY vs Carbon-Agnostic Baseline:\n")
+            f.write(f"   • TotEm: {h_improvement:+.1f}% carbon efficiency change\n")
+            f.write(f"   • Oracle: {g_improvement:+.1f}% carbon efficiency change\n")
 
-        f.write(f"   • Vanilla: {per_pod_v:.6f} kg CO₂ per pod (baseline)\n")
-        f.write(f"   • Heuristic: {per_pod_h:.6f} kg CO₂ per pod\n")
-        f.write(f"   • Global-Optimal: {per_pod_g:.6f} kg CO₂ per pod\n\n")
+        f.write(f"   • Carbon-Agnostic: {per_pod_v:.6f} kg CO₂ per pod (baseline)\n")
+        f.write(f"   • TotEm: {per_pod_h:.6f} kg CO₂ per pod\n")
+        f.write(f"   • Oracle: {per_pod_g:.6f} kg CO₂ per pod\n\n")
         
         # Performance comparison (using median to avoid outlier bias)
         time_h = heuristic_stats['median_execution_time_ms']
@@ -757,20 +757,20 @@ def generate_summary_report(heuristic_stats, global_optimal_stats, vanilla_stats
         if time_h > 0:
             time_ratio = time_g / time_h
             if time_ratio < 1:
-                f.write(f"⚡ PERFORMANCE: Global-Optimal is {(1-time_ratio)*100:.1f}% faster (median time)\n")
+                f.write(f"⚡ PERFORMANCE: Oracle is {(1-time_ratio)*100:.1f}% faster (median time)\n")
             else:
-                f.write(f"⚡ PERFORMANCE: Heuristic is {(time_ratio-1)*100:.1f}% faster (median time)\n")
+                f.write(f"⚡ PERFORMANCE: TotEm is {(time_ratio-1)*100:.1f}% faster (median time)\n")
         
-        f.write(f"   • Heuristic: {time_h:.1f} ms median execution time\n")
-        f.write(f"   • Global-Optimal: {time_g:.1f} ms median execution time\n")
+        f.write(f"   • TotEm: {time_h:.1f} ms median execution time\n")
+        f.write(f"   • Oracle: {time_g:.1f} ms median execution time\n")
         f.write(f"   • Note: Both algorithms had outlier calls with >10s execution times\n")
-        f.write(f"     (Heuristic: {heuristic_stats['num_outlier_calls']}/{heuristic_stats['total_calls']} outliers, Global-Optimal: {global_optimal_stats['num_outlier_calls']}/{global_optimal_stats['total_calls']} outliers)\n\n")
+        f.write(f"     (TotEm: {heuristic_stats['num_outlier_calls']}/{heuristic_stats['total_calls']} outliers, Oracle: {global_optimal_stats['num_outlier_calls']}/{global_optimal_stats['total_calls']} outliers)\n\n")
         
         f.write("DETAILED METRICS\n")
         f.write("-" * 40 + "\n")
         
         # Heuristic details
-        f.write(f"HEURISTIC ALGORITHM:\n")
+        f.write(f"TOTEM ALGORITHM:\n")
         f.write(f"  Total Calls: {heuristic_stats['total_calls']}\n")
         f.write(f"  Total Pods Placed: {total_pods_h}\n")
         f.write(f"  Total Emissions: {total_emissions_h:.6f} kg CO₂\n")
@@ -782,8 +782,8 @@ def generate_summary_report(heuristic_stats, global_optimal_stats, vanilla_stats
         f.write(f"    Outlier calls: {heuristic_stats['num_outlier_calls']}/{heuristic_stats['total_calls']}\n")
         f.write(f"  Total Execution Time: {heuristic_stats['total_execution_time_ms']:.0f} ms\n\n")
         
-        # Global-optimal details
-        f.write(f"GLOBAL-OPTIMAL ALGORITHM:\n")
+        # MILP details
+        f.write(f"ORACLE ALGORITHM:\n")
         f.write(f"  Total Calls: {global_optimal_stats['total_calls']}\n")
         f.write(f"  Total Pods Placed: {total_pods_g}\n")
         f.write(f"  Total Emissions: {total_emissions_g:.6f} kg CO₂\n")
@@ -820,17 +820,17 @@ def generate_summary_report(heuristic_stats, global_optimal_stats, vanilla_stats
         
         f.write("CONCLUSION\n")
         f.write("-" * 40 + "\n")
-        f.write("The analysis includes three algorithms: Heuristic, Global-Optimal,\n")
+        f.write("The analysis includes three algorithms: TotEm, Oracle,\n")
         f.write("and Vanilla placement strategies. Each demonstrates different\n")
         f.write("trade-offs between carbon efficiency and computational complexity.\n\n")
         
         # Calculate best carbon performer
         best_carbon = min(per_pod_h, per_pod_g, per_pod_v)
         if best_carbon == per_pod_g:
-            f.write("The Global-Optimal algorithm provides the best carbon efficiency\n")
+            f.write("The Oracle algorithm provides the best carbon efficiency\n")
             f.write("among all three approaches.\n")
         elif best_carbon == per_pod_h:
-            f.write("The Heuristic algorithm provides the best carbon efficiency\n")
+            f.write("The TotEm algorithm provides the best carbon efficiency\n")
             f.write("among all three approaches.\n")
         else:
             f.write("The Vanilla algorithm provides the best carbon efficiency\n")
@@ -985,7 +985,7 @@ def main():
     logging.info("=" * 60)
     logging.info("Carbon Emissions Analysis Complete!")
     logging.info(f"Results saved to: {output_dir}")
-    logging.info("Comparison includes Heuristic, Global-Optimal, and Vanilla algorithms")
+    logging.info("Comparison includes TotEm, Oracle, and Carbon-Agnostic algorithms")
 
 if __name__ == "__main__":
     main()
