@@ -92,53 +92,22 @@ trap cleanup EXIT
 
 # Function to ensure generation_strategy is set to exact_total
 ensure_exact_strategy() {
-  python3 - "$CONFIG_FILE" <<'PY'
-import sys, re
-path=sys.argv[1]
-with open(path,'r') as f:
-    s=f.read()
-if re.search(r'^(\s*generation_strategy:\s*)exact_total\b', s, flags=re.M):
-    # print("generation_strategy already set to exact_total")
-    sys.exit(0)
-new_s=re.sub(r'^(\s*generation_strategy:\s*).*$','\1exact_total', s, count=1, flags=re.M)
-with open(path,'w') as f:
-    f.write(new_s)
-print(f"Updated generation_strategy to exact_total in {path}")
-PY
+  python3 "$REPO_ROOT/scripts/update_config.py" "$CONFIG_FILE" workload generation_strategy exact_total
+  echo "[sweep] Updated generation_strategy to exact_total"
 }
 
 # Function to in-place update exact_total_pods in YAML while preserving inline comments
 update_total_pods() {
   local new_total="$1"
-  python3 - "$CONFIG_FILE" "$new_total" <<'PY'
-import sys, re
-path=sys.argv[1]
-val=sys.argv[2]
-with open(path,'r') as f:
-    s=f.read()
-# Replace the first occurrence of the exact_total_pods value, preserving trailing comment/content
-new_s=re.sub(r'^(\s*exact_total_pods:\s*)\d+(\b.*)$', rf'\g<1>{val}\2', s, count=1, flags=re.M)
-with open(path,'w') as f:
-    f.write(new_s)
-# print(f"Updated exact_total_pods to {val} in {path}")
-PY
+  python3 "$REPO_ROOT/scripts/update_config.py" "$CONFIG_FILE" workload exact_total_pods "$new_total"
+  echo "[sweep] Updated exact_total_pods to $new_total"
 }
 
 # Function to update random_seed in YAML
 update_random_seed() {
   local new_seed="$1"
-  python3 - "$CONFIG_FILE" "$new_seed" <<'PY'
-import sys, re
-path=sys.argv[1]
-val=sys.argv[2]
-with open(path,'r') as f:
-    s=f.read()
-# Update random_seed in workload section
-new_s=re.sub(r'^(\s*random_seed:\s*)\d+', rf'\1{val}', s, count=1, flags=re.M)
-with open(path,'w') as f:
-    f.write(new_s)
-print(f"Updated random_seed to {val} in {path}")
-PY
+  python3 "$REPO_ROOT/scripts/update_config.py" "$CONFIG_FILE" ALL random_seed "$new_seed"
+  echo "[sweep] Updated random_seed to $new_seed (nodes and workload)"
 }
 
 # Function to force identical pod characteristics (CPU, memory, duration, deadline flexibility)

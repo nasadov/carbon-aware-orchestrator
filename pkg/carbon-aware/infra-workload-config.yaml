@@ -120,7 +120,7 @@ nodes:
         max: 400.0   # Watts
   
   # Random seed for reproducibility
-b
+  random_seed: 42
 
 workload:
   # Directory to output workload files
@@ -140,7 +140,7 @@ workload:
   
   # Total number of pods to generate across all timeslots
   # Used only when generation_strategy == "exact_total"
-  exact_total_pods: 20
+  exact_total_pods: 80
   
   # Minimum number of services per timeslot, regardless of Poisson distribution
   min_services: 1
@@ -184,4 +184,4 @@ workload:
     - 128Mi
   
   # Random seed for reproducibility
-c 
+  random_seed: 42 

@@ -283,7 +283,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     return pulp.PULP_CBC_CMD(msg=msg, timeLimit=time_limit, gapRel=gap, threads=threads)
 
     def _solve_phase2_with_cpsat(self, placements, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots,
-                                 unplaced_phase1, placed_phase1, time_limit_sec: int):
+                                 unplaced_phase1, placed_phase1, time_limit_sec: int, gap_tolerance: float | None = None):
         """Solve Phase 2 with OR-Tools CP-SAT. Returns (ok, solution_dict, elapsed_sec)."""
         import time
         start = time.time()
@@ -395,6 +395,18 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = float(time_limit_sec)
         solver.parameters.num_search_workers = 8
+        # Apply relative gap early-stopping when supported by this OR-Tools version
+        if gap_tolerance is not None and gap_tolerance > 0:
+            try:
+                # Newer OR-Tools versions
+                solver.parameters.relative_gap_limit = float(gap_tolerance)
+            except AttributeError:
+                # Older OR-Tools: no relative-gap support; fall back to time-limit only
+                import logging
+                logging.warning(
+                    "CP-SAT SatParameters has no 'relative_gap_limit' field; "
+                    "skipping gap-based early stopping for Phase 2."
+                )
 
         status = solver.Solve(model)
         ok = status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
@@ -1105,7 +1117,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         max_time_slots=max_time_slots,
                         unplaced_phase1=unplaced_phase1,
                         placed_phase1=placed_phase1,
-                        time_limit_sec=time_limit_cfg
+                        time_limit_sec=time_limit_cfg,
+                        gap_tolerance=gap_tolerance_cfg
                     )
                     self.status = 'Optimal' if cpsat_ok else 'Not Solved'
                     self.iterations = 0

@@ -507,7 +507,7 @@ We report median precompute runtime in offline mode with a 12-slot horizon. For 
 
 \section{Results}\label{s:res}  % nice to have: stat confidence or repeated runs; sensitivity to forecast error
 
-We report how embodied emissions change placement behavior (Section~\ref{s:impact}), quantify emissions reductions and success rates (Section~\ref{s:red} and Fig.~\ref{f:succ}), and analyze runtime scaling (Section~\ref{s:time}).
+We report how embodied emissions change placement behavior (Section~\ref{s:impact}), quantify emissions reductions and success rates (Section~\ref{s:red} and Fig.~\ref{f:succ}), and analyze runtime scaling (Section~\ref{s:time}). Finally, we assess robustness to embodied parameters and forecast errors (Sections~\ref{s:sens} and~\ref{s:forecast}).
 
 \subsection{Impact of Embodied Emissions on Scheduling}\label{s:impact}
 Including embodied emissions fundamentally changes placement behavior: it shifts from clustering on low-CI nodes to more distributed utilization that amortizes fixed manufacturing emissions while still respecting operational carbon signals.
@@ -529,20 +529,6 @@ Including embodied emissions fundamentally changes placement behavior: it shifts
 Taken together, Figures~\ref{f:op-only} and~\ref{f:comp} show that accounting for embodied emissions alters the optimization landscape. The operational-only strategy prefers a small set of low-CI nodes, whereas the comprehensive objective prefers spreading load to amortize fixed embodied costs. This trade-off can increase operational emissions slightly in some slots but reduces total (operational+embodied) emissions across the horizon.
 
 The result aligns with our allocation model: embodied emissions are a fixed, time-amortized cost that incentivizes sustained, efficient hardware use. Ignoring them underestimates true impact and can create seemingly efficient but globally suboptimal utilization patterns.
-
-\subsection{Sensitivity to Embodied Assumptions}\label{s:sens}
-
-Embodied emissions and lifetimes in Table~\ref{t:emb} are derived from Boavizta~\cite{boavizta2023}, but real deployments see variation between individual hardware configurations and management policies. To test that our conclusions do not hinge on exact values, we run a one-factor-at-a-time sensitivity study at the same representative utilization level. Guided by the spread observed in Boavizta device entries, we apply uniform, conservative perturbations across all node classes: embodied emissions scaled by \(\{0.8, 1.0, 1.2\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\).
-
-\newcommand{\EmbodiedSensitivityPlot}{\detokenize{figures/EmbodiedSensitivity/embodied_sensitivity_80pods.pdf}}
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.95\linewidth]{\EmbodiedSensitivityPlot}
-\caption{Sensitivity of average per-pod emissions (kg CO\textsubscript{2}e/pod) to embodied and lifetime scaling in the 80-pod scenario. Left: embodied scaling at fixed lifetime; right: lifetime scaling at fixed embodied emissions. Both TotEm and the MILP benchmark remain within a narrow band around the baseline.}
-\label{f:sens}
-\end{figure}
-
-Figure~\ref{f:sens} shows that these perturbations change average per-pod emissions by at most \(\approx20\%\) and leave the qualitative picture intact: TotEm and the MILP benchmark stay close to each other, both remain well below the carbon-agnostic baseline, and the ordering observed in Section~\ref{s:red} is preserved. This suggests that our main findings about carbon-aware scheduling and the TotEm–MILP gap are robust to reasonable uncertainty in embodied-carbon and lifetime parameters.
 
 \subsection{Carbon Reduction}\label{s:red}
 % Bind figures to latest generated PDFs (define before input)
@@ -617,7 +603,21 @@ With 200 pods held constant, both carbon-agnostic baseline and TotEm exhibit nea
 \paragraph*{Fixed nodes (varying pods)}
 With 32 nodes held constant, runtime grows approximately linearly with total pods for both carbon-agnostic baseline and TotEm, as expected from per-pod evaluation over a bounded timeslot window. The optimized baseline reduces both the intercept and the slope relative to the prior implementation, reflecting cheaper feasibility checks and less I/O in the hot path. The TotEm maintains a roughly constant factor overhead versus the baseline across scales—primarily from additional feasibility and scoring work—while remaining far below the MILP benchmark, which grows faster-than-linearly and exhibits higher variance.
 	
-\noindent\textit{Takeaways.} (i) Empirical scaling matches the intended design: linear in pods at fixed nodes, and close to linear in nodes at fixed pods; (ii) kube-inspired pruning (node sampling and early feasible stop) keeps growth in check; (iii) simulator-specific accelerations (tight timeslot windowing, sliding-window feasibility, array-backed capacity) reduce constant factors, shifting the vanilla curve downward without changing its qualitative scaling; (iv) MILP remains orders of magnitude slower and is best treated as a benchmark for bounds rather than a production scheduler.
+\noindent\textit{Takeaways.} (i) Empirical scaling matches the intended design: linear in pods at fixed nodes, and close to linear in nodes at fixed pods; (ii) kube-inspired pruning (node sampling and early feasible stop) keeps growth in check; (iii) MILP remains orders of magnitude slower and is best treated as a benchmark for bounds rather than a production scheduler.
+
+\subsection{Sensitivity to Embodied Assumptions}\label{s:sens}
+
+Embodied emissions and lifetimes in Table~\ref{t:emb} are derived from Boavizta~\cite{boavizta2023}, but real deployments see variation between individual hardware configurations and management policies. To test that our conclusions do not hinge on exact values, we run a one-factor-at-a-time sensitivity study at the same representative utilization level. Guided by the spread observed in Boavizta device entries, we apply uniform, conservative perturbations across all node classes: embodied emissions scaled by \(\{0.8, 1.0, 1.2\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\).
+
+\newcommand{\EmbodiedSensitivityPlot}{\detokenize{figures/EmbodiedSensitivity/embodied_sensitivity_80pods.pdf}}
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{\EmbodiedSensitivityPlot}
+\caption{Sensitivity of average per-pod emissions (kg CO\textsubscript{2}e/pod) to embodied and lifetime scaling in the 80-pod scenario. Left: embodied scaling at fixed lifetime; right: lifetime scaling at fixed embodied emissions. Both TotEm and the MILP benchmark remain within a narrow band around the baseline.}
+\label{f:sens}
+\end{figure}
+
+Figure~\ref{f:sens} shows that these perturbations change average per-pod emissions by at most \(\approx20\%\) and leave the qualitative picture intact: TotEm and the MILP benchmark stay close to each other, both remain well below the carbon-agnostic baseline, and the ordering observed in Section~\ref{s:red} is preserved. This suggests that our main findings about carbon-aware scheduling and the TotEm–MILP gap are robust to reasonable uncertainty in embodied-carbon and lifetime parameters.
 
 \subsection{Sensitivity to Forecast Error}
 \label{s:forecast}

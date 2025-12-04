@@ -567,8 +567,19 @@ def create_emissions_plot(
     plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
     plt.tight_layout()
 
-    output_dir = "/root/carbon-aware-orchestrator/figures/EmissionsVsPods"
+    output_dir_base = "/root/carbon-aware-orchestrator/figures/EmissionsVsPods"
+    
+    # Try to extract timestamp from experiments_root path to use as subdirectory
+    # e.g. .../sweep_20251203_112849_s42 -> 20251203_112849_s42
+    folder_name = os.path.basename(os.path.normpath(experiments_root))
+    if folder_name.startswith("sweep_"):
+        ts_suffix = folder_name.replace("sweep_", "")
+    else:
+        ts_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+    output_dir = os.path.join(output_dir_base, ts_suffix)
     os.makedirs(output_dir, exist_ok=True)
+    
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base = f"emissions_vs_pods_{timestamp}"
     pdf_path = os.path.join(output_dir, base + ".pdf")
