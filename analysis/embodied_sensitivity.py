@@ -12,11 +12,11 @@ This driver:
      total emissions.
   5. Produces a CSV summary and a compact plot for inclusion in the paper.
 
-Sensitivity ranges (consensus-informed):
-  - Embodied emissions scaling factors: [0.8, 1.0, 1.2]
-      → ≈ -20%, 0, +20% around Boavizta-based category averages [boavizta2023].
-      These cover typical SKU and configuration variance reported in recent LCA
-      datasets for servers and client devices.
+Sensitivity ranges (Boavizta-informed, see docs/paper-two/Notes/boavizta_sku_spread_notes.md):
+  - Embodied emissions scaling factors: [0.60, 0.80, 1.00, 1.20, 1.60]
+      → span the 10th–90th percentile band of SKU variability across Server,
+        Laptop, Smartphone, IoT classes (≈0.56–1.73× mean), with midpoints to
+        probe symmetric perturbations around baseline.
   - Lifetime scaling factors: [0.75, 1.0, 1.25]
       → ≈ -25%, 0, +25% around the baseline lifetimes in Table~\\ref{tab:embodied-carbon},
         reflecting recent CS work on lifetime uncertainty and extended lifetimes
@@ -36,6 +36,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import contextlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -154,6 +155,16 @@ def set_exact_total_pods(config_path: str, pods: int) -> None:
     if workload.get("exact_total_pods") != pods:
         workload["exact_total_pods"] = pods
         _write_yaml(config_path, data)
+
+
+def set_random_seed(config_path: str, seed: int) -> None:
+    """Update both workload.random_seed and nodes.random_seed if present."""
+    data = _load_yaml(config_path)
+    workload = data.setdefault("workload", {})
+    nodes = data.setdefault("nodes", {})
+    workload["random_seed"] = seed
+    nodes["random_seed"] = seed
+    _write_yaml(config_path, data)
 
 
 def regenerate_workloads(generator_path: str) -> None:
@@ -384,11 +395,27 @@ def run_algorithm(
     forecasts_file: str,
     experiment_dir: str,
     embodied_mode: str = "proportional",
+    loglevel: str = "WARNING",
+    reuse_existing: bool = False,
 ) -> Tuple[str, str]:
     """
     Run one algorithm in precomputation mode and return (session_dir, placement_csv_path).
     """
     os.makedirs(experiment_dir, exist_ok=True)
+
+    if reuse_existing:
+        # Try to find the latest session directory with a placement CSV
+        session_dirs = [
+            os.path.join(experiment_dir, entry)
+            for entry in sorted(os.listdir(experiment_dir))
+            if os.path.isdir(os.path.join(experiment_dir, entry))
+        ]
+        session_dirs = sorted(session_dirs, key=os.path.getmtime, reverse=True)
+        for sd in session_dirs:
+            placement_csv = find_placement_csv(sd, algorithm)
+            if placement_csv:
+                return sd, placement_csv
+
     before = set(os.listdir(experiment_dir))
     cmd = [
         "python3",
@@ -405,7 +432,7 @@ def run_algorithm(
         "--experiment-dir",
         experiment_dir,
         "--loglevel",
-        "INFO",
+        loglevel,
     ]
     if algorithm in ("heuristic", "global-optimal"):
         cmd.extend(["--embodied-mode", embodied_mode])
@@ -433,6 +460,22 @@ def run_algorithm(
     return session_dir, placement_csv
 
 
+def find_existing_placement(experiment_dir: str, algorithm: str) -> Optional[str]:
+    if not os.path.isdir(experiment_dir):
+        return None
+    session_dirs = [
+        os.path.join(experiment_dir, entry)
+        for entry in sorted(os.listdir(experiment_dir))
+        if os.path.isdir(os.path.join(experiment_dir, entry))
+    ]
+    session_dirs = sorted(session_dirs, key=os.path.getmtime, reverse=True)
+    for sd in session_dirs:
+        placement_csv = find_placement_csv(sd, algorithm)
+        if placement_csv:
+            return placement_csv
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main experiment logic
 # ---------------------------------------------------------------------------
@@ -442,96 +485,124 @@ def run_algorithm(
 class SensitivityRecord:
     algorithm: str
     pods: int
+    seed: int
     embodied_scale: float
     lifetime_scale: float
     total_kg: float
 
 
 def run_sensitivity(args) -> pd.DataFrame:
-    # Fix workloads to the requested pod count
-    with WorkloadConfigManager(args.workload_config):
-        ensure_exact_total_strategy(args.workload_config)
-        set_exact_total_pods(args.workload_config, args.pods)
-        regenerate_workloads(args.generator)
-        total_pods = get_total_pods_from_workloads(WORKLOADS_DIR)
-        print(f"Generated workloads for {total_pods} pods (target {args.pods}).")
+    records: List[SensitivityRecord] = []
+
+    # Fix workloads to the requested pod count and iterate over seeds
+    workload_ctx = (
+        WorkloadConfigManager(args.workload_config)
+        if not args.analyze_only
+        else contextlib.nullcontext()
+    )
+
+    with workload_ctx:
+        if not args.analyze_only:
+            ensure_exact_total_strategy(args.workload_config)
+            set_exact_total_pods(args.workload_config, args.pods)
 
         # Cache baseline nodes once
         baseline_docs = load_baseline_nodes(args.nodes_file)
 
-        records: List[SensitivityRecord] = []
+        for seed in args.seeds:
+            print(f"\n==============================\nSeed {seed}\n==============================")
+            if not args.analyze_only:
+                set_random_seed(args.workload_config, seed)
+                regenerate_workloads(args.generator)
+                total_pods = get_total_pods_from_workloads(WORKLOADS_DIR)
+                print(f"Generated workloads for {total_pods} pods (target {args.pods}).")
 
-        with NodesConfigManager(args.nodes_file):
-            # Embodied scaling sweep (lifetime fixed at 1.0)
-            for emb_scale in args.embodied_scales:
-                life_scale = 1.0
-                print(f"\n==> Embodied scaling factor {emb_scale:.2f}, lifetime_scale={life_scale:.2f}")
-                write_scaled_nodes(args.nodes_file, baseline_docs, emb_scale, life_scale)
-                nodes_dict = load_nodes_with_forecasts(args.nodes_file, args.ground_truth_forecast)
-                for algorithm in args.algorithms:
-                    scenario_dir = os.path.join(
-                        args.experiment_root,
-                        f"pods_{args.pods}",
-                        f"emb_{emb_scale:.2f}_life_{life_scale:.2f}",
-                        algorithm,
-                    )
-                    print(f"  Running {algorithm} for embodied_scale={emb_scale:.2f}")
-                    _, placement_csv = run_algorithm(
-                        algorithm=algorithm,
-                        workloads_dir=args.workloads_dir,
-                        nodes_file=args.nodes_file,
-                        forecasts_file=args.ground_truth_forecast,
-                        experiment_dir=scenario_dir,
-                        embodied_mode=args.embodied_mode,
-                    )
-                    total_kg = compute_total_emissions_kg(placement_csv, nodes_dict)
-                    print(f"    Total emissions: {total_kg:.4f} kg CO2e")
-                    records.append(
-                        SensitivityRecord(
-                            algorithm=algorithm,
-                            pods=args.pods,
-                            embodied_scale=emb_scale,
-                            lifetime_scale=life_scale,
-                            total_kg=total_kg,
+            with NodesConfigManager(args.nodes_file):
+                # Embodied scaling sweep (lifetime fixed at 1.0)
+                for emb_scale in args.embodied_scales:
+                    life_scale = 1.0
+                    print(f"\n==> Embodied scaling factor {emb_scale:.2f}, lifetime_scale={life_scale:.2f}")
+                    write_scaled_nodes(args.nodes_file, baseline_docs, emb_scale, life_scale)
+                    nodes_dict = load_nodes_with_forecasts(args.nodes_file, args.ground_truth_forecast)
+                    for algorithm in args.algorithms:
+                        scenario_dir = os.path.join(
+                            args.experiment_root,
+                            f"pods_{args.pods}",
+                            f"seed_{seed}",
+                            f"emb_{emb_scale:.2f}_life_{life_scale:.2f}",
+                            algorithm,
                         )
-                    )
+                        if args.analyze_only:
+                            placement_csv = find_existing_placement(scenario_dir, algorithm)
+                            if not placement_csv:
+                                raise RuntimeError(f"No existing placement for {algorithm} in {scenario_dir}")
+                        else:
+                            _, placement_csv = run_algorithm(
+                                algorithm=algorithm,
+                                workloads_dir=args.workloads_dir,
+                                nodes_file=args.nodes_file,
+                                forecasts_file=args.ground_truth_forecast,
+                                experiment_dir=scenario_dir,
+                                embodied_mode=args.embodied_mode,
+                                loglevel=args.loglevel,
+                                reuse_existing=args.reuse_existing,
+                            )
+                        total_kg = compute_total_emissions_kg(placement_csv, nodes_dict)
+                        print(f"    Total emissions: {total_kg:.4f} kg CO2e")
+                        records.append(
+                            SensitivityRecord(
+                                algorithm=algorithm,
+                                pods=args.pods,
+                                seed=seed,
+                                embodied_scale=emb_scale,
+                                lifetime_scale=life_scale,
+                                total_kg=total_kg,
+                            )
+                        )
 
-            # Lifetime scaling sweep (embodied fixed at 1.0)
-            for life_scale in args.lifetime_scales:
-                emb_scale = 1.0
-                # Skip the exact baseline (1.0, 1.0) if already covered above
-                if life_scale == 1.0:
-                    continue
-                print(f"\n==> Lifetime scaling factor {life_scale:.2f}, embodied_scale={emb_scale:.2f}")
-                write_scaled_nodes(args.nodes_file, baseline_docs, emb_scale, life_scale)
-                nodes_dict = load_nodes_with_forecasts(args.nodes_file, args.ground_truth_forecast)
-                for algorithm in args.algorithms:
-                    scenario_dir = os.path.join(
-                        args.experiment_root,
-                        f"pods_{args.pods}",
-                        f"emb_{emb_scale:.2f}_life_{life_scale:.2f}",
-                        algorithm,
-                    )
-                    print(f"  Running {algorithm} for lifetime_scale={life_scale:.2f}")
-                    _, placement_csv = run_algorithm(
-                        algorithm=algorithm,
-                        workloads_dir=args.workloads_dir,
-                        nodes_file=args.nodes_file,
-                        forecasts_file=args.ground_truth_forecast,
-                        experiment_dir=scenario_dir,
-                        embodied_mode=args.embodied_mode,
-                    )
-                    total_kg = compute_total_emissions_kg(placement_csv, nodes_dict)
-                    print(f"    Total emissions: {total_kg:.4f} kg CO2e")
-                    records.append(
-                        SensitivityRecord(
-                            algorithm=algorithm,
-                            pods=args.pods,
-                            embodied_scale=emb_scale,
-                            lifetime_scale=life_scale,
-                            total_kg=total_kg,
+                # Lifetime scaling sweep (embodied fixed at 1.0)
+                for life_scale in args.lifetime_scales:
+                    emb_scale = 1.0
+                    if life_scale == 1.0:
+                        continue
+                    print(f"\n==> Lifetime scaling factor {life_scale:.2f}, embodied_scale={emb_scale:.2f}")
+                    write_scaled_nodes(args.nodes_file, baseline_docs, emb_scale, life_scale)
+                    nodes_dict = load_nodes_with_forecasts(args.nodes_file, args.ground_truth_forecast)
+                    for algorithm in args.algorithms:
+                        scenario_dir = os.path.join(
+                            args.experiment_root,
+                            f"pods_{args.pods}",
+                            f"seed_{seed}",
+                            f"emb_{emb_scale:.2f}_life_{life_scale:.2f}",
+                            algorithm,
                         )
-                    )
+                        if args.analyze_only:
+                            placement_csv = find_existing_placement(scenario_dir, algorithm)
+                            if not placement_csv:
+                                raise RuntimeError(f"No existing placement for {algorithm} in {scenario_dir}")
+                        else:
+                            _, placement_csv = run_algorithm(
+                                algorithm=algorithm,
+                                workloads_dir=args.workloads_dir,
+                                nodes_file=args.nodes_file,
+                                forecasts_file=args.ground_truth_forecast,
+                                experiment_dir=scenario_dir,
+                                embodied_mode=args.embodied_mode,
+                                loglevel=args.loglevel,
+                                reuse_existing=args.reuse_existing,
+                            )
+                        total_kg = compute_total_emissions_kg(placement_csv, nodes_dict)
+                        print(f"    Total emissions: {total_kg:.4f} kg CO2e")
+                        records.append(
+                            SensitivityRecord(
+                                algorithm=algorithm,
+                                pods=args.pods,
+                                seed=seed,
+                                embodied_scale=emb_scale,
+                                lifetime_scale=life_scale,
+                                total_kg=total_kg,
+                            )
+                        )
 
     # Convert to DataFrame and derive per-pod and deltas
     df = pd.DataFrame([r.__dict__ for r in records])
@@ -542,13 +613,13 @@ def run_sensitivity(args) -> pd.DataFrame:
     # Baseline rows: embodied_scale==1.0 and lifetime_scale==1.0
     baseline_mask = (df["embodied_scale"] == 1.0) & (df["lifetime_scale"] == 1.0)
     if baseline_mask.any():
-        baseline = df[baseline_mask].set_index("algorithm")["kg_per_pod"]
+        baseline = df[baseline_mask].set_index(["algorithm", "seed"])["kg_per_pod"]
 
         def delta_vs_baseline(row):
-            algo = row["algorithm"]
-            if algo not in baseline:
+            key = (row["algorithm"], row["seed"])
+            if key not in baseline:
                 return 0.0
-            base_val = baseline[algo]
+            base_val = baseline[key]
             if base_val == 0:
                 return 0.0
             return (row["kg_per_pod"] - base_val) / base_val * 100.0
@@ -565,59 +636,131 @@ def run_sensitivity(args) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
+def _latest_timestamp_for_pods(experiment_root: str, pods: int) -> Optional[str]:
+    """Find the most recent modification timestamp under experiments/pods_<pods> (as filename-safe slug)."""
+    pods_dir = os.path.join(experiment_root, f"pods_{pods}")
+    if not os.path.isdir(pods_dir):
+        return None
+    latest_mtime = None
+    for dirpath, _, filenames in os.walk(pods_dir):
+        for name in filenames:
+            try:
+                mtime = os.path.getmtime(os.path.join(dirpath, name))
+                if (latest_mtime is None) or (mtime > latest_mtime):
+                    latest_mtime = mtime
+            except OSError:
+                continue
+    if latest_mtime is None:
+        return None
+    ts = datetime.fromtimestamp(latest_mtime, tz=timezone.utc)
+    return ts.strftime("%Y%m%d_%H%MUTC")
+
+
 def plot_sensitivity(df: pd.DataFrame, figure_dir: str, pods: int) -> str:
     os.makedirs(figure_dir, exist_ok=True)
 
-    plt.figure(figsize=(10, 4.5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-    algorithms = sorted(df["algorithm"].unique())
-    colors = {"heuristic": "#1f77b4", "global-optimal": "#ff7f0e"}
+    # Aggregate across seeds to plot mean ± std
+    grouped_cols_emb = ["algorithm", "embodied_scale"]
+    grouped_cols_life = ["algorithm", "lifetime_scale"]
+
+    emb_agg = (
+        df[df["lifetime_scale"] == 1.0]
+        .groupby(grouped_cols_emb)
+        .agg(
+            mean_kg=("kg_per_pod", "mean"),
+            std_kg=("kg_per_pod", "std"),
+            mean_delta=("delta_vs_baseline_pct", "mean"),
+            count=("kg_per_pod", "count"),
+        )
+        .reset_index()
+    )
+    life_agg = (
+        df[df["embodied_scale"] == 1.0]
+        .groupby(grouped_cols_life)
+        .agg(
+            mean_kg=("kg_per_pod", "mean"),
+            std_kg=("kg_per_pod", "std"),
+            mean_delta=("delta_vs_baseline_pct", "mean"),
+            count=("kg_per_pod", "count"),
+        )
+        .reset_index()
+    )
+
+    # Styling aligned with other paper figures (Fig. 4/5 palette)
+    style = {
+        # Match Fig. 4/5 palette: TotEm orange, Oracle green
+        "heuristic": {"label": "TotEm", "color": "#ff7f0e", "marker": "s"},
+        "global-optimal": {"label": "Oracle", "color": "#2ca02c", "marker": "o"},
+    }
+    algorithms = [algo for algo in ["heuristic", "global-optimal"] if algo in df["algorithm"].unique()]
 
     # Left subplot: embodied scaling (lifetime_scale == 1.0)
-    ax1 = plt.subplot(1, 2, 1)
-    emb_df = df[df["lifetime_scale"] == 1.0].copy()
     for algo in algorithms:
-        sub = emb_df[emb_df["algorithm"] == algo].sort_values("embodied_scale")
+        sub = emb_agg[emb_agg["algorithm"] == algo].sort_values("embodied_scale")
         if sub.empty:
             continue
-        ax1.plot(
+        s = style.get(algo, {"label": algo, "color": "#1f77b4", "marker": "o"})
+        ax1.errorbar(
             sub["embodied_scale"],
-            sub["kg_per_pod"],
-            marker="o",
-            label=algo.replace("global-optimal", "Oracle"),
-            color=colors.get(algo, None),
+            sub["mean_kg"],
+            yerr=sub["std_kg"],
+            marker=s["marker"],
+            label=s["label"],
+            color=s["color"],
+            linestyle="-",
+            linewidth=3,
+            markersize=8,
+            capsize=4,
         )
     ax1.set_xlabel("Embodied scaling factor")
     ax1.set_ylabel("Emissions per pod (kg CO$_2$e)")
-    ax1.set_title("Embodied sensitivity (lifetime fixed)")
-    ax1.grid(True, linestyle="--", alpha=0.4)
+    ax1.set_title("Embodied sensitivity (lifetime fixed)", fontsize=13, fontweight="bold", pad=8)
+    ax1.grid(True, linestyle="--", alpha=0.35)
 
     # Right subplot: lifetime scaling (embodied_scale == 1.0)
-    ax2 = plt.subplot(1, 2, 2)
-    life_df = df[df["embodied_scale"] == 1.0].copy()
     for algo in algorithms:
-        sub = life_df[life_df["algorithm"] == algo].sort_values("lifetime_scale")
+        sub = life_agg[life_agg["algorithm"] == algo].sort_values("lifetime_scale")
         if sub.empty:
             continue
-        ax2.plot(
+        s = style.get(algo, {"label": algo, "color": "#1f77b4", "marker": "o"})
+        ax2.errorbar(
             sub["lifetime_scale"],
-            sub["kg_per_pod"],
-            marker="o",
-            label=algo.replace("global-optimal", "Oracle"),
-            color=colors.get(algo, None),
+            sub["mean_kg"],
+            yerr=sub["std_kg"],
+            marker=s["marker"],
+            label=s["label"],
+            color=s["color"],
+            linestyle="-",
+            linewidth=3,
+            markersize=8,
+            capsize=4,
         )
     ax2.set_xlabel("Lifetime scaling factor")
     ax2.set_ylabel("Emissions per pod (kg CO$_2$e)")
-    ax2.set_title("Lifetime sensitivity (embodied fixed)")
-    ax2.grid(True, linestyle="--", alpha=0.4)
+    ax2.set_title("Lifetime sensitivity (embodied fixed)", fontsize=13, fontweight="bold", pad=8)
+    ax2.grid(True, linestyle="--", alpha=0.35)
 
     # Shared legend
     handles, labels = ax1.get_legend_handles_labels()
     if handles:
-        plt.legend(handles, labels, loc="upper center", ncol=len(labels), bbox_to_anchor=(0.5, 1.15))
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=len(labels),
+            bbox_to_anchor=(0.5, -0.02),
+            frameon=False,
+            fontsize=11,
+        )
 
-    plt.tight_layout()
-    pdf_path = os.path.join(figure_dir, f"embodied_sensitivity_{pods}pods.pdf")
+    plt.subplots_adjust(bottom=0.18, wspace=0.25)
+
+    # Timestamped filename based on data recency
+    ts = _latest_timestamp_for_pods(DEFAULT_EXPERIMENT_ROOT, pods)
+    suffix = f"_{ts}" if ts else ""
+    pdf_path = os.path.join(figure_dir, f"embodied_sensitivity_{pods}pods{suffix}.pdf")
     plt.savefig(pdf_path, bbox_inches="tight")
     print(f"Saved sensitivity plot: {pdf_path}")
     return pdf_path
@@ -640,7 +783,7 @@ def parse_args():
         "--embodied-scales",
         type=float,
         nargs="+",
-        default=[0.8, 1.0, 1.2],
+        default=[0.60, 0.80, 1.00, 1.20, 1.60],
         help="Scaling factors for embodied emissions.",
     )
     parser.add_argument(
@@ -665,6 +808,13 @@ def parse_args():
         help="Directory to store experiment runs.",
     )
     parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=[42, 43, 44],
+        help="Random seeds for workload/node generation (mirrors emissions sweeps).",
+    )
+    parser.add_argument(
         "--figure-dir",
         type=str,
         default=DEFAULT_FIGURE_DIR,
@@ -683,6 +833,18 @@ def parse_args():
         help="Embodied allocation mode for heuristic and oracle.",
     )
     parser.add_argument(
+        "--loglevel",
+        type=str,
+        default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Log level for scheduler runs (lower verbosity accelerates runs).",
+    )
+    parser.add_argument(
+        "--reuse-existing",
+        action="store_true",
+        help="Reuse existing placement outputs in experiment_dir instead of re-running schedulers.",
+    )
+    parser.add_argument(
         "--skip-run",
         action="store_true",
         help="Skip running algorithms and only analyze existing CSV (if provided).",
@@ -692,6 +854,11 @@ def parse_args():
         type=str,
         default=None,
         help="Optional path to an existing runs CSV to analyze.",
+    )
+    parser.add_argument(
+        "--analyze-only",
+        action="store_true",
+        help="Do not run schedulers; reuse existing placement logs for all scenarios.",
     )
     return parser.parse_args()
 
@@ -724,5 +891,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

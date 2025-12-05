@@ -1,64 +1,30 @@
-# Configuration for infrastructure and workload generation
-
-# Global optimization algorithm configuration
 optimization:
-  # Use lexicographic optimization: first maximize placements, then minimize emissions
-  # This ensures all feasible pods are placed while optimizing carbon footprint
   use_lexicographic: true
-  # Penalty applied per unplaced pod in single-phase mode (gCO2e-equivalent units)
-  # Larger values prioritize placing pods over emissions; smaller values allow skipping high-cost pods.
-  # Ignored when use_lexicographic is true.
   unplaced_penalty: 4000
-  
-  # Emissions objective weighting (tune to prioritize carbon reduction)
   emissions:
-    # Scale on per-pod dynamic emissions terms (default 1.0). Increase to emphasize dynamic carbon.
     dynamic_weight: 1.0
-    # Scale on per-(node,slot) activation (idle + embodied) terms (default 1.0).
     activation_weight: 1.0
-    # In dynamic-only fallback (when activations are dropped), add a surrogate penalty per chosen
-    # placement proportional to that slot's idle+embodied to reduce scattering (default 0.0 = off).
     fallback_surrogate_activation_weight: 0.0
-  
-  # Candidate pruning to focus MILP on greener placements (reduces variables)
   pruning:
     enable: false
-    # Keep at most this many best options per pod (0 = unlimited)
     top_k_per_pod: 6
-    # Also keep any option within this relative margin to the best emissions (e.g., 0.15 = +15%)
     emissions_margin: 0.35
-  
-  # Hard constraints to enforce minimum success rate in multi-objective mode
   constraints:
-    # At most this fraction of pods can be unplaced (e.g., 0.05 = 5%). If both are set, 'max_unplaced' takes precedence.
     max_unplaced_fraction: 0.1
-    # Or absolute cap on the number of unplaced pods (comment out to use only fraction)
-    # max_unplaced: 10
-  
-  # Solver configuration
   solver:
     name: cp_sat
-    time_limit:  900  # seconds per phase for lexicographic, total for standard
+    time_limit: 900
     gap_tolerance: 0.05
     threads: 8
-
 nodes:
-  # Filename for the generated nodes
   filename: nodes.yaml
-  
-  # Regions configuration with exact counts
   regions:
     region_counts:
       FR: 1
       ES: 1
       IT-NO: 1
       DE: 1
-  
-  # Method to assign regions to nodes
   assignment_method: exact_counts
-  
-  # Explicit region-to-hardware assignments override auto assignment
-  # Each region -> hardware -> count
   explicit_assignments:
     FR:
       IoT: 1
@@ -68,120 +34,80 @@ nodes:
       Laptop: 1
     DE:
       Server: 1
-  
-  # Hardware assignment configuration (kept for backward compatibility; ignored when explicit_assignments is set)
   hardware_assignment:
     hardware_counts:
       IoT: 1
       Smartphone: 1
       Laptop: 1
       Server: 1
-  
-  # Method to assign hardware types to nodes (ignored when explicit_assignments is set)
   hardware_assignment_method: exact_counts
-  
-  # Hardware subcategories configuration
   hardware_subcategories:
     IoT:
-      cpu: "2"
-      memory: "2Gi"
+      cpu: '2'
+      memory: 2Gi
       embodied_carbon: 27.471
       lifetime: 5.2
       power:
-        idle: 0.5    # Watts
-        active: 2.0  # Watts
-        max: 5.0     # Watts
+        idle: 0.5
+        active: 2.0
+        max: 5.0
     Smartphone:
-      cpu: "4"
-      memory: "4Gi"
+      cpu: '4'
+      memory: 4Gi
       embodied_carbon: 52.729
       lifetime: 3.03
       power:
-        idle: 1.0    # Watts
-        active: 3.0  # Watts
-        max: 15.0    # Watts
+        idle: 1.0
+        active: 3.0
+        max: 15.0
     Laptop:
-      cpu: "8"
-      memory: "8Gi"
+      cpu: '8'
+      memory: 8Gi
       embodied_carbon: 231.855
       lifetime: 4.13
       power:
-        idle: 10.0   # Watts
-        active: 40.0 # Watts
-        max: 150.0   # Watts
+        idle: 10.0
+        active: 40.0
+        max: 150.0
     Server:
-      cpu: "16"
-      memory: "16Gi"
+      cpu: '16'
+      memory: 16Gi
       embodied_carbon: 1230.656
       lifetime: 3.87
       power:
-        idle: 100.0  # Watts
-        active: 200.0 # Watts
-        max: 400.0   # Watts
-  
-  # Random seed for reproducibility
-  random_seed: 42
-
+        idle: 100.0
+        active: 200.0
+        max: 400.0
+  random_seed: 44
 workload:
-  # Directory to output workload files
   output_dir: workloads
-  
-  # Directory for vanilla scheduler workload files
   vanilla_output_dir: workloads-vanilla
-  
-  # Number of timeslots to generate
   num_timeslots: 12
-  
-  # Strategy for generating pods per timeslot: "poisson" or "exact_total"
   generation_strategy: exact_total
-  
-  # Lambda parameter for Poisson distribution (average services per timeslot)
-  poisson_lambda: 4  # [4, 8, 10, 12, 16]
-  
-  # Total number of pods to generate across all timeslots
-  # Used only when generation_strategy == "exact_total"
+  poisson_lambda: 4
   exact_total_pods: 80
-  
-  # Minimum number of services per timeslot, regardless of Poisson distribution
   min_services: 1
-  
-  # Base name for microservices
   base_name: m
-  
-  # Available duration labels for pods (in hours)
   durations:
-    - 1  # short duration (1 hour)
-    - 3  # medium duration (3 hours) 
-    - 6  # long duration (6 hours)
-  
-  # How to assign durations (cycle through the values or pick randomly)
-  duration_assignment_method: cycle  # "cycle" or "random"
-  
-  # Deadline configuration options
-  # Strategy for determining deadlines: "tight", "flexible", "mixed", or "exact"
+  - 1
+  - 3
+  - 6
+  duration_assignment_method: cycle
   deadline_strategy: flexible
-  
-  # Hours to add to duration for flexible deadlines
   deadline_flexibility_hours:
-    - 1   # Low flexibility: duration + 1h
-    - 3   # Medium flexibility: duration + 3h
-    - 6  # High flexibility: duration + 6h
-  
-  # Available CPU request options
+  - 1
+  - 3
+  - 6
   cpu_options:
-    - 2000m  # 2 full cores
-    - 1000m  # 1 full core
-    - 500m   # half core
-    - 250m   # quarter core
-    - 100m   # tenth of a core
-  
-  # Available memory request options
+  - 2000m
+  - 1000m
+  - 500m
+  - 250m
+  - 100m
   mem_options:
-    - 2Gi
-    - 1Gi
-    - 512Mi
-    - 256Mi
-    - 128Mi
-  
-  # Random seed for reproducibility
-  random_seed: 42 
+  - 2Gi
+  - 1Gi
+  - 512Mi
+  - 256Mi
+  - 128Mi
+  random_seed: 44

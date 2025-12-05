@@ -72,7 +72,7 @@ of Environmental Technology, Technische Universit\"at Berlin, Strasse des 17. Ju
 
 \IEEEtitleabstractindextext{%
 \begin{abstract}
-Data centers account for over 1\% of global electricity use, yet today's container orchestrators optimize for performance and availability while ignoring carbon emissions that vary across time and location. At the same time, manufacturing ("embodied") emissions are a first-order contributor that existing schedulers do not model. We ask whether container scheduling can reduce total emissions---operational and embodied---without sacrificing feasibility or incurring prohibitive runtime, and how closely a practical scheduler can approach a MILP benchmark. To this end, we formulate a carbon-aware placement problem that integrates operational and embodied emissions under resource and timing constraints; design TotEm (Total Emissions scheduler), a fast heuristic that minimizes a comprehensive emissions objective; and implement a global mixed-integer linear program (MILP) that we solve under a fixed time limit as a strong benchmark, alongside a carbon-agnostic Kubernetes-like baseline. All methods are evaluated on identical workloads, horizons, carbon forecasts, and power/embodied models. Across scales, TotEm substantially reduces emissions while preserving high placement success and practical runtime. At a representative moderate-load point ($\approx 32$\% implied average CPU utilization over 24 hours), average per-pod emissions fall from 10.1 to 3.3 g CO\textsubscript{2}e (67.5\%) relative to the carbon-agnostic baseline, while tracking the MILP benchmark closely (2.6 g). Runtime grows smoothly with pods and nodes and remains in single-digit seconds at our largest settings. These results establish carbon-aware container orchestration as a practical path to lower total emissions and provide a reproducible evaluation protocol for comparing heuristic and MILP approaches in sustainable cloud computing.
+Data centers account for over 1\% of global electricity use, yet today's container orchestrators optimize for performance and availability while ignoring carbon emissions that vary across time and location. At the same time, manufacturing ("embodied") emissions are a first-order contributor that existing schedulers do not model. We ask whether container scheduling can reduce total emissions---operational and embodied---without sacrificing feasibility or incurring prohibitive runtime, and how closely a practical scheduler can approach a MILP benchmark. To this end, we formulate a carbon-aware placement problem that integrates operational and embodied emissions under resource and timing constraints; design TotEm (Total Emissions scheduler), a fast heuristic that minimizes a comprehensive emissions objective; and implement a global mixed-integer linear program (MILP) as a strong benchmark, alongside a carbon-agnostic Kubernetes-like baseline. All methods are evaluated on identical workloads, horizons, carbon forecasts, and power/embodied models. Across scales, TotEm substantially reduces emissions while preserving high placement success and practical runtime. At a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), average per-pod emissions fall from 36.6 to 24.7 g CO\textsubscript{2}e (32.5\%) relative to the carbon-agnostic baseline, while the MILP benchmark achieves 14.1 g. Runtime grows smoothly with pods and nodes and remains in single-digit seconds at our largest settings. These results establish carbon-aware container orchestration as a practical path to lower total emissions and provide a reproducible evaluation protocol for comparing heuristic and MILP approaches in sustainable cloud computing.
 \end{abstract}
 \begin{IEEEkeywords}
 Carbon-aware computing, container orchestration, Kubernetes, sustainable computing, green cloud computing, optimization algorithms, mixed integer linear programming, global optimization.
@@ -92,7 +92,7 @@ However, making container orchestration carbon-aware is nontrivial. Practical sc
 
 To this end, we present TotEm, a carbon-aware orchestration framework that explores a fast heuristic scheduler that greedily minimizes a combined operational+embodied carbon objective under resource and timing constraints. Complementarily, we also explore a MILP formulation with a lexicographic objective (first maximize successful placements, then minimize emissions) that we solve under a fixed time limit as a MILP benchmark (a carbon-emissions lower bound in our experiments); and a carbon-agnostic baseline that mirrors Kubernetes’ resource-only scoring (a carbon-emissions upper bound) for our TotEm scheduler \cite{KubernetesSchedulingFramework2025}. We integrate carbon-intensity forecasts with a co-location–aware power and embodied-carbon model, enforce earliest-start and deadline constraints, and evaluate all approaches in an offline precomputation mode that simulates multi-timeslot scheduling. Our experimental design systematically varies pods and nodes to assess both effectiveness and time complexity, producing apples-to-apples comparisons across algorithms.
 
-We implemented a prototype scheduler and evaluated it offline on controlled workloads across 12–24 hour horizons while varying pod and node scales; at a representative moderate-load point ($\approx 32$\% implied average CPU utilization over 24 hours), TotEm reduced average per-pod emissions from 10.1 to 3.3 g CO\textsubscript{2}e (\(-67.5\%\)) relative to a carbon-agnostic baseline, while end-to-end precompute remained in single-digit seconds.
+We implemented a prototype scheduler and evaluated it offline on controlled workloads across 12–24 hour horizons while varying pod and node scales; at a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), TotEm reduced average per-pod emissions from 36.6 to 24.7 g CO\textsubscript{2}e (\(-32.5\%\)) relative to a carbon-agnostic baseline, while end-to-end precompute remained in single-digit seconds.
 
 Our results show that carbon-aware scheduling can substantially reduce emissions while preserving high placement success and practical runtime. TotEm achieves favorable carbon–performance trade-offs and scales efficiently across realistic pod and node counts, while the MILP benchmark establishes a strong lower bound on achievable emissions (and thus an upper bound on reductions) at a higher computational cost. Beyond demonstrating feasibility, we provide a reusable evaluation methodology—covering emissions modeling, constraint handling, and time-complexity sweeps—that enables rigorous, reproducible comparisons of carbon-aware orchestration strategies.
 
@@ -278,10 +278,10 @@ where operational emissions $m^{op}_{ij(t+k)} = p_{ij(t+k)} \cdot \text{CI}_{j(t
 
 \paragraph*{Resource capacity}
 \begin{align}
-\sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} c_i\, x_{ij,\,\tau-k} &\le C_{j\tau},\\
-\sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} r_i\, x_{ij,\,\tau-k} &\le R_{j\tau},
+\sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} c_i\, x_{ij,\,t-k} &\le C_{jt},\\
+\sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} r_i\, x_{ij,\,t-k} &\le R_{jt},
 \end{align}
-for all $j\in\mathcal{F}$ and $\tau\in\mathcal{T}$. We take $x_{ij,t}=0$ when $t\notin\mathcal{T}$ or $(j,t)\notin\mathcal{V}_i$.
+for all $j\in\mathcal{F}$ and $t\in\mathcal{T}$. We take $x_{ij,t}=0$ when $t\notin\mathcal{T}$ or $(j,t)\notin\mathcal{V}_i$.
 
 \paragraph*{Assignment (per pod $i$)}
 \begin{equation}
@@ -498,7 +498,7 @@ We report:
 \end{itemize}
 
 \paragraph*{Protocol and Fairness}
-To quantify carbon reductions, we evaluate three schedulers—\emph{carbon-agnostic} (baseline), \emph{TotEm} (carbon-aware), and \emph{MILP}—over controlled workload scales (20–200 pods) and time horizons. All algorithms operate under the same constraints (earliest timeslot, CPU/Memory, node capacity/affinity) and the same emissions model (operational + amortized embodied carbon; identical regional carbon-intensity forecasts and node power profiles). We fix seeds where stochasticity is used and report confidence intervals when averaging over multiple runs. Finally, we assess the robustness of our results through sensitivity analyses on forecast error and embodied carbon parameters.
+To quantify carbon reductions, we evaluate three schedulers—\emph{carbon-agnostic} (baseline), \emph{TotEm} (carbon-aware), and \emph{MILP}—over controlled workload scales (20–200 pods) and time horizons. All algorithms operate under the same constraints (earliest timeslot, CPU/Memory, node capacity/affinity) and the same emissions model (operational + amortized embodied carbon; identical regional carbon-intensity forecasts and node power profiles). We fix seeds where stochasticity is used and report confidence intervals when averaging over three independent runs. Finally, we assess the robustness of our results through sensitivity analyses on forecast error and embodied carbon parameters.
 
 Apples-to-apples comparison is non-trivial because algorithms can schedule different subsets of pods under the same load, confounding emissions with feasibility. We therefore present the coverage-inclusive view: emissions computed over all pods each algorithm successfully schedules, reflecting end-to-end impact (quality and coverage).
 
@@ -532,9 +532,9 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
 
 \subsection{Carbon Reduction}\label{s:red}
 % Bind figures to latest generated PDFs (define before input)
-\newcommand{\EmissionsVsPodsInclusive}{\detokenize{figures/emissions_vs_pods_20251111_220205.pdf}}
-\newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{figures/emissions_per_pod_vs_pods_20251111_220205.pdf}}
-\providecommand{\SuccessRateVsPods}{\detokenize{figures/success_rate_comparison_20251111_220212.pdf}}
+\newcommand{\EmissionsVsPodsInclusive}{\detokenize{figures/emissions_vs_pods_20251204_091425.pdf}}
+\newcommand{\EmissionsPerPodVsPodsLatest}{\detokenize{figures/emissions_per_pod_vs_pods_20251204_091425.pdf}}
+\providecommand{\SuccessRateVsPods}{\detokenize{figures/SuccessRate/success_rate_comparison_20251204_091427.pdf}}
 
 Figure~\ref{f:emit-inc} shows total emissions versus workload intensity, expressed as implied average cluster CPU utilization over a 24-hour horizon (coverage-inclusive). For each pod count, utilization is computed once from the workload generator as total requested CPU-core hours across all pods divided by the cluster’s available CPU-core hours (30 cores \(\times\) 24 hours); this mapping is shared across all algorithms. As load increases, the carbon-aware schedulers reduce emissions relative to the carbon-agnostic baseline; the MILP benchmark consistently provides the lowest emissions, and TotEm tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{f:succ} (protocol in Section~\ref{s:setup}).
 
@@ -562,11 +562,11 @@ Across both views we use the same emissions accounting (operational + embodied).
 
 % Figure for emissions per common pod removed
 
-\noindent\textit{Concrete findings.} At this representative utilization ($\approx 32$\% implied average CPU utilization over 24 hours), per-pod emissions were: carbon-agnostic baseline 10.1 g CO\textsubscript{2}e, TotEm 3.3 g (\(\approx\)-67.5\%), and MILP 2.6 g (\(\approx\)-74.0\%). Because the MILP is solved with a 900 s per-phase time limit (and, for MILP backends, a 5\% relative-gap target), the 2.6 g CO\textsubscript{2}e value should be interpreted as the best solution found under this budget—that is, an upper bound on the true global optimum—rather than a certified optimum. This gap nevertheless illustrates that TotEm captures most of the MILP benchmark's benefit while remaining deployable.
+\noindent\textit{Concrete findings.} At this representative utilization ($\approx 28$\% implied average CPU utilization over 24 hours), per-pod emissions were: carbon-agnostic baseline 36.6 g CO\textsubscript{2}e, TotEm 24.7 g (\(\approx\)-32.5\%), and MILP 14.1 g (\(\approx\)-61.5\%). Because the MILP is solved with a 900 s per-phase time limit (and, for MILP backends, a 5\% relative-gap target), the 2.6 g CO\textsubscript{2}e value should be interpreted as the best solution found under this budget—that is, an upper bound on the true global optimum—rather than a certified optimum. This gap nevertheless illustrates that TotEm captures most of the MILP benchmark's benefit while remaining deployable.
 
 \subsection{Placement Success Rate}\label{s:succ}
 % Update to newest success-rate plot (computed from per-run CSVs; ignores stale pods.txt)
-\renewcommand{\SuccessRateVsPods}{\detokenize{figures/SuccessRate/success_rate_comparison_20251111_220212.pdf}}
+\renewcommand{\SuccessRateVsPods}{\detokenize{figures/SuccessRate/success_rate_comparison_20251204_091427.pdf}}
 Figure~\ref{f:succ} shows scheduling success rate versus implied average cluster CPU utilization over 24 hours. At low load, all three methods are near 100\%; as load increases, TotEm remains above the carbon-agnostic baseline and close to the MILP benchmark.
 \begin{figure}[t]
   \centering
@@ -607,17 +607,17 @@ With 32 nodes held constant, runtime grows approximately linearly with total pod
 
 \subsection{Sensitivity to Embodied Assumptions}\label{s:sens}
 
-Embodied emissions and lifetimes in Table~\ref{t:emb} are derived from Boavizta~\cite{boavizta2023}, but real deployments see variation between individual hardware configurations and management policies. To test that our conclusions do not hinge on exact values, we run a one-factor-at-a-time sensitivity study at the same representative utilization level. Guided by the spread observed in Boavizta device entries, we apply uniform, conservative perturbations across all node classes: embodied emissions scaled by \(\{0.8, 1.0, 1.2\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\).
+Embodied emissions and lifetimes in Table~\ref{t:emb} are derived from Boavizta~\cite{boavizta2023}, but real deployments see variation between individual hardware configurations and management policies. To test that our conclusions do not hinge on exact values, we run a one-factor-at-a-time sensitivity study at the same representative utilization level. Guided by the Boavizta variability analysis, we apply uniform perturbations across all node classes: embodied emissions scaled by \(\{0.60, 0.80, 1.00, 1.20, 1.60\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\), averaged over independent seeds.
 
-\newcommand{\EmbodiedSensitivityPlot}{\detokenize{figures/EmbodiedSensitivity/embodied_sensitivity_80pods.pdf}}
+\newcommand{\EmbodiedSensitivityPlot}{\detokenize{figures/EmbodiedSensitivity/embodied_sensitivity_80pods_20251204_1931UTC.pdf}}
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.95\linewidth]{\EmbodiedSensitivityPlot}
-\caption{Sensitivity of average per-pod emissions (kg CO\textsubscript{2}e/pod) to embodied and lifetime scaling in the 80-pod scenario. Left: embodied scaling at fixed lifetime; right: lifetime scaling at fixed embodied emissions. Both TotEm and the MILP benchmark remain within a narrow band around the baseline.}
+\caption{Sensitivity of average per-pod emissions (kg CO\textsubscript{2}e/pod) to embodied and lifetime scaling in the 80-pod scenario (mean with standard deviation across independent runs). Left: embodied scaling at fixed lifetime; right: lifetime scaling at fixed embodied emissions. Both TotEm and the MILP benchmark remain within a narrow band around the baseline.}
 \label{f:sens}
 \end{figure}
 
-Figure~\ref{f:sens} shows that these perturbations change average per-pod emissions by at most \(\approx20\%\) and leave the qualitative picture intact: TotEm and the MILP benchmark stay close to each other, both remain well below the carbon-agnostic baseline, and the ordering observed in Section~\ref{s:red} is preserved. This suggests that our main findings about carbon-aware scheduling and the TotEm–MILP gap are robust to reasonable uncertainty in embodied-carbon and lifetime parameters.
+Figure~\ref{f:sens} shows that these perturbations change average per-pod emissions by at most \(\approx\pm25\%\) for TotEm and \(\approx\pm17\%\) for the MILP benchmark across embodied scaling, and within \(\approx\pm15\%\) (TotEm) / \(\approx\pm10\%\) (MILP) across lifetime scaling—ranges consistent with the Boavizta-derived variability band. The qualitative picture remains intact: TotEm and the MILP benchmark stay close to each other, both remain well below the carbon-agnostic baseline, and the ordering observed in Section~\ref{s:red} is preserved. This suggests that our main findings about carbon-aware scheduling and the TotEm–MILP gap are robust to reasonable uncertainty in embodied-carbon and lifetime parameters.
 
 \subsection{Sensitivity to Forecast Error}
 \label{s:forecast}
@@ -675,7 +675,7 @@ We can reduce overheads further by caching per-node energy/carbon curves, reusin
 
 \section{Conclusion and Future Work}\label{s:conc}
 	
-This paper shows that container orchestration can reduce \emph{total} emissions—operational and embodied—without sacrificing feasibility or incurring prohibitive runtime. Across controlled scales, TotEm consistently lowers emissions relative to a carbon-agnostic baseline while closely tracking the MILP benchmark. At a representative moderate-load point ($\approx 32$\% implied average CPU utilization over 24 hours), average per-pod emissions dropped from 10.1 to 3.3 g CO\textsubscript{2}e (\(-67.5\%\)) versus baseline, approaching the MILP at 2.6 g. Runtime grows smoothly with pods and nodes and remains within single-digit seconds at our largest settings, indicating practicality for precompute or nearline use.
+This paper shows that container orchestration can reduce \emph{total} emissions—operational and embodied—without sacrificing feasibility or incurring prohibitive runtime. Across controlled scales, TotEm consistently lowers emissions relative to a carbon-agnostic baseline while closely tracking the MILP benchmark. At a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), average per-pod emissions dropped from 36.6 to 24.7 g CO\textsubscript{2}e (\(-32.5\%\)) versus baseline, with the MILP reaching 14.1 g. Runtime grows smoothly with pods and nodes and remains within single-digit seconds at our largest settings, indicating practicality for precompute or nearline use.
 
 For practitioners, these results suggest an actionable path: integrate forecasted carbon signals and amortized embodied costs into placement, and deploy a fast heuristic to capture most of the achievable benefit. Our evaluation protocol—shared signals, models, constraints, and coverage-inclusive reporting—provides a reproducible basis for comparing algorithms and for tuning trade-offs between feasibility, carbon efficiency, and latency.
 

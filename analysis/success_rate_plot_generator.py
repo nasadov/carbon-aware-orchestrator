@@ -27,6 +27,38 @@ import utilization_plot_generator as util_mod
 DEFAULT_EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
 
 
+def _prepare_roots(experiments_root: str | None, experiments_roots: list[str] | None):
+    if experiments_roots:
+        roots = list(experiments_roots)
+    elif experiments_root:
+        roots = [experiments_root]
+    else:
+        roots = [DEFAULT_EXPERIMENTS_ROOT]
+
+    normalized = []
+    seen = set()
+    for r in roots:
+        abs_path = os.path.abspath(r)
+        if abs_path in seen:
+            continue
+        seen.add(abs_path)
+        normalized.append(abs_path)
+    return normalized
+
+
+def _build_output_suffix(roots: list[str]):
+    if len(roots) == 1:
+        folder_name = os.path.basename(os.path.normpath(roots[0]))
+        return folder_name.replace("sweep_", "") if folder_name.startswith("sweep_") else folder_name
+    parts = []
+    for r in roots:
+        name = os.path.basename(os.path.normpath(r))
+        name = name.replace("sweep_", "") if name.startswith("sweep_") else name
+        parts.append(name)
+    suffix = "multi_" + "__".join(parts)
+    return suffix[:120]
+
+
 def _read_pods_txt_if_present(session_dir: str, pods_count_from_dir: int) -> int | None:
     pods_marker = os.path.join(session_dir, 'pods.txt')
     if os.path.exists(pods_marker):
@@ -223,14 +255,38 @@ def create_success_rate_plot(
     selection: str = 'proportional',
     include_all: bool = False,
     experiments_root: str | None = None,
+    experiments_roots: list[str] | None = None,
     x_axis: str = 'utilization',
+    show_plot: bool = True,
+    output_suffix: str | None = None,
 ):
-    experiments_root = experiments_root or DEFAULT_EXPERIMENTS_ROOT
     """Generate success rate comparison plot by parsing experiment outputs."""
-    # Parse dynamic results
-    parsed = _parse_success_rates_from_experiments(experiments_root, selection, include_all)
+    roots = _prepare_roots(experiments_root, experiments_roots)
+    valid_roots = []
+    for r in roots:
+        if os.path.isdir(r):
+            valid_roots.append(r)
+        else:
+            print(f"⚠️ Experiments directory not found: {r}")
+
+    if not valid_roots:
+        print("❌ No valid experiments directories provided for success rate plotting.")
+        return
+
+    print("📂 (Success Rate) Scanning experiment roots:")
+    for r in valid_roots:
+        print(f"   - {r}")
+
+    # Parse dynamic results across all roots and aggregate
+    parsed = defaultdict(lambda: defaultdict(list))
+    for root in valid_roots:
+        root_results = _parse_success_rates_from_experiments(root, selection, include_all)
+        for algo, by_pods in root_results.items():
+            for pods, vals in by_pods.items():
+                parsed[algo][pods].extend(vals)
+
     if not parsed:
-        print(f"❌ No experiment results found in: {EXPERIMENTS_ROOT}")
+        print(f"❌ No experiment results found in: {', '.join(valid_roots)}")
         return
 
     algos_order, pod_counts_sorted, mean_rates, std_errs = _aggregate_results(parsed)
@@ -239,14 +295,17 @@ def create_success_rate_plot(
     x_axis_mode = x_axis or 'utilization'
     pods_to_x = {}
     if x_axis_mode == 'utilization':
-        pods_to_x = util_mod.compute_pods_to_24h_cpu_utilization(
-            experiments_root,
-            util_mod.NODES_YAML_PATH,
-            prefer_algo='vanilla',
-            horizon_hours=24.0,
-        )
+        for root in valid_roots:
+            pods_to_x = util_mod.compute_pods_to_24h_cpu_utilization(
+                root,
+                util_mod.NODES_YAML_PATH,
+                prefer_algo='vanilla',
+                horizon_hours=24.0,
+            )
+            if pods_to_x:
+                break
         if not pods_to_x:
-            print(f"⚠️ Could not compute utilization mapping from experiments at {experiments_root}; falling back to pod count on x-axis.")
+            print(f"⚠️ Could not compute utilization mapping from experiments at {', '.join(valid_roots)}; falling back to pod count on x-axis.")
             x_axis_mode = 'pods'
     if x_axis_mode != 'utilization':
         pods_to_x = {p: float(p) for p in pod_counts_sorted}
@@ -278,11 +337,11 @@ def create_success_rate_plot(
     labels = {
         'vanilla': 'Carbon-Agnostic',
         'heuristic': 'TotEm',
-        'heuristic-proportional': 'TotEm Proportional',
+        'heuristic-proportional': 'TotEm',
         'heuristic-uniform': 'TotEm Uniform',
-        'global-optimal': 'Oracle Upper Bound',
-        'global-optimal-proportional': 'Oracle Proportional',
-        'global-optimal-uniform': 'Oracle Uniform',
+        'global-optimal': 'Oracle',
+        'global-optimal-proportional': 'Oracle',
+        'global-optimal-uniform': 'Oracle (Uniform)',
     }
 
     # Plot each algorithm
@@ -346,10 +405,12 @@ def create_success_rate_plot(
     plt.tight_layout()
 
     # Save PDF only
-    output_dir = "/root/carbon-aware-orchestrator/figures/SuccessRate"
+    output_dir_base = "/root/carbon-aware-orchestrator/figures/SuccessRate"
+    suffix = output_suffix or _build_output_suffix(valid_roots)
+    output_dir = os.path.join(output_dir_base, suffix)
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    pdf_path = f"{output_dir}/success_rate_comparison_{timestamp}.pdf"
+    pdf_path = os.path.join(output_dir, f"success_rate_comparison_{timestamp}.pdf")
     plt.savefig(pdf_path, bbox_inches='tight', facecolor='white')
 
     print("✅ SUCCESS RATE PLOT GENERATED!")
@@ -363,7 +424,10 @@ def create_success_rate_plot(
             continue
         print(f"   {algo}: avg={np.mean(rates_list):.1f}% range={min(rates_list):.1f}%-{max(rates_list):.1f}%")
     
-    plt.show()
+    if show_plot:
+        plt.show()
+    else:
+        plt.close()
 
 if __name__ == "__main__":
     print("🚀 SUCCESS RATE PLOT GENERATOR")
@@ -374,6 +438,7 @@ if __name__ == "__main__":
     group.add_argument('--both', action='store_true', help='Plot both proportional and uniform (plus vanilla)')
     parser.add_argument('--all', action='store_true', help='Include all experiments (default: latest-only per algo and pod count)')
     parser.add_argument('--experiments-root', type=str, default=None, help='Override experiments root directory (default: repository experiments)')
+    parser.add_argument('--experiments-roots', type=str, nargs='+', default=None, help='List of experiment root directories (e.g., multiple seeds). Overrides --experiments-root if set.')
     parser.add_argument(
         '--x-axis',
         choices=['utilization', 'pods'],
@@ -386,5 +451,7 @@ if __name__ == "__main__":
         selection,
         include_all=args.all,
         experiments_root=args.experiments_root,
+        experiments_roots=args.experiments_roots,
         x_axis=args.x_axis,
+        show_plot=True,
     ) 

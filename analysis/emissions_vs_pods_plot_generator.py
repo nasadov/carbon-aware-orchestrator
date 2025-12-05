@@ -13,6 +13,7 @@ Embodied emissions are included by default; pass --exclude-emb to drop them.
 Flags:
   --uniform  Plot only uniform embodied allocation (plus vanilla)
   --both     Plot both proportional and uniform (plus vanilla)
+  --experiments-roots  Provide multiple experiment folders (e.g., different seeds)
 
 Usage:
     python analysis/emissions_vs_pods_plot_generator.py [--uniform | --both]
@@ -33,6 +34,7 @@ import yaml
 import sys
 
 import utilization_plot_generator as util_mod
+import success_rate_plot_generator as sr_plot
 
 # Ensure carbon_aware modules are importable
 CARBON_AWARE_SERVER_PY_PATH = os.path.join(
@@ -357,15 +359,68 @@ def _find_placement_csv(algo: str, dir_path: str):
     return None
 
 
+def _prepare_roots(experiments_root: str | None, experiments_roots: list[str] | None):
+    if experiments_roots:
+        roots = list(experiments_roots)
+    elif experiments_root:
+        roots = [experiments_root]
+    else:
+        roots = [DEFAULT_EXPERIMENTS_ROOT]
+
+    # Deduplicate while preserving order
+    normalized = []
+    seen = set()
+    for r in roots:
+        abs_path = os.path.abspath(r)
+        if abs_path in seen:
+            continue
+        seen.add(abs_path)
+        normalized.append(abs_path)
+    return normalized
+
+
+def _build_output_suffix(roots: list[str]):
+    """Derive a short, repeatable suffix for the output directory."""
+    if len(roots) == 1:
+        folder_name = os.path.basename(os.path.normpath(roots[0]))
+        return folder_name.replace("sweep_", "") if folder_name.startswith("sweep_") else folder_name
+
+    parts = []
+    for r in roots:
+        name = os.path.basename(os.path.normpath(r))
+        name = name.replace("sweep_", "") if name.startswith("sweep_") else name
+        parts.append(name)
+    suffix = "multi_" + "__".join(parts)
+    # Keep path short enough for most filesystems
+    return suffix[:120]
+
+
 def create_emissions_plot(
     selection: str = 'proportional',
     include_all: bool = False,
     ignore_idle: bool = False,
     ignore_embodied: bool = False,
     experiments_root: str | None = None,
+    experiments_roots: list[str] | None = None,
     x_axis: str = 'utilization',
+    run_success_rate: bool = False,
 ):
-    experiments_root = experiments_root or DEFAULT_EXPERIMENTS_ROOT
+    roots = _prepare_roots(experiments_root, experiments_roots)
+    valid_roots = []
+    for r in roots:
+        if os.path.isdir(r):
+            valid_roots.append(r)
+        else:
+            print(f"⚠️ Experiments directory not found: {r}")
+
+    if not valid_roots:
+        print("❌ No valid experiments directories provided.")
+        return
+
+    print("📂 Scanning experiment roots:")
+    for r in valid_roots:
+        print(f"   - {r}")
+
     # Prepare nodes and forecasts for computed emissions
     nodes = _load_nodes_from_yaml(NODES_FILE)
     forecasts = _load_carbon_forecasts(FORECASTS_FILE)
@@ -376,24 +431,22 @@ def create_emissions_plot(
     totals = defaultdict(lambda: defaultdict(list))      # algo -> pods -> [kg]
     per_pod = defaultdict(lambda: defaultdict(list))     # algo -> pods -> [kg/pod]
 
-    if not os.path.isdir(experiments_root):
-        print(f"❌ Experiments directory not found: {experiments_root}")
-        return
-
-    # Optionally filter to latest-only per (algo,pods)
-    discovered = list(_discover_experiments(experiments_root))
-    if not include_all:
-        latest_map = {}  # (algo,pods) -> (dir_path, mtime)
-        for algo, pods, dir_path, mtime in discovered:
-            if not _should_include_algo(algo, selection):
-                continue
-            key = (algo, pods)
-            prev = latest_map.get(key)
-            if prev is None or mtime > prev[1]:
-                latest_map[key] = (dir_path, mtime)
-        selected = [(algo, pods, dir_path) for (algo, pods), (dir_path, _) in latest_map.items()]
-    else:
-        selected = [(algo, pods, dir_path) for (algo, pods, dir_path, _) in discovered if _should_include_algo(algo, selection)]
+    # Optionally filter to latest-only per (algo,pods) within each root; always keep all distinct roots
+    selected = []
+    for root in valid_roots:
+        discovered = list(_discover_experiments(root))
+        if not include_all:
+            latest_map = {}  # (algo,pods) -> (dir_path, mtime)
+            for algo, pods, dir_path, mtime in discovered:
+                if not _should_include_algo(algo, selection):
+                    continue
+                key = (algo, pods)
+                prev = latest_map.get(key)
+                if prev is None or mtime > prev[1]:
+                    latest_map[key] = (dir_path, mtime)
+            selected.extend([(algo, pods, dir_path) for (algo, pods), (dir_path, _) in latest_map.items()])
+        else:
+            selected.extend([(algo, pods, dir_path) for (algo, pods, dir_path, _) in discovered if _should_include_algo(algo, selection)])
 
     for algo, pods, dir_path in selected:
         csv_path = _find_placement_csv(algo, dir_path)
@@ -406,7 +459,7 @@ def create_emissions_plot(
         per_pod[algo][pods].append(total_kg / rows)
 
     if not totals:
-        print(f"⚠️ No emissions data found in experiments: {experiments_root}")
+        print(f"⚠️ No emissions data found in experiments: {', '.join(valid_roots)}")
         return
 
     # Aggregate mean and std error (totals)
@@ -435,14 +488,18 @@ def create_emissions_plot(
     x_axis_mode = x_axis or 'utilization'
     pods_to_x = {}
     if x_axis_mode == 'utilization':
-        pods_to_x = util_mod.compute_pods_to_24h_cpu_utilization(
-            experiments_root,
-            NODES_FILE,
-            prefer_algo='vanilla',
-            horizon_hours=24.0,
-        )
+        for root in valid_roots:
+            pods_to_x = util_mod.compute_pods_to_24h_cpu_utilization(
+                root,
+                NODES_FILE,
+                prefer_algo='vanilla',
+                horizon_hours=24.0,
+            )
+            if pods_to_x:
+                break
         if not pods_to_x:
-            print(f"⚠️ Could not compute utilization mapping from experiments at {experiments_root}; falling back to pod count on x-axis.")
+            joined_roots = ", ".join(valid_roots)
+            print(f"⚠️ Could not compute utilization mapping from experiments at {joined_roots}; falling back to pod count on x-axis.")
             x_axis_mode = 'pods'
     if x_axis_mode != 'utilization':
         pods_to_x = {p: float(p) for p in pod_counts_sorted}
@@ -495,7 +552,7 @@ def create_emissions_plot(
         'global-optimal-op': 'o',
     }
     labels = {
-        'vanilla': 'Carbon-Agnostic Baseline',
+        'vanilla': 'Carbon-Agnostic',
         'vanilla-op': 'Carbon-Agnostic Operational-Only',
         'heuristic': 'TotEm',
         'heuristic-proportional': 'TotEm',
@@ -569,14 +626,8 @@ def create_emissions_plot(
 
     output_dir_base = "/root/carbon-aware-orchestrator/figures/EmissionsVsPods"
     
-    # Try to extract timestamp from experiments_root path to use as subdirectory
-    # e.g. .../sweep_20251203_112849_s42 -> 20251203_112849_s42
-    folder_name = os.path.basename(os.path.normpath(experiments_root))
-    if folder_name.startswith("sweep_"):
-        ts_suffix = folder_name.replace("sweep_", "")
-    else:
-        ts_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+    # Derive an output subdirectory based on the provided experiment roots
+    ts_suffix = _build_output_suffix(valid_roots)
     output_dir = os.path.join(output_dir_base, ts_suffix)
     os.makedirs(output_dir, exist_ok=True)
     
@@ -711,6 +762,21 @@ def create_emissions_plot(
             plt.savefig(pdf_path_improvement, bbox_inches='tight', facecolor='white')
             print(f"📊 PDF saved: {pdf_path_improvement}")
 
+    # Optional hook: generate success rate plots for the same experiment roots
+    if run_success_rate:
+        sr_selection = selection if selection in ('proportional', 'uniform', 'both') else 'proportional'
+        try:
+            sr_plot.create_success_rate_plot(
+                selection=sr_selection,
+                include_all=include_all,
+                experiments_roots=valid_roots,
+                x_axis=x_axis,
+                show_plot=False,
+                output_suffix=ts_suffix,
+            )
+        except Exception as e:
+            print(f"⚠️ Success rate plot generation failed: {e}")
+
 
 if __name__ == "__main__":
     print("🚀 EMISSIONS VS PODS PLOT GENERATOR")
@@ -724,12 +790,14 @@ if __name__ == "__main__":
     parser.add_argument('--exclude-idle', action='store_true', help='Exclude idle power from operational emissions (default: included)')
     parser.add_argument('--exclude-emb', action='store_true', help='Exclude embodied emissions (default: included)')
     parser.add_argument('--experiments-root', type=str, default=None, help='Override experiments root directory (default: repository experiments)')
+    parser.add_argument('--experiments-roots', type=str, nargs='+', default=None, help='List of experiment root directories (e.g., multiple seeds). Overrides --experiments-root if set.')
     parser.add_argument(
         '--x-axis',
         choices=['utilization', 'pods'],
         default='utilization',
         help='X-axis mode: 24h-normalized CPU utilization (default) or raw pod count',
     )
+    parser.add_argument('--also-success-rate', action='store_true', help='Also generate success rate plot(s) using the same experiment roots.')
     args = parser.parse_args()
     selection = 'both' if args.both else ('uniform' if args.uniform else ('op' if args.op else 'proportional'))
     create_emissions_plot(
@@ -738,5 +806,7 @@ if __name__ == "__main__":
         ignore_idle=args.exclude_idle,
         ignore_embodied=args.exclude_emb,
         experiments_root=args.experiments_root,
+        experiments_roots=args.experiments_roots,
         x_axis=args.x_axis,
+        run_success_rate=args.also_success_rate,
     )
