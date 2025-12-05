@@ -216,6 +216,7 @@ def find_placement_csv(session_dir: str, algorithm: str) -> Optional[str]:
                 "vanilla_placement_session_bind.csv",
                 "vanilla_placement_session_fixed.csv",
                 "vanilla_placement_session.csv",
+                "vanilla_placements_session.csv",
                 "vanilla_placements.csv",
             ]
         )
@@ -507,9 +508,24 @@ def analyze_results(args, metadata: MetadataStore):
 
 def plot_carbon_savings(runs_df: pd.DataFrame, summary_df: pd.DataFrame, figure_dir: str) -> None:
     os.makedirs(figure_dir, exist_ok=True)
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10.5, 6.5))
 
-    # Per-pod lines for heuristic: mean savings vs MAPE, averaged over seeds
+    label_map = {
+        "heuristic": "TotEm",
+        "vanilla": "Carbon-Agnostic",
+        "global-optimal": "Oracle",
+    }
+    # Palette aligned with other paper figures (orange heuristic/TotEm,
+    # red carbon-agnostic, green oracle).
+    color_map = {
+        "heuristic": "#F28E2B",        # orange
+        "vanilla": "#E15759",          # red
+        "global-optimal": "#59A14F",   # green
+    }
+    markers = ["o", "s", "D", "^", "v", "P", "X"]
+    line_styles = ["-", "--", "-.", ":"]
+
+    # Per-pod lines for TotEm: mean savings vs MAPE with seed std as error bars
     heur_df = runs_df[runs_df["algorithm"] == "heuristic"]
     all_pods = sorted(heur_df["pods"].unique())
     # Pick at most 4 representative pod counts spanning the range
@@ -525,41 +541,71 @@ def plot_carbon_savings(runs_df: pd.DataFrame, summary_df: pd.DataFrame, figure_
         sub = heur_df[heur_df["pods"] == pods]
         if sub.empty:
             continue
-        grouped = sub.groupby("noise_mape")["carbon_savings_pct"].mean().reset_index()
-        x = grouped["noise_mape"].values
-        y = grouped["carbon_savings_pct"].values
-        color = cmap(idx % 10)
-        label = f"TotEm {int(pods)} pods"
-        plt.plot(x, y, marker="o", linewidth=1.8, color=color, alpha=0.85, label=label)
+        grouped = sub.groupby("noise_mape")["carbon_savings_pct"]
+        grouped_mean = grouped.mean().reset_index()
+        grouped_std = grouped.std().fillna(0.0).reset_index()
+        x = grouped_mean["noise_mape"].values
+        y = grouped_mean["carbon_savings_pct"].values
+        yerr = grouped_std["carbon_savings_pct"].values
+        color = color_map["heuristic"]
+        marker = markers[idx % len(markers)]
+        linestyle = line_styles[idx % len(line_styles)]
+        label = f"{label_map['heuristic']} {int(pods)} pods"
+        plt.errorbar(
+            x,
+            y,
+            yerr=yerr,
+            marker=marker,
+            linestyle=linestyle,
+            linewidth=2.0,
+            markersize=8.5,
+            color=color,
+            alpha=0.9,
+            capsize=3,
+            label=label,
+        )
 
-    # Optional: overlay global-optimal mean as a thick reference line
+    # Overlay Oracle mean with std band across pods/seeds
     oracle_df = summary_df[summary_df["algorithm"] == "global-optimal"]
     if not oracle_df.empty:
+        oracle_df = oracle_df.sort_values("noise_mape")
         x_o = oracle_df["noise_mape"].values
         y_o = oracle_df["mean_savings_pct"].values
+        std_o = oracle_df["std_savings_pct"].values
+        plt.fill_between(
+            x_o,
+            y_o - std_o,
+            y_o + std_o,
+            color=color_map["global-optimal"],
+            alpha=0.12,
+            linewidth=0,
+        )
         plt.plot(
             x_o,
             y_o,
-            color="black",
+            color=color_map["global-optimal"],
             linestyle="--",
-            linewidth=2.5,
-            label="Oracle (mean over pods)",
+            linewidth=2.0,
+            marker=None,
+            label=f"{label_map['global-optimal']} (mean over pods)",
         )
-    plt.xlabel("Forecast Error (MAPE %)")
-    plt.ylabel("Carbon Savings vs Carbon-Agnostic (%)")
-    plt.title("TotEm Robustness to Forecast Error\nPer-Pod-Count Savings vs Carbon-Agnostic")
+    plt.xlabel("Forecast Error (MAPE %)", fontsize=12)
+    plt.ylabel("Carbon Savings vs Carbon-Agnostic (%)", fontsize=12)
     plt.grid(True, linestyle="--", alpha=0.4)
+    plt.tick_params(labelsize=11)
 
     # Use only the actual noise levels as x-ticks (no 2.5, 7.5, etc.)
     xticks = sorted(heur_df["noise_mape"].unique())
     plt.xticks(xticks, [f"{int(x)}" if float(x).is_integer() else f"{x:g}" for x in xticks])
 
-    # Place legend inside the plot in the upper left corner
     plt.legend(
-        fontsize=8,
-        ncol=1,
-        loc="upper left",
+        fontsize=9,
+        ncol=2,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.18),
         frameon=True,
+        columnspacing=1.0,
+        handlelength=2.5,
     )
 
     plt.tight_layout()
@@ -581,7 +627,14 @@ def parse_args():
     parser.add_argument("--pod-counts", type=int, nargs="+", default=[100, 140, 180], help="Exact pod counts to regenerate workloads for.")
     parser.add_argument("--noise-levels", type=float, nargs="+", default=[0.0, 5.0, 10.0, 15.0, 20.0], help="MAPE percentages to test.")
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2], help="Random seeds for noise generation.")
-    parser.add_argument("--algorithms", type=str, nargs="+", default=["vanilla", "heuristic", "global-optimal"], choices=["vanilla", "heuristic", "global-optimal"], help="Algorithms to run.")
+    parser.add_argument(
+        "--algorithms",
+        type=str,
+        nargs="+",
+        default=["vanilla", "heuristic"],  # Default to Carbon-Agnostic + TotEm; add Oracle explicitly if needed.
+        choices=["vanilla", "heuristic", "global-optimal"],
+        help="Algorithms to run.",
+    )
     parser.add_argument("--experiment-root", type=str, default=DEFAULT_EXPERIMENT_ROOT, help="Directory to store experiment runs.")
     parser.add_argument("--figure-dir", type=str, default=DEFAULT_FIGURE_DIR, help="Directory to store plots.")
     parser.add_argument("--workload-config", type=str, default=WORKLOAD_CONFIG)
@@ -599,6 +652,15 @@ def parse_args():
 
 def main():
     args = parse_args()
+    # Normalize paths to avoid cwd-dependent behavior when subprocesses change directories
+    args.experiment_root = os.path.abspath(args.experiment_root)
+    args.figure_dir = os.path.abspath(args.figure_dir)
+    args.workload_config = os.path.abspath(args.workload_config)
+    args.generator = os.path.abspath(args.generator)
+    args.workloads_dir = os.path.abspath(args.workloads_dir)
+    args.nodes_file = os.path.abspath(args.nodes_file)
+    args.ground_truth_forecast = os.path.abspath(args.ground_truth_forecast)
+    args.metadata_file = os.path.abspath(args.metadata_file)
     if "vanilla" not in args.algorithms:
         print("⚠️ Vanilla baseline required for savings; adding it automatically.")
         args.algorithms.append("vanilla")
@@ -615,4 +677,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

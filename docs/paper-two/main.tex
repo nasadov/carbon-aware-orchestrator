@@ -606,76 +606,63 @@ With 32 nodes held constant, runtime grows approximately linearly with total pod
 \noindent\textit{Takeaways.} (i) Empirical scaling matches the intended design: linear in pods at fixed nodes, and close to linear in nodes at fixed pods; (ii) kube-inspired pruning (node sampling and early feasible stop) keeps growth in check; (iii) MILP remains orders of magnitude slower and is best treated as a benchmark for bounds rather than a production scheduler.
 
 \subsection{Sensitivity to Embodied Assumptions}\label{s:sens}
-
-Embodied emissions and lifetimes in Table~\ref{t:emb} are derived from Boavizta~\cite{boavizta2023}, but real deployments see variation between individual hardware configurations and management policies. To test that our conclusions do not hinge on exact values, we run a one-factor-at-a-time sensitivity study at the same representative utilization level. Guided by the Boavizta variability analysis, we apply uniform perturbations across all node classes: embodied emissions scaled by \(\{0.60, 0.80, 1.00, 1.20, 1.60\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\), averaged over independent seeds.
-
-\newcommand{\EmbodiedSensitivityPlot}{\detokenize{figures/EmbodiedSensitivity/embodied_sensitivity_80pods_20251204_1931UTC.pdf}}
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.95\linewidth]{\EmbodiedSensitivityPlot}
-\caption{Sensitivity of average per-pod emissions (kg CO\textsubscript{2}e/pod) to embodied and lifetime scaling in the 80-pod scenario (mean with standard deviation across independent runs). Left: embodied scaling at fixed lifetime; right: lifetime scaling at fixed embodied emissions. Both TotEm and the MILP benchmark remain within a narrow band around the baseline.}
-\label{f:sens}
-\end{figure}
-
-Figure~\ref{f:sens} shows that these perturbations change average per-pod emissions by at most \(\approx\pm25\%\) for TotEm and \(\approx\pm17\%\) for the MILP benchmark across embodied scaling, and within \(\approx\pm15\%\) (TotEm) / \(\approx\pm10\%\) (MILP) across lifetime scaling—ranges consistent with the Boavizta-derived variability band. The qualitative picture remains intact: TotEm and the MILP benchmark stay close to each other, both remain well below the carbon-agnostic baseline, and the ordering observed in Section~\ref{s:red} is preserved. This suggests that our main findings about carbon-aware scheduling and the TotEm–MILP gap are robust to reasonable uncertainty in embodied-carbon and lifetime parameters.
-
-\subsection{Sensitivity to Forecast Error}
-\label{s:forecast}
-\newcommand{\ForecastErrorPlot}{\detokenize{figures/ForecastErrorSensitivity/carbon_savings_vs_forecast_error_20251115_132758.pdf}}
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=0.95\linewidth]{\ForecastErrorPlot}
-  \caption{Carbon savings relative to the carbon-agnostic baseline when schedulers consume noisy forecasts with various MAPE levels. Thin lines show TotEm savings for four representative pod counts; the dashed line shows the MILP bound averaged over pod counts. Decisions use the noisy traces; scoring uses the original Electricity Maps trace.}
-  \label{f:forecast}
-\end{figure}
-	
-\noindent\textit{Protocol.} To test robustness we introduce controlled noise into the Electricity Maps trace and regenerate schedules using the same experimental setup as in Section~\ref{s:setup}. We inject multiplicative Gaussian noise with calibrated scale factors that reach target mean absolute percentage errors (MAPE) of 0, 5, 10, 15, and 20\%; for each level we rerun the carbon-agnostic baseline, TotEm, and the MILP scheduler across pod counts from 20 to 200 and three random seeds. Each scheduler observes only the noisy trace while making decisions, but we evaluate the resulting placements against the untouched trace to approximate real-world execution with forecast error. We report carbon savings relative to the optimized carbon-agnostic baseline after resampling nodes' carbon curves and recomputing operational+embodied emissions.
-	
-\noindent\textit{Findings.} Figure~\ref{f:forecast} shows that the TotEm’s robustness depends strongly on system scale, while the MILP bound is remarkably stable. For small experiments (e.g., 20 pods), TotEm maintains large savings even under 20\% MAPE, but as pod count increases its curve slopes downward and the spread between lines widens, indicating that forecast noise can substantially erode savings in dense regimes. In contrast, the MILP remains near \(\approx95\%\) savings for all noise levels and pod counts, confirming that much of the remaining gap is due to limited search rather than an inherent brittleness of carbon-aware placement. Because the carbon-agnostic baseline ignores forecasts entirely, its emissions are identical across the sweep, so all variation in the figure comes from how carbon-aware schedulers respond to imperfect predictions.
+   
+   \noindent\textit{Protocol.} Embodied emissions and lifetimes in Table~\ref{t:emb} are derived from Boavizta~\cite{boavizta2023}, but real deployments see variation between individual hardware configurations and management policies. To test that our conclusions do not hinge on exact values, we run a one-factor-at-a-time sensitivity study at the same representative utilization level. Guided by the Boavizta variability analysis, we apply uniform perturbations across all node classes: embodied emissions scaled by \(\{0.60, 0.80, 1.00, 1.20, 1.60\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\), averaged over independent seeds.
+   
+   \newcommand{\EmbodiedSensitivityPlot}{\detokenize{figures/EmbodiedSensitivity/embodied_sensitivity_80pods_20251204_1931UTC.pdf}}
+   \begin{figure}[t]
+   \centering
+   \includegraphics[width=0.95\linewidth]{\EmbodiedSensitivityPlot}
+   \caption{Sensitivity of average per-pod emissions (kg CO\textsubscript{2}e/pod) to embodied and lifetime scaling in the 80-pod scenario (mean with standard deviation across independent runs). Left: embodied scaling at fixed lifetime; right: lifetime scaling at fixed embodied emissions. Both TotEm and the Oracle benchmark remain within a narrow band around the baseline.}
+   \label{f:sens}
+   \end{figure}
+   
+   \noindent\textit{Findings.} Figure~\ref{f:sens} shows that these perturbations change average per-pod emissions by at most \(\approx\pm25\%\) for TotEm and \(\approx\pm17\%\) for the Oracle benchmark across embodied scaling, and within \(\approx\pm15\%\) (TotEm) / \(\approx\pm10\%\) (Oracle) across lifetime scaling—ranges consistent with the Boavizta-derived variability band. The qualitative picture remains intact: TotEm and the Oracle benchmark stay close to each other, both remain well below the carbon-agnostic baseline, and the ordering observed in Section~\ref{s:red} is preserved. This suggests that our main findings about carbon-aware scheduling and the TotEm–Oracle gap are robust to reasonable uncertainty in embodied-carbon and lifetime parameters.
+   
+   \subsection{Sensitivity to Forecast Error}
+   \label{s:forecast}
+   \newcommand{\ForecastErrorPlot}{\detokenize{figures/ForecastErrorSensitivity/carbon_savings_vs_forecast_error_20251205_121350.pdf}}
+   \begin{figure}[t]
+     \centering
+     \includegraphics[width=0.95\linewidth]{\ForecastErrorPlot}
+     \caption{Carbon savings relative to the carbon-agnostic baseline when schedulers consume noisy forecasts with various MAPE levels. Thin lines show TotEm savings for four representative pod counts. Decisions use the noisy traces; scoring uses the original Electricity Maps trace.}
+     \label{f:forecast}
+   \end{figure}
+   	
+   \noindent\textit{Protocol.} To test robustness we introduce controlled noise into the Electricity Maps trace and regenerate schedules using the same experimental setup as in Section~\ref{s:setup}. We inject multiplicative Gaussian noise with calibrated scale factors that reach target mean absolute percentage errors (MAPE) of 0, 5, 10, 15, and 20\%; for each level we rerun the carbon-agnostic baseline and TotEm across pod counts 20, 80, 140, and 200 and three random seeds. Each scheduler observes only the noisy trace while making decisions, but we evaluate the resulting placements against the untouched trace to approximate real-world execution with forecast error. We report carbon savings relative to the optimized carbon-agnostic baseline after resampling nodes' carbon curves and recomputing operational+embodied emissions.
+   	
+   \noindent\textit{Findings.} Figure~\ref{f:forecast} shows that TotEm exhibits remarkable robustness to forecast error across all system scales. For small experiments (e.g., 20 pods), TotEm maintains large savings even under 20\% MAPE. As pod count increases, absolute savings naturally decrease due to cluster saturation, yet the savings remain stable with respect to forecast noise. This indicates that TotEm's decision-making—which ranks timeslots by carbon intensity—remains effective even when intensity values are perturbed, as the relative ordering of windows is often preserved or the best windows remain good enough. Because the carbon-agnostic baseline ignores forecasts entirely, its emissions are identical across the sweep, so all variation in the figure comes from how carbon-aware schedulers respond to imperfect predictions.
 
 \section{Discussion}
 \label{s:disc}
 
-We interpret the emissions patterns (why per-pod curves are flat and why the vanilla baseline starts high), discuss implications and limitations, and outline threats to validity, tying back to the methods in Section~\ref{s:setup} and results in Section~\ref{s:res}.
+Our results demonstrate that incorporating both operational and embodied emissions into container orchestration is not only feasible but essential for genuine sustainability. TotEm achieves substantial carbon reductions ($\approx$32.5\% at moderate load) relative to a carbon-agnostic baseline, tracking the Oracle benchmark effectively across most scales. In this section, we analyze the mechanisms driving these reductions, discuss the computational trade-offs, and evaluate robustness and validity.
 
-\paragraph*{Revisiting our questions}
-Our results indicate that (i) feasibility remains high under carbon-aware placement with realistic slack, (ii) the TotEm approaches MILP's carbon outcome across scales while running orders of magnitude faster, and (iii) precompute latency remains compatible with nearline or periodic admission control, suggesting practical deployability.
+\subsection{Mechanisms of Carbon Reduction}
+The significant emissions gap between the carbon-agnostic baseline and TotEm stems from fundamentally different placement strategies. The baseline, mirroring standard Kubernetes behavior (LeastAllocated), tends to spread workloads across nodes. While beneficial for failover and burst capacity, this strategy maximizes the number of active nodes, thereby incurring the idle power and embodied carbon "entry tax" of many machines simultaneously. 
 
-\subsection{Interpreting Emissions Patterns}
-\paragraph*{Why per-pod curves are flat}
-With co-location–aware accounting, dynamic power for a node-hour is linear in aggregate utilization \(U\), and per-pod attribution scales with CPU share. The pod-normalized dynamic term simplifies to \(\mathrm{CI}\times k \times u_i\), independent of the number of co-located pods. Idle and embodied are paid \emph{once} per active node-hour and allocated proportionally to CPU share, so a pod’s share \(\propto u_i/U\) \emph{shrinks} as utilization grows. As a result, average emissions per pod stay approximately constant (or slightly decrease) even as the system fills and placement flexibility declines.
+TotEm, by explicitly minimizing a comprehensive carbon objective, naturally favors consolidation when grid carbon intensity is high or when node-hours can be saved. As observed in Section~\ref{s:impact}, this shifts utilization from a "spread" pattern to a "dense" pattern, amortizing the fixed manufacturing cost of hardware over more pods per node-hour. Crucially, this consolidation is carbon-aware: unlike simple bin-packing, TotEm avoids consolidation in regions or timeslots where the grid is dirty, unless the embodied savings outweigh the operational penalty. This dynamic balancing acts as a form of "sustainable elasticity," expanding the footprint only when the grid is clean enough to justify the added hardware overhead.
 
-\paragraph*{Why vanilla starts high}
-The vanilla scheduler’s LeastAllocated-like scoring spreads pods to underutilized nodes, activating many node-hours early. This incurs idle and amortized embodied costs across more nodes and often places work in high-CI nodes/timeslots from the outset, leading to substantially higher per-pod emissions relative to carbon-aware schedulers that consolidate selectively and align with low-CI windows.
+\subsection{The Oracle Gap and Computational Practicality}
+While TotEm captures a large fraction of the potential savings, a gap remains between it and the MILP-based Oracle ($\approx$10~g CO\textsubscript{2}e/pod at moderate load). This gap reflects the difference between a greedy heuristic and global optimization. TotEm makes irreversible decisions per pod, potentially saturating "good" windows early, whereas the Oracle can rearrange the entire schedule to fit difficult pods into optimal slots.
 
-\subsection{Implications and Limitations}
-\paragraph*{How it scales}
-In practice, runtime grows with the number of pods and nodes that must be evaluated. Two things keep it fast: (i) realistic deadlines shrink the number of eligible start times per pod, and (ii) early feasibility checks discard many node–time candidates before detailed scoring. Memory use grows with tracked capacity per node and the number of pods under consideration.
+However, this optimality comes at a prohibitive cost. As shown in Section~\ref{s:time}, the Oracle's runtime scales poorly, making it unsuitable for dynamic clusters. TotEm, with its polynomial time complexity and single-digit second runtimes, offers a practical trade-off: it delivers most of the sustainability benefit—changing the "order of magnitude" of emissions—while remaining deployable in real-time or near-line admission control loops.
 
-\paragraph*{Empirical behavior}
-Across our sweep (12-slot horizon; 8–64 nodes; 50–400 pods; three replicates), runtime increased smoothly with load and remained under eight seconds at the largest point, suitable for online or nearline admission control.
+\subsection{Robustness to Real-World Uncertainty}
+A critical barrier to adopting carbon-aware scheduling has been the fear that forecast errors will degrade performance. Our sensitivity analysis (Section~\ref{s:forecast}) provides reassuring evidence to the contrary. TotEm maintains consistent savings even as forecast error (MAPE) increases to 20\%. 
 
-\paragraph*{Implications for deployability}
-When response-time targets are tight, we can further cap per-pod evaluations to a small set of promising nodes (e.g., by carbon intensity), reducing constant factors while preserving outcomes.
-
-\paragraph*{When it slows down}
-Very loose deadlines, many nodes, or long durations increase candidates to check and can slow evaluation. Rich policy constraints also add per-candidate checks. The MILP, by contrast, can be much slower and is retained as a benchmarking tool rather than for production.
-
-\paragraph*{Further speedups}
-We can reduce overheads further by caching per-node energy/carbon curves, reusing capacity snapshots across similar pods, and evaluating batches of candidates together.
+We attribute this robustness to the nature of the decision space. The scheduler relies on the \textit{relative ranking} of time windows rather than absolute precision. Even with noise, a "clean" night-time window generally remains cleaner than a "dirty" evening peak. As long as the signal preserves the coarse-grained structure of the grid's daily cycle, TotEm can successfully shift work to lower-carbon periods. Similarly, Section~\ref{s:sens} shows that while exact embodied carbon values shift the absolute numbers, the relative ordering of algorithms and the benefits of consolidation remain stable, insulating the approach from supply-chain data uncertainties.
 
 \subsection{Threats to Validity}
-\paragraph*{Internal validity} We control randomness via fixed seeds and validate constraints post hoc. Remaining risks include generator-induced artifacts; we mitigate by sweeping multiple pod counts and infrastructures.
+\paragraph*{Internal Validity} Our experiments rely on synthetic workloads. While we modeled requests and durations based on common cluster traces, real production environments may exhibit burstier arrival patterns or complex dependencies (e.g., microservice chains) that we do not model. We mitigate this by sweeping a wide range of load factors to ensure the trends hold across utilization regimes.
 
-\paragraph*{Construct validity} We use ACI-based operational emissions and amortized embodied accounting. Alternative signals (e.g., marginal intensity, excess renewable) could change relative benefits.
+\paragraph*{External Validity} We utilize Average Carbon Intensity (ACI) as our optimization signal. Some economists argue that Marginal Emissions Factors (MEF) more accurately reflect the immediate grid impact of load changes. While TotEm is agnostic to the signal source—it minimizes whatever time-series it is given—the magnitude of savings might differ under MEF. Furthermore, our offline precomputation assumes perfect knowledge of job arrival (batch processing); in an online setting, the "greedy" penalty might increase as the scheduler cannot see future arrivals, though this is a standard limitation of online algorithms.
 
-\paragraph*{External validity} Results derive from synthetic workloads and consolidated forecasts; real clusters may have additional constraints (affinity/anti-affinity, topology spread, storage). Our simulator architecture allows incrementally adding these.
-
-\paragraph*{Conclusion validity} We report multiple scales and pair emissions with success rate and runtime to avoid over-attributing gains to any single metric.
+\paragraph*{Construct Validity} Our model assumes that "embodied carbon" can be linearly amortized over time and utilization. While consistent with the SCI standard, this is an accounting convention. It does not physically "emit" carbon during the job's run but rather attributes a share of the sunk cost. We argue this is the correct incentive for software design: it encourages maximizing the utility of manufactured devices, thereby deferring the need for new hardware production.
 
 \section{Conclusion and Future Work}\label{s:conc}
 	
-This paper shows that container orchestration can reduce \emph{total} emissions—operational and embodied—without sacrificing feasibility or incurring prohibitive runtime. Across controlled scales, TotEm consistently lowers emissions relative to a carbon-agnostic baseline while closely tracking the MILP benchmark. At a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), average per-pod emissions dropped from 36.6 to 24.7 g CO\textsubscript{2}e (\(-32.5\%\)) versus baseline, with the MILP reaching 14.1 g. Runtime grows smoothly with pods and nodes and remains within single-digit seconds at our largest settings, indicating practicality for precompute or nearline use.
+This paper shows that container orchestration can reduce \emph{total} emissions—operational and embodied—without sacrificing feasibility or incurring prohibitive runtime. Across controlled scales, TotEm consistently lowers emissions relative to a carbon-agnostic baseline while closely tracking the Oracle benchmark. At a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), average per-pod emissions dropped from 36.6 to 24.7 g CO\textsubscript{2}e (\(-32.5\%\)) versus baseline, with the Oracle reaching 14.1 g. Runtime grows smoothly with pods and nodes and remains within single-digit seconds at our largest settings, indicating practicality for precompute or nearline use. Furthermore, our sensitivity analysis demonstrates that TotEm's carbon savings are robust to forecast errors up to 20\% MAPE, validating the reliability of carbon-aware scheduling even with imperfect grid intelligence.
 
 For practitioners, these results suggest an actionable path: integrate forecasted carbon signals and amortized embodied costs into placement, and deploy a fast heuristic to capture most of the achievable benefit. Our evaluation protocol—shared signals, models, constraints, and coverage-inclusive reporting—provides a reproducible basis for comparing algorithms and for tuning trade-offs between feasibility, carbon efficiency, and latency.
 
