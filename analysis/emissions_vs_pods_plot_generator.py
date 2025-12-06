@@ -525,7 +525,7 @@ def create_emissions_plot(
                 improvement_vs_vanilla[algo][pods] = improvement
 
     # Plot
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(3.5, 2.7))
 
     colors = {
         'vanilla': '#d62728',
@@ -587,23 +587,23 @@ def create_emissions_plot(
         marker = markers.get(algo, 'o')
         label = labels.get(algo, algo.replace('-', ' ').title())
         if any(e > 0 for e in y_errs):
-            plt.errorbar(x_vals, y_vals, yerr=y_errs, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9, capsize=4)
+            plt.errorbar(x_vals, y_vals, yerr=y_errs, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9, capsize=3)
         else:
-            plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9)
+            plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9)
 
     if x_axis_mode == 'utilization':
-        plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+        plt.xlabel('Implied Avg. CPU Utilization\n(24h, %)', fontsize=8, labelpad=6)
     else:
-        plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
-    plt.ylabel('Total Carbon Emissions per Experiment (kg CO₂e)', fontsize=14, fontweight='bold')
+        plt.xlabel('Number of Pods to Schedule', fontsize=8)
+    plt.ylabel('Total Emissions\n(kg CO₂e)', fontsize=8, labelpad=4)
     title_flags = []
     if ignore_idle:
         title_flags.append('Idle Excluded')
     if ignore_embodied:
         title_flags.append('Embodied Excluded')
     title_suffix = f" ({', '.join(title_flags)})" if title_flags else ''
-    plt.title(f'Total Carbon Emissions vs. Pod Count{title_suffix}\nCarbon-Agnostic vs TotEm vs Oracle', fontsize=16, fontweight='bold', pad=20)
-    plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
+    plt.title('')
+    plt.grid(True, alpha=0.3, linestyle='--', linewidth=0.6)
     if pod_counts_sorted:
         if x_axis_mode == 'utilization':
             x_coords = [pods_to_x.get(p, float(p)) for p in pod_counts_sorted]
@@ -615,13 +615,14 @@ def create_emissions_plot(
                 hi = lo + 5
             hi = min(100, hi)
             plt.xlim(lo, hi)
-            plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+            step = 10
+            plt.xticks(list(range(lo, hi + 1, step)), fontsize=8)
         else:
             plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
-            plt.xticks(pod_counts_sorted, fontsize=12)
+            plt.xticks(pod_counts_sorted, fontsize=8)
     plt.ylim(bottom=0)
-    plt.yticks(fontsize=12)
-    plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
+    plt.yticks(fontsize=8)
+    plt.legend(fontsize=8, loc='best', framealpha=0.9, shadow=False, fancybox=False)
     plt.tight_layout()
 
     output_dir_base = "/root/carbon-aware-orchestrator/figures/EmissionsVsPods"
@@ -652,7 +653,7 @@ def create_emissions_plot(
             print(f"  {algo}: ", ", ".join(line))
 
     # Second plot: emissions per placed pod (kg/pod)
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(3.5, 2.7))
     for algo in algos_order:
         x_vals, y_vals, y_errs = [], [], []
         for pods in pod_counts_sorted:
@@ -666,17 +667,17 @@ def create_emissions_plot(
         marker = markers.get(algo, 'o')
         label = labels.get(algo, algo.replace('-', ' ').title())
         if any(e > 0 for e in y_errs):
-            plt.errorbar(x_vals, y_vals, yerr=y_errs, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9, capsize=4)
+            plt.errorbar(x_vals, y_vals, yerr=y_errs, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9, capsize=3)
         else:
-            plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9)
+            plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9)
 
     if x_axis_mode == 'utilization':
-        plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+        plt.xlabel('Implied Avg. CPU Utilization\n(24h, %)', fontsize=8, labelpad=6)
     else:
-        plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
-    plt.ylabel('Emissions per Placed Pod (kg CO₂e/pod)', fontsize=14, fontweight='bold')
-    plt.title(f'Emissions per Pod vs. Pod Count{title_suffix}\nCarbon-Agnostic vs TotEm vs Oracle', fontsize=16, fontweight='bold', pad=20)
-    plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
+        plt.xlabel('Number of Pods to Schedule', fontsize=8)
+    plt.ylabel('Emissions per Pod\n(kg CO₂e/pod)', fontsize=8, labelpad=4)
+    plt.title('')
+    plt.grid(True, alpha=0.3, linestyle='--', linewidth=0.6)
     if pod_counts_sorted:
         if x_axis_mode == 'utilization':
             x_coords = [pods_to_x.get(p, float(p)) for p in pod_counts_sorted]
@@ -688,13 +689,14 @@ def create_emissions_plot(
                 hi = lo + 5
             hi = min(100, hi)
             plt.xlim(lo, hi)
-            plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+            step = 10
+            plt.xticks(list(range(lo, hi + 1, step)), fontsize=8)
         else:
             plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
-            plt.xticks(pod_counts_sorted, fontsize=12)
+            plt.xticks(pod_counts_sorted, fontsize=8)
     plt.ylim(bottom=0)
-    plt.yticks(fontsize=12)
-    plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
+    plt.yticks(fontsize=8)
+    plt.legend(fontsize=8, loc='best', framealpha=0.9, shadow=False, fancybox=False)
     plt.tight_layout()
 
     base_perpod = f"emissions_per_pod_vs_pods_{timestamp}"
@@ -704,7 +706,7 @@ def create_emissions_plot(
 
     # Third plot: percentage improvement relative to vanilla baseline
     if vanilla_key and improvement_vs_vanilla:
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=(3.5, 2.7))
         compare_algos = [a for a in algos_order if a in improvement_vs_vanilla]
         if not compare_algos:
             print("⚠️ No comparison algorithms available for percentage improvement plot.")
@@ -720,16 +722,16 @@ def create_emissions_plot(
                 color = colors.get(algo, '#1f77b4')
                 marker = markers.get(algo, 'o')
                 label = labels.get(algo, algo.replace('-', ' ').title())
-                plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=3, markersize=10, alpha=0.9)
+                plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9)
 
-            plt.axhline(0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
+            plt.axhline(0, color='gray', linestyle='--', linewidth=0.6, alpha=0.7)
             if x_axis_mode == 'utilization':
-                plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+                plt.xlabel('Implied Avg. CPU Utilization\n(24h, %)', fontsize=8, labelpad=6)
             else:
-                plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
-            plt.ylabel('Emissions Improvement vs Carbon-Agnostic Baseline (%)', fontsize=14, fontweight='bold')
-            plt.title(f'Carbon Emissions Reduction vs Carbon-Agnostic Baseline{title_suffix}', fontsize=16, fontweight='bold', pad=20)
-            plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
+                plt.xlabel('Number of Pods to Schedule', fontsize=8)
+            plt.ylabel('Emissions Improvement\nvs Carbon-Agnostic (%)', fontsize=8, labelpad=4)
+            plt.title('')
+            plt.grid(True, alpha=0.3, linestyle='--', linewidth=0.6)
             if pod_counts_sorted:
                 if x_axis_mode == 'utilization':
                     x_coords = [pods_to_x.get(p, float(p)) for p in pod_counts_sorted if p in improvement_vs_vanilla.get(compare_algos[0], {})]
@@ -742,7 +744,8 @@ def create_emissions_plot(
                             hi = lo + 5
                         hi = min(100, hi)
                         plt.xlim(lo, hi)
-                        plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+                        step = 10
+                        plt.xticks(list(range(lo, hi + 1, step)), fontsize=8)
                         # Highlight typical edge/cloud utilization band (e.g., 10--35%)
                         typical_lo, typical_hi = 10.0, 35.0
                         band_lo = max(lo, typical_lo)
@@ -752,9 +755,9 @@ def create_emissions_plot(
                             plt.axvspan(band_lo, band_hi, color='#d0e2ff', alpha=0.5, zorder=0)
                 else:
                     plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
-                    plt.xticks(pod_counts_sorted, fontsize=12)
-            plt.yticks(fontsize=12)
-            plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
+                    plt.xticks(pod_counts_sorted, fontsize=8)
+            plt.yticks(fontsize=8)
+            plt.legend(fontsize=8, loc='best', framealpha=0.9, shadow=False, fancybox=False)
             plt.tight_layout()
 
             base_improvement = f"emissions_improvement_vs_pods_{timestamp}"

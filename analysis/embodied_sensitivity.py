@@ -45,6 +45,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.ticker as mticker  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import yaml  # noqa: E402
@@ -659,7 +660,7 @@ def _latest_timestamp_for_pods(experiment_root: str, pods: int) -> Optional[str]
 def plot_sensitivity(df: pd.DataFrame, figure_dir: str, pods: int) -> str:
     os.makedirs(figure_dir, exist_ok=True)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(3.5, 4.8), sharex=False)
 
     # Aggregate across seeds to plot mean ± std
     grouped_cols_emb = ["algorithm", "embodied_scale"]
@@ -710,14 +711,15 @@ def plot_sensitivity(df: pd.DataFrame, figure_dir: str, pods: int) -> str:
             label=s["label"],
             color=s["color"],
             linestyle="-",
-            linewidth=3,
-            markersize=8,
-            capsize=4,
+            linewidth=2.0,
+            markersize=6.5,
+            capsize=3,
         )
-    ax1.set_xlabel("Embodied scaling factor")
-    ax1.set_ylabel("Emissions per pod (kg CO$_2$e)")
-    ax1.set_title("Embodied sensitivity (lifetime fixed)", fontsize=13, fontweight="bold", pad=8)
-    ax1.grid(True, linestyle="--", alpha=0.35)
+    ax1.set_xlabel("Embodied scaling factor", fontsize=8)
+    ax1.set_ylabel("Emissions per pod (kg CO$_2$e)", fontsize=8)
+    ax1.set_title("")
+    ax1.grid(True, linestyle="--", alpha=0.35, linewidth=0.6)
+    ax1.tick_params(labelsize=8)
 
     # Right subplot: lifetime scaling (embodied_scale == 1.0)
     for algo in algorithms:
@@ -733,29 +735,29 @@ def plot_sensitivity(df: pd.DataFrame, figure_dir: str, pods: int) -> str:
             label=s["label"],
             color=s["color"],
             linestyle="-",
-            linewidth=3,
-            markersize=8,
-            capsize=4,
+            linewidth=2.0,
+            markersize=6.5,
+            capsize=3,
         )
-    ax2.set_xlabel("Lifetime scaling factor")
-    ax2.set_ylabel("Emissions per pod (kg CO$_2$e)")
-    ax2.set_title("Lifetime sensitivity (embodied fixed)", fontsize=13, fontweight="bold", pad=8)
-    ax2.grid(True, linestyle="--", alpha=0.35)
+    ax2.set_xlabel("Lifetime scaling factor", fontsize=8)
+    ax2.set_ylabel("Emissions per pod (kg CO$_2$e)", fontsize=8)
+    ax2.set_title("")
+    ax2.grid(True, linestyle="--", alpha=0.35, linewidth=0.6)
+    ax2.tick_params(labelsize=8)
 
     # Shared legend
+    # Align y-ticks/formatting: coarser ticks, mirrored onto upper, 3-dec precision
+    ax2.yaxis.set_major_locator(mticker.MaxNLocator(nbins=4))
+    ticks = ax2.get_yticks()
+    ax1.set_yticks(ticks)
+    ax1.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
+    ax2.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
+
     handles, labels = ax1.get_legend_handles_labels()
     if handles:
-        fig.legend(
-            handles,
-            labels,
-            loc="lower center",
-            ncol=len(labels),
-            bbox_to_anchor=(0.5, -0.02),
-            frameon=False,
-            fontsize=11,
-        )
+        ax1.legend(handles, labels, loc="upper left", fontsize=8, frameon=False)
 
-    plt.subplots_adjust(bottom=0.18, wspace=0.25)
+    plt.subplots_adjust(bottom=0.12, top=0.95, hspace=0.32)
 
     # Timestamped filename based on data recency
     ts = _latest_timestamp_for_pods(DEFAULT_EXPERIMENT_ROOT, pods)

@@ -310,8 +310,8 @@ def create_success_rate_plot(
     if x_axis_mode != 'utilization':
         pods_to_x = {p: float(p) for p in pod_counts_sorted}
 
-    # Create publication-quality figure
-    plt.figure(figsize=(12, 8))
+    # Create publication-quality figure sized for single-column use
+    plt.figure(figsize=(3.5, 2.7))
 
     # Define colors and markers for consistency
     colors = {
@@ -366,22 +366,20 @@ def create_success_rate_plot(
             plt.errorbar(
                 x_vals, y_vals, yerr=y_errs,
                 marker=marker, color=color, label=algo_label,
-                linewidth=3, markersize=10, alpha=0.9, capsize=4
+                linewidth=2.0, markersize=6.5, alpha=0.9, capsize=3
             )
         else:
             plt.plot(
                 x_vals, y_vals,
                 marker=marker, color=color, label=algo_label,
-                linewidth=3, markersize=10, alpha=0.9
+                linewidth=2.0, markersize=6.5, alpha=0.9
             )
 
     if x_axis_mode == 'utilization':
-        plt.xlabel('Implied Average Cluster CPU Utilization over 24h (%)', fontsize=14, fontweight='bold')
+        plt.xlabel('Implied Avg. CPU Utilization\n(24h, %)', fontsize=8, labelpad=6)
     else:
-        plt.xlabel('Number of Pods to Schedule', fontsize=14, fontweight='bold')
-    plt.ylabel('Scheduling Success Rate (%)', fontsize=14, fontweight='bold')
-    plt.title('Scheduling Success Rate vs. Cluster Utilization\nCarbon-Agnostic vs TotEm vs Oracle', 
-              fontsize=16, fontweight='bold', pad=20)
+        plt.xlabel('Number of Pods to Schedule', fontsize=8)
+    plt.ylabel('Scheduling Success Rate\n(%)', fontsize=8, labelpad=4)
 
     plt.grid(True, alpha=0.3, linestyle='--', linewidth=1)
     if pod_counts_sorted:
@@ -395,13 +393,15 @@ def create_success_rate_plot(
                 hi = lo + 5
             hi = min(100, hi)
             plt.xlim(lo, hi)
-            plt.xticks(list(range(lo, hi + 1, 5)), fontsize=12)
+            step = 10
+            plt.xticks(list(range(lo, hi + 1, step)), fontsize=8)
         else:
             plt.xlim(min(pod_counts_sorted) - 5, max(pod_counts_sorted) + 10)
-            plt.xticks(pod_counts_sorted, fontsize=12)
-    plt.ylim(0, 105)
-    plt.yticks(range(0, 101, 10), fontsize=12)
-    plt.legend(fontsize=12, loc='lower left', framealpha=0.9, shadow=True, fancybox=True)
+            plt.xticks(pod_counts_sorted, fontsize=8)
+    plt.ylim(50, 102)
+    plt.yticks(range(50, 101, 10), fontsize=8)
+    plt.legend(fontsize=8, loc='lower left', framealpha=0.9, shadow=False, fancybox=False)
+    plt.title('')
     plt.tight_layout()
 
     # Save PDF only

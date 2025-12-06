@@ -39,11 +39,11 @@ REPO_ROOT = "/root/carbon-aware-orchestrator"
 EXPERIMENTS_ROOT = f"{REPO_ROOT}/experiments/time_complexity"
 OUTPUT_DIR = f"{REPO_ROOT}/figures/TimeComplexity"
 
-# Algorithm config: label, color, marker, file key
+# Algorithm config: label, color, marker, linestyle, file key
 ALGOS = {
-    "heuristic": {"label": "TotEm", "color": "#ff7f0e", "marker": "s", "key": "heuristic"},
-    "global-optimal": {"label": "Oracle", "color": "#2ca02c", "marker": "s", "key": "global_optimal"},
-    "vanilla": {"label": "Carbon-Agnostic", "color": "#d62728", "marker": "s", "key": "vanilla"},
+    "heuristic": {"label": "TotEm", "color": "#ff7f0e", "marker": "s", "linestyle": "-", "key": "heuristic"},
+    "global-optimal": {"label": "Oracle", "color": "#2ca02c", "marker": "o", "linestyle": "--", "key": "global_optimal"},
+    "vanilla": {"label": "Carbon-Agnostic", "color": "#d62728", "marker": "^", "linestyle": "-.", "key": "vanilla"},
 }
 
 # Floor to avoid log(0) and to keep tiny values visible in log scale
@@ -78,13 +78,24 @@ def _aggregate_slice(df: pd.DataFrame, group_col: str) -> Tuple[pd.Series, pd.Se
     return grouped.index.astype(int), grouped["median"], grouped["std"].fillna(0.0)
 
 
-def _plot_overlay(ax, x_vals, med, std, *, color, marker, label):
+def _plot_overlay(ax, x_vals, med, std, *, color, marker, label, linestyle):
     if x_vals.empty:
         return
     med = med.clip(lower=EPS_SECONDS)
     # Ensure yerr does not push below zero on log scale; clip minimal med - EPS
     std = std.clip(lower=0.0)
-    ax.errorbar(x_vals, med, yerr=std, label=label, color=color, marker=marker, linewidth=2, capsize=3)
+    ax.errorbar(
+        x_vals,
+        med,
+        yerr=std,
+        label=label,
+        color=color,
+        marker=marker,
+        linewidth=2.0,
+        capsize=3,
+        linestyle=linestyle,
+        markersize=6.0,
+    )
 
 
 def _load_algo_df(algorithm: str, sweep_dir: Optional[str]) -> Optional[pd.DataFrame]:
@@ -117,7 +128,7 @@ def _create_and_save_plot(
     yscale: str
 ) -> None:
     """Helper to generate and save a single plot (log or linear)."""
-    fig, ax = plt.subplots(figsize=(7.0, 4.5))
+    fig, ax = plt.subplots(figsize=(3.5, 2.7))
     
     has_data = False
     for algo, cfg in ALGOS.items():
@@ -131,19 +142,29 @@ def _create_and_save_plot(
         x, med, std = _aggregate_slice(slice_df, group_col=group_col)
         if not x.empty:
             has_data = True
-            _plot_overlay(ax, x, med, std, color=cfg["color"], marker=cfg["marker"], label=cfg["label"])
+            _plot_overlay(
+                ax,
+                x,
+                med,
+                std,
+                color=cfg["color"],
+                marker=cfg["marker"],
+                label=cfg["label"],
+                linestyle=cfg.get("linestyle", "-"),
+            )
 
     if not has_data:
         print(f"⚠️ No data found for plot: {title_fmt.format(val=filter_val)}")
         plt.close(fig)
         return
 
-    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_xlabel(xlabel, fontsize=8)
     scale_str = "log scale" if yscale == "log" else "linear scale"
-    ax.set_ylabel(f"Precomputation Time (s, {scale_str})", fontsize=12)
-    ax.set_title(title_fmt.format(val=filter_val), fontsize=13)
-    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-    ax.legend(fontsize=10)
+    ax.set_ylabel(f"Precomputation Time (s, {scale_str})", fontsize=8)
+    ax.set_title("")
+    ax.grid(True, linestyle="--", linewidth=0.6, alpha=0.6)
+    ax.tick_params(labelsize=8)
+    ax.legend(fontsize=8)
     
     ax.set_yscale(yscale)
     if yscale == "log":

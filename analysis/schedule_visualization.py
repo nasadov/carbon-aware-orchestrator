@@ -548,7 +548,7 @@ def plot_individual_pods(df, output_path, title_prefix="Pod Placement", all_node
     plt.close()
     print(f"Individual pod placement plot saved to {output_path}")
 
-def plot_density_heatmap(df, output_path, title_prefix="Pod Density", all_node_names_from_config=None, total_timeslots_from_config=None):
+def plot_density_heatmap(df, output_path, title_prefix="Pod Density", all_node_names_from_config=None, total_timeslots_from_config=None, max_density=None):
     """Generates a heatmap showing pod density per node and time slot."""
     DEFAULT_TIMESLOTS = 24
 
@@ -628,35 +628,69 @@ def plot_density_heatmap(df, output_path, title_prefix="Pod Density", all_node_n
     else:
         print(f"Warning: DataFrame for '{title_prefix}' density heatmap is missing required columns (start_slot, duration, node_id) for density calculation. Plot will be an empty grid.")
     
+    # Harmonize typography with other paper figures.
+    # Figure is generated at ~10 inches wide but scaled to ~3.2 inches in paper (approx 3x scaling).
+    # To achieve effective ~9-10pt in paper, we need ~28-30pt here.
+    label_fontsize = 28
+    tick_fontsize = 24
+    cell_fontsize = 18
+    cbar_label_fontsize = 28
+
     fig, ax = plt.subplots(figsize=(max(10, plot_time_slots * 0.4), max(6, len(plot_nodes) * 0.5)))
     heatmap_cmap = plt.colormaps['viridis']
-    heatmap = ax.imshow(density_matrix, cmap=heatmap_cmap, aspect='auto', interpolation='nearest')
     
-    for r_idx, node_label in enumerate(plot_nodes):
-        for c_idx in range(plot_time_slots):
-            val = density_matrix.loc[node_label, c_idx]
-            if val > 0:
-                cell_color_val = heatmap_cmap(density_matrix.loc[node_label, c_idx] / max(1, density_matrix.values.max()))[0:3]
-                luminance = 0.299*cell_color_val[0] + 0.587*cell_color_val[1] + 0.114*cell_color_val[2]
-                text_color = 'white' if luminance < 0.5 else 'black'
-                ax.text(c_idx, r_idx, str(val), va='center', ha='center', color=text_color, fontsize=8)
+    # Use fixed color scale if max_density is provided
+    vmin = 0
+    vmax = max_density if max_density is not None else None
+    
+    heatmap = ax.imshow(
+        density_matrix, 
+        cmap=heatmap_cmap, 
+        aspect='auto', 
+        interpolation='nearest',
+        vmin=vmin,
+        vmax=vmax,
+        extent=[-0.5, plot_time_slots - 0.5, len(plot_nodes) - 0.5, -0.5]
+    )
+    
+    # Remove numbers from inside the density plots
+    # for r_idx, node_label in enumerate(plot_nodes):
+    #     for c_idx in range(plot_time_slots):
+    #         # val = density_matrix.loc[node_label, c_idx]
+    #         pass 
 
-    ax.set_xticks(np.arange(plot_time_slots))
+    # Set x-ticks at 0, 6, 12, 18, 24
+    # The extent is [-0.5, 23.5]. Slot 0 is centered at 0. Slot k centered at k.
+    # Boundaries are at -0.5, 0.5, 1.5, ...
+    # If we want ticks labeled 0, 6, 12, 18, 24:
+    # 0h corresponds to start of slot 0 (-0.5).
+    # 6h corresponds to start of slot 6 (5.5).
+    # 12h corresponds to start of slot 12 (11.5).
+    # 18h corresponds to start of slot 18 (17.5).
+    # 24h corresponds to end of slot 23 (23.5).
+    
+    tick_locations = [-0.5, 5.5, 11.5, 17.5, 23.5]
+    tick_labels = [0, 6, 12, 18, 24]
+    
+    ax.set_xticks(tick_locations)
     ax.set_yticks(np.arange(len(plot_nodes)))
-    ax.set_xticklabels(np.arange(1, plot_time_slots + 1))  # Labels from 1 to plot_time_slots
-    ax.set_yticklabels(plot_nodes)
+    ax.set_xticklabels(tick_labels)
+    # Display nodes as A, B, C, D
+    import string
+    node_labels = [string.ascii_uppercase[i] for i in range(len(plot_nodes))]
+    ax.set_yticklabels(node_labels)
     ax.set_xticks(np.arange(plot_time_slots + 1) - 0.5, minor=True)
     ax.set_yticks(np.arange(len(plot_nodes) + 1) - 0.5, minor=True)
     ax.grid(which='minor', color='grey', linestyle='-', linewidth=0.5)
     ax.tick_params(which='major', bottom=False, left=False)
 
-    plt.xlabel("Time Slot")
-    plt.ylabel("Node ID")
-    # Add descriptive title with pod and node counts for density heatmap
-    num_pods = len(df_for_plotting) if not df_for_plotting.empty else 0
-    num_nodes = len(plot_nodes)
-    plt.title(f"{title_prefix} - Density Heatmap: {num_pods} Pods across {num_nodes} Nodes")
-    plt.colorbar(heatmap, label="Number of Pods")
+    ax.tick_params(axis='both', which='major', labelsize=tick_fontsize)
+
+    plt.xlabel("Time Slot", fontsize=label_fontsize)
+    plt.ylabel("Node", fontsize=label_fontsize)
+    cbar = plt.colorbar(heatmap)
+    cbar.set_label("Number of Pods", fontsize=cbar_label_fontsize)
+    cbar.ax.tick_params(labelsize=tick_fontsize)
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close(fig)
@@ -752,6 +786,7 @@ def main():
     parser.add_argument("-n", "--name", default=None, help="Optional name for the run/comparison. This will be used as the subdirectory name under output_dir_base and in plot titles/filenames.")
     parser.add_argument("--config_file", default=CONFIG_FILE_PATH, help=f"Path to the nodes.yaml file (default: {CONFIG_FILE_PATH}).")
     parser.add_argument("--workloads_dir", default=None, help="Path to the directory containing workload YAML files with CPU request information.")
+    parser.add_argument("--max_density", type=int, default=None, help="Optional maximum density for heatmap color scale.")
     
     args = parser.parse_args()
 
@@ -880,8 +915,8 @@ def main():
             # Pass node CPU capacities to the function
             node_cpu_capacities = infra_config.get('node_cpu_capacities', {})
             plot_individual_pods(combined_df, f"{base_filename}_individual.png", title_prefix, all_node_names_from_config, total_timeslots_from_config, node_cpu_capacities)
-        if args.mode in ["density", "all"]:
-            plot_density_heatmap(combined_df, f"{base_filename}_density.png", title_prefix, all_node_names_from_config, total_timeslots_from_config)
+            if args.mode in ["density", "all"]:
+                plot_density_heatmap(combined_df, f"{base_filename}_density.png", title_prefix, all_node_names_from_config, total_timeslots_from_config, args.max_density)
     else:
         for csv_file in all_csv_files:
             df = load_data(csv_file, pod_cpu_requests)
@@ -903,7 +938,7 @@ def main():
                 node_cpu_capacities = infra_config.get('node_cpu_capacities', {})
                 plot_individual_pods(df, f"{output_base}_individual.png", title_prefix_for_plot, all_node_names_from_config, total_timeslots_from_config, node_cpu_capacities)
             if args.mode in ["density", "all"]:
-                plot_density_heatmap(df, f"{output_base}_density.png", title_prefix_for_plot, all_node_names_from_config, total_timeslots_from_config)
+                plot_density_heatmap(df, f"{output_base}_density.png", title_prefix_for_plot, all_node_names_from_config, total_timeslots_from_config, args.max_density)
 
 if __name__ == "__main__":
     # Configure logging to show INFO level messages

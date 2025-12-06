@@ -85,7 +85,7 @@ workload:
   num_timeslots: 12
   generation_strategy: exact_total
   poisson_lambda: 4
-  exact_total_pods: 80
+  exact_total_pods: 200
   min_services: 1
   base_name: m
   durations:

@@ -28,6 +28,7 @@ import yaml
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 import yaml
@@ -528,7 +529,7 @@ def analyze_results(args, metadata: MetadataStore):
 
 def plot_carbon_savings(runs_df: pd.DataFrame, summary_df: pd.DataFrame, figure_dir: str) -> None:
     os.makedirs(figure_dir, exist_ok=True)
-    plt.figure(figsize=(10.5, 6.5))
+    plt.figure(figsize=(3.6, 2.8))
 
     label_map = {
         "heuristic": "TotEm",
@@ -578,55 +579,57 @@ def plot_carbon_savings(runs_df: pd.DataFrame, summary_df: pd.DataFrame, figure_
             yerr=yerr,
             marker=marker,
             linestyle=linestyle,
-            linewidth=3.0,
-            markersize=10,
+            linewidth=2.0,
+            markersize=6.5,
             color=color,
             alpha=0.9,
-            capsize=4,
+            capsize=3,
             label=label,
         )
 
     # Overlay Oracle mean with std band across pods/seeds
-    oracle_df = summary_df[summary_df["algorithm"] == "global-optimal"]
-    if not oracle_df.empty:
-        oracle_df = oracle_df.sort_values("noise_mape")
-        x_o = oracle_df["noise_mape"].values
-        y_o = oracle_df["mean_savings_pct"].values
-        std_o = oracle_df["std_savings_pct"].values
-        plt.fill_between(
-            x_o,
-            y_o - std_o,
-            y_o + std_o,
-            color=color_map["global-optimal"],
-            alpha=0.12,
-            linewidth=0,
-        )
-        plt.plot(
-            x_o,
-            y_o,
-            color=color_map["global-optimal"],
-            linestyle="--",
-            linewidth=3.0,
-            marker=None,
-            label=f"{label_map['global-optimal']} (mean over pods)",
-        )
-    plt.xlabel("Forecast Error (MAPE %)", fontsize=14)
-    plt.ylabel("Carbon Savings vs Carbon-Agnostic (%)", fontsize=14)
-    plt.grid(True, linestyle="--", alpha=0.4)
-    plt.tick_params(labelsize=12)
+    # oracle_df = summary_df[summary_df["algorithm"] == "global-optimal"]
+    # if not oracle_df.empty:
+    #     oracle_df = oracle_df.sort_values("noise_mape")
+    #     x_o = oracle_df["noise_mape"].values
+    #     y_o = oracle_df["mean_savings_pct"].values
+    #     std_o = oracle_df["std_savings_pct"].values
+    #     plt.fill_between(
+    #         x_o,
+    #         y_o - std_o,
+    #         y_o + std_o,
+    #         color=color_map["global-optimal"],
+    #         alpha=0.12,
+    #         linewidth=0,
+    #     )
+    #     plt.plot(
+    #         x_o,
+    #         y_o,
+    #         color=color_map["global-optimal"],
+    #         linestyle="--",
+    #         linewidth=2.0,
+    #         marker=None,
+    #         label=f"{label_map['global-optimal']} (mean over pods)",
+    #     )
+    plt.xlabel("Forecast Error (MAPE %)", fontsize=8)
+    plt.ylabel("Carbon Savings vs Carbon-Agnostic (%)", fontsize=8)
+    plt.grid(True, linestyle="--", alpha=0.4, linewidth=0.6)
+    plt.tick_params(labelsize=8)
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%g"))
 
     # Use only the actual noise levels as x-ticks (no 2.5, 7.5, etc.)
     xticks = sorted(heur_df["noise_mape"].unique())
     plt.xticks(xticks, [f"{int(x)}" if float(x).is_integer() else f"{x:g}" for x in xticks])
 
     plt.legend(
-        fontsize=12,
+        fontsize=8,
         ncol=2,
         loc="upper center",
-        bbox_to_anchor=(0.5, 1.18),
+        bbox_to_anchor=(0.5, -0.25),
         frameon=True,
-        columnspacing=1.0,
-        handlelength=2.5,
+        columnspacing=0.8,
+        handlelength=2.0,
     )
 
     plt.tight_layout()

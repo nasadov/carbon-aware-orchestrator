@@ -146,8 +146,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         logging.info(f"GlobalOptimalAlgorithm: operational_only mode set to {self.operational_only}")
 
     def _load_config(self) -> Dict:
-        """Load configuration from the infra-workload-config.yaml file."""
-        config_path = "/root/carbon-aware-orchestrator/pkg/carbon-aware/infra-workload-config.yaml"
+        """Load configuration from infra-workload-config.yaml, honoring an env override."""
+        env_path = os.environ.get("CARBON_AWARE_CONFIG_PATH")
+        config_path = env_path or "/root/carbon-aware-orchestrator/pkg/carbon-aware/infra-workload-config.yaml"
         try:
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
@@ -3246,4 +3247,3 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             logging.error(f"❌ FAILED: Error during global optimization: {e}")
             logging.error(traceback.format_exc())
             return False
-
