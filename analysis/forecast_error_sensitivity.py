@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+import yaml
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -237,6 +239,7 @@ def run_algorithm(
     forecasts_file: str,
     experiment_dir: str,
     embodied_mode: str = "proportional",
+    env_config_path: Optional[str] = None,
 ) -> Tuple[str, str]:
     os.makedirs(experiment_dir, exist_ok=True)
     before = set(os.listdir(experiment_dir))
@@ -259,7 +262,10 @@ def run_algorithm(
     ]
     if algorithm in ("heuristic", "global-optimal"):
         cmd.extend(["--embodied-mode", embodied_mode])
-    subprocess.run(cmd, cwd=SERVER_PYTHON_DIR, check=True)
+    env = os.environ.copy()
+    if env_config_path:
+        env["CARBON_AWARE_CONFIG_PATH"] = env_config_path
+    subprocess.run(cmd, cwd=SERVER_PYTHON_DIR, check=True, env=env)
     after = set(os.listdir(experiment_dir))
     new_entries = sorted(after - before)
     if not new_entries:
@@ -382,6 +388,19 @@ def compute_total_emissions_kg(placement_csv: str, nodes_dict: dict, ignore_idle
 
 def run_experiments(args, metadata: MetadataStore):
     base_forecasts_cache = load_forecasts(GROUND_TRUTH_FORECAST)
+    env_config_path = None
+    if args.solver_time_limit:
+        os.makedirs(args.experiment_root, exist_ok=True)
+        env_config_path = os.path.join(args.experiment_root, "infra-workload-config_override.yaml")
+        with open(args.workload_config, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        opt_cfg = cfg.setdefault("optimization", {})
+        solver_cfg = opt_cfg.setdefault("solver", {})
+        solver_cfg["time_limit"] = args.solver_time_limit
+        with open(env_config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(cfg, f, sort_keys=False)
+        print(f"⚙️  Using solver time_limit={args.solver_time_limit}s (override config: {env_config_path})")
+
     with WorkloadConfigManager(args.workload_config):
         ensure_exact_total_strategy(args.workload_config)
         for pods in args.pod_counts:
@@ -415,6 +434,7 @@ def run_experiments(args, metadata: MetadataStore):
                             nodes_file=args.nodes_file,
                             forecasts_file=forecast_path,
                             experiment_dir=noise_dir,
+                            env_config_path=env_config_path,
                         )
                         timestamp_utc = datetime.now(timezone.utc).isoformat()
                         record = {
@@ -518,9 +538,10 @@ def plot_carbon_savings(runs_df: pd.DataFrame, summary_df: pd.DataFrame, figure_
     # Palette aligned with other paper figures (orange heuristic/TotEm,
     # red carbon-agnostic, green oracle).
     color_map = {
-        "heuristic": "#F28E2B",        # orange
-        "vanilla": "#E15759",          # red
-        "global-optimal": "#59A14F",   # green
+        # TotEm orange consistent across plots
+        "heuristic": "#ff7f0e",
+        "vanilla": "#d62728",          # red
+        "global-optimal": "#2ca02c",   # green
     }
     markers = ["o", "s", "D", "^", "v", "P", "X"]
     line_styles = ["-", "--", "-.", ":"]
@@ -557,11 +578,11 @@ def plot_carbon_savings(runs_df: pd.DataFrame, summary_df: pd.DataFrame, figure_
             yerr=yerr,
             marker=marker,
             linestyle=linestyle,
-            linewidth=2.0,
-            markersize=8.5,
+            linewidth=3.0,
+            markersize=10,
             color=color,
             alpha=0.9,
-            capsize=3,
+            capsize=4,
             label=label,
         )
 
@@ -585,21 +606,21 @@ def plot_carbon_savings(runs_df: pd.DataFrame, summary_df: pd.DataFrame, figure_
             y_o,
             color=color_map["global-optimal"],
             linestyle="--",
-            linewidth=2.0,
+            linewidth=3.0,
             marker=None,
             label=f"{label_map['global-optimal']} (mean over pods)",
         )
-    plt.xlabel("Forecast Error (MAPE %)", fontsize=12)
-    plt.ylabel("Carbon Savings vs Carbon-Agnostic (%)", fontsize=12)
+    plt.xlabel("Forecast Error (MAPE %)", fontsize=14)
+    plt.ylabel("Carbon Savings vs Carbon-Agnostic (%)", fontsize=14)
     plt.grid(True, linestyle="--", alpha=0.4)
-    plt.tick_params(labelsize=11)
+    plt.tick_params(labelsize=12)
 
     # Use only the actual noise levels as x-ticks (no 2.5, 7.5, etc.)
     xticks = sorted(heur_df["noise_mape"].unique())
     plt.xticks(xticks, [f"{int(x)}" if float(x).is_integer() else f"{x:g}" for x in xticks])
 
     plt.legend(
-        fontsize=9,
+        fontsize=12,
         ncol=2,
         loc="upper center",
         bbox_to_anchor=(0.5, 1.18),
@@ -647,6 +668,7 @@ def parse_args():
     parser.add_argument("--force-rerun", action="store_true", help="Re-run algorithms even if metadata already exists.")
     parser.add_argument("--skip-run", action="store_true", help="Skip the run phase and only analyze existing metadata.")
     parser.add_argument("--skip-analysis", action="store_true", help="Skip analysis/plotting.")
+    parser.add_argument("--solver-time-limit", type=int, default=None, help="Override solver time limit (seconds) for global-optimal via temp config.")
     return parser.parse_args()
 
 
