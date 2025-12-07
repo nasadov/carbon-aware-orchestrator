@@ -124,9 +124,9 @@ Embodied emissions (during raw material extraction, manufacturing, logistics, an
 \begin{equation*}
 M = \mathit{TE} \cdot \mathit{TS} \cdot \mathit{RS},
 \end{equation*}
-where $TE$ is total device embodied emissions from LCA, $TS$ is the time share (e.g., reserved or in-use fraction of expected lifetime), and $RS$ is the resource share (e.g., vCPU, memory) attributed to the software component \cite{gsf2024}. This structure subsum\del{e}s both simple time-based amortization ($RS=1$) and finer-grained attribution when detailed utilization or reservations are available.
+where $TE$ is total device embodied emissions from LCA, $TS$ is the time share (e.g., reserved or in-use fraction of expected lifetime), and $RS$ is the resource share (e.g., vCPU, memory) attributed to the software component \cite{gsf2024}. This structure subsumes both simple time-based amortization ($RS=1$) and finer-grained attribution when detailed utilization or reservations are available.
 
-\paragraph*{Recent research} Beyond uniform amortization, several works incorporate embodied carbon into scheduling and hardware-management decisions: (i) carbon depreciation models that allocate a larger share of embodied carbon to newly provisioned servers and recover idle-time impacts during active use are proposed in \cite{ji2025}, showing that traditional accounting can inadvertently favor premature refresh; (ii) aging-aware CPU core management that extends lifetime and reduces embodied-attributed emissions in inference clusters with minimal QoS impact is demonstrated in \cite{hewage2025}; (iii) joint embodied+operational objectives with heterogeneity and age in dispatch are formulated in \cite{zhang2025}, yielding lower total emissions under utilization-aware lifetime models; and (iv) for edge contexts, co-optimizing embodied and operational carbon under intermittent utilization and tight resource constraints is advocated by \cite{panteleaki2025}.
+\paragraph*{Recent research} Beyond uniform amortization, several works incorporate embodied carbon into scheduling and hardware-management decisions: (i) carbon depreciation models that allocate a larger share of embodied carbon to newly provisioned servers and recover idle-time impacts during active use are proposed in \cite{ji2025}, showing that traditional accounting can inadvertently favor premature refresh; (ii) aging-aware CPU core management that extends lifetime and reduces embodied-attributed emissions in inference clusters with minimal QoS impact is demonstrated in \cite{hewage2025}; (iii) joint embodied+operational objectives with heterogeneity and age in dispatch are formulated in \cite{zhang2025}, yielding lower total emissions under utilization-aware lifetime models; and (iv) for edge contexts, co-optimizing embodied and operational carbon under intermittent utilization and tight resource constraints is advocated by \cite{panteleaki2025}. Finally, (v) EcoServe~\cite{Li2025EcoServe} addresses embodied carbon in AI inference via hardware-level strategies; while it optimizes specialized AI infrastructure, our work provides a generalized framework for the wider cloud-native ecosystem.
 
 \paragraph*{Implications for scheduling} (1) Pure calendar-based amortization is appropriate when only coarse information is available, but it obscures idle periods and can inflate per-workload embodied intensity. (2) With utilization traces (e.g., hourly CPU), allocating embodied emissions in proportion to time-in-use and resource share yields more faithful attribution and can shift policies toward reusing capacity, consolidating strategically, or delaying refresh. (3) Accounting for device age and heterogeneity reveals that newer hardware, despite higher performance-per-watt, carries substantial embodied carbon that must be amortized through sustained use before outperforming older devices on total emissions. (4) These effects are amplified at the edge, where intermittency and under-utilization are common.
 
@@ -526,7 +526,7 @@ Including embodied emissions fundamentally changes placement behavior. An operat
   \label{f:comp}
 \end{figure}
 
-Taken together, Figures~\ref{f:op-only} and~\ref{f:comp} show that accounting for embodied emissions alters the optimization landscape. The operational-only strategy blindly chases low-CI regions, often leaving hardware underutilized. In contrast, the comprehensive objective drives consolidation to amortize the fixed embodied carbon costs, activating fewer nodes at higher utilization. This trade-off can increase operational emissions slightly in some slots but reduces total (operational+embodied) emissions across the horizon.
+Taken together, Figures~\ref{f:op-only} and~\ref{f:comp} show that accounting for embodied emissions alters the optimization landscape. The operational-only strategy blindly chases low-CI regions, often leaving hardware underutilized. In contrast, the comprehensive objective drives consolidation to amortize the fixed embodied carbon costs, activating fewer nodes at higher utilization. This trade-off can increase operational emissions slightly in some slots but reduces total (operational+embodied) emissions across the horizon; in the 100-pod runs TotEm cuts total emissions by 13.4\% relative to operational-only (2.75\,kg vs. 3.18\,kg CO$_2$e).
 
 The result aligns with our allocation model: embodied emissions are a fixed, time-amortized cost that incentivizes sustained, efficient hardware use. Ignoring them underestimates true impact and can create seemingly efficient but globally suboptimal utilization patterns.
 
@@ -540,7 +540,7 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
    
    \begin{figure}[t]
      \centering
-     \includegraphics[width=0.95\linewidth]{figures/emissions_vs_pods_20251206_174106.pdf}
+   \includegraphics[width=0.95\linewidth]{figures/emissions_vs_pods_20251207_113200.pdf}
      \caption{Total carbon emissions vs. implied average cluster CPU utilization over 24 hours (coverage-inclusive). Emissions are computed using a shared model (operational + amortized embodied). Inclusive results reflect each algorithm’s \emph{actual} coverage at a given workload intensity.}
      \label{f:emit-inc}
    \end{figure}
@@ -549,7 +549,7 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
    
    \begin{figure}[t]
      \centering
-     \includegraphics[width=0.95\linewidth]{figures/emissions_per_pod_vs_pods_20251206_174106.pdf}
+     \includegraphics[width=0.95\linewidth]{figures/emissions_per_pod_vs_pods_20251207_113200.pdf}
      \caption{Average emissions per placed pod (kg CO\textsubscript{2}e/pod) vs. implied average cluster CPU utilization over 24 hours (coverage-inclusive). Carbon-aware methods remain nearly flat; vanilla starts high.}
      \label{f:emit-pod}
    \end{figure}
@@ -565,7 +565,7 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
    Figure~\ref{f:succ} shows scheduling success rate versus implied average cluster CPU utilization over 24 hours. At low load, all three methods are near 100\%; as load increases, TotEm remains above the carbon-agnostic baseline and close to the MILP benchmark.
    \begin{figure}[t]
      \centering
-     \includegraphics[width=0.95\linewidth]{figures/SuccessRate/success_rate_comparison_20251206_174122.pdf}
+     \includegraphics[width=0.95\linewidth]{figures/SuccessRate/success_rate_comparison_20251207_113201.pdf}
      \caption{Scheduling success rate vs. implied average cluster CPU utilization over 24 hours. Higher is better. Used jointly with inclusive emissions to disambiguate feasibility from carbon efficiency.}
      \label{f:succ}
    \end{figure}
@@ -633,6 +633,9 @@ Our results demonstrate that incorporating both operational and embodied emissio
 The significant emissions gap between the carbon-agnostic baseline and TotEm stems from fundamentally different placement strategies. The baseline, mirroring standard Kubernetes behavior (LeastAllocated), tends to spread workloads across nodes. While beneficial for failover and burst capacity, this strategy maximizes the number of active nodes, thereby incurring the idle power and embodied carbon "entry tax" of many machines simultaneously. 
 
 TotEm, by explicitly minimizing a comprehensive carbon objective, naturally favors consolidation when grid carbon intensity is high or when node-hours can be saved. As observed in Section~\ref{s:impact}, this shifts utilization from a "spread" pattern to a "dense" pattern, amortizing the fixed manufacturing cost of hardware over more pods per node-hour. A substantial portion of the observed carbon reduction derives from this consolidation effect incentivized by the embodied carbon term. While traditional bin-packing aims solely to minimize fragmentation, TotEm frames this as an emissions minimization problem. By internalizing the amortized embodied carbon cost of hardware ($\approx$ manufacturing cost), TotEm naturally converges on energy-efficient consolidation patterns without requiring explicit rule-based bin-packing logic. Crucially, this is not a blind "pack everything" strategy; it is sensitive to grid intensity. The algorithm will consolidate workloads to amortize embodied carbon \emph{except} when doing so would force execution in a dirty time window or region that outweighs the embodied savings. This dynamic balancing---a "carbon-aware bin-packing"---emerges organically from the objective function, acting as a form of "sustainable elasticity" that expands the footprint only when the grid is clean enough to justify the added hardware overhead.
+
+\subsection{Attributional vs. Consequential Impact}
+It is crucial to distinguish between attributional and consequential lifecycle assessment (LCA) perspectives when interpreting these results. From an \emph{attributional} perspective, TotEm reduces the carbon allocated to each pod by packing workloads tighter, thereby lowering the computed emissions per unit of work. This is the quantity directly minimized by our objective function. From a \emph{consequential} perspective, however, TotEm reduces global emissions only if this higher utilization allows the data center operator to provision fewer servers in the long run or to delay hardware refresh cycles. We explicitly position TotEm to optimize the attributional efficiency of the cluster as a proxy signal for these long-term consequential reductions in hardware procurement. By adhering to this proxy, the scheduler creates the necessary demand-side signal to drive supply-side decarbonization.
 
 \subsection{The Oracle Gap and Computational Practicality}
 While TotEm captures a large fraction of the potential savings, a gap remains between it and the MILP-based Oracle ($\approx$10~g CO\textsubscript{2}e/pod at moderate load). This gap reflects the difference between a greedy heuristic and global optimization. TotEm makes irreversible decisions per pod, potentially saturating "good" windows early, whereas the Oracle can rearrange the entire schedule to fit difficult pods into optimal slots.

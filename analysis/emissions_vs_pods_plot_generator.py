@@ -539,6 +539,19 @@ def create_emissions_plot(
         'global-optimal-uniform': '#98df8a',
         'global-optimal-op': '#2ca02c',  # operational-only uses oracle's classic green
     }
+    linestyles = {
+        # Match runtime overlays (Fig. 7/8): TotEm solid, Oracle dashed, baseline dash-dot
+        'vanilla': '-.',
+        'vanilla-op': '-.',
+        'heuristic': '-',
+        'heuristic-proportional': '-',
+        'heuristic-uniform': '-',
+        'heuristic-op': '-',
+        'global-optimal': '--',
+        'global-optimal-proportional': '--',
+        'global-optimal-uniform': '--',
+        'global-optimal-op': '--',
+    }
     markers = {
         'vanilla': '^',
         'vanilla-op': '^',
@@ -586,10 +599,11 @@ def create_emissions_plot(
         color = colors.get(algo, '#1f77b4')
         marker = markers.get(algo, 'o')
         label = labels.get(algo, algo.replace('-', ' ').title())
+        linestyle = linestyles.get(algo, '-')
         if any(e > 0 for e in y_errs):
-            plt.errorbar(x_vals, y_vals, yerr=y_errs, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9, capsize=3)
+            plt.errorbar(x_vals, y_vals, yerr=y_errs, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9, capsize=3, linestyle=linestyle)
         else:
-            plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9)
+            plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9, linestyle=linestyle)
 
     if x_axis_mode == 'utilization':
         plt.xlabel('Implied Avg. CPU Utilization\n(24h, %)', fontsize=8, labelpad=6)
@@ -666,10 +680,11 @@ def create_emissions_plot(
         color = colors.get(algo, '#1f77b4')
         marker = markers.get(algo, 'o')
         label = labels.get(algo, algo.replace('-', ' ').title())
+        linestyle = linestyles.get(algo, '-')
         if any(e > 0 for e in y_errs):
-            plt.errorbar(x_vals, y_vals, yerr=y_errs, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9, capsize=3)
+            plt.errorbar(x_vals, y_vals, yerr=y_errs, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9, capsize=3, linestyle=linestyle)
         else:
-            plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9)
+            plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9, linestyle=linestyle)
 
     if x_axis_mode == 'utilization':
         plt.xlabel('Implied Avg. CPU Utilization\n(24h, %)', fontsize=8, labelpad=6)
@@ -722,7 +737,7 @@ def create_emissions_plot(
                 color = colors.get(algo, '#1f77b4')
                 marker = markers.get(algo, 'o')
                 label = labels.get(algo, algo.replace('-', ' ').title())
-                plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9)
+                plt.plot(x_vals, y_vals, marker=marker, color=color, label=label, linewidth=2.0, markersize=6.5, alpha=0.9, linestyle=linestyles.get(algo, '-'))
 
             plt.axhline(0, color='gray', linestyle='--', linewidth=0.6, alpha=0.7)
             if x_axis_mode == 'utilization':

@@ -689,11 +689,11 @@ def plot_sensitivity(df: pd.DataFrame, figure_dir: str, pods: int) -> str:
         .reset_index()
     )
 
-    # Styling aligned with other paper figures (Fig. 4/5 palette)
+    # Styling aligned with other paper figures (Fig. 7/8 palette)
     style = {
-        # Match Fig. 4/5 palette: TotEm orange, Oracle green
-        "heuristic": {"label": "TotEm", "color": "#ff7f0e", "marker": "s"},
-        "global-optimal": {"label": "Oracle", "color": "#2ca02c", "marker": "o"},
+        # TotEm solid orange, Oracle dashed green to match runtime overlays
+        "heuristic": {"label": "TotEm", "color": "#ff7f0e", "marker": "s", "linestyle": "-"},
+        "global-optimal": {"label": "Oracle", "color": "#2ca02c", "marker": "o", "linestyle": "--"},
     }
     algorithms = [algo for algo in ["heuristic", "global-optimal"] if algo in df["algorithm"].unique()]
 
@@ -710,7 +710,7 @@ def plot_sensitivity(df: pd.DataFrame, figure_dir: str, pods: int) -> str:
             marker=s["marker"],
             label=s["label"],
             color=s["color"],
-            linestyle="-",
+            linestyle=s.get("linestyle", "-"),
             linewidth=2.0,
             markersize=6.5,
             capsize=3,
@@ -734,7 +734,7 @@ def plot_sensitivity(df: pd.DataFrame, figure_dir: str, pods: int) -> str:
             marker=s["marker"],
             label=s["label"],
             color=s["color"],
-            linestyle="-",
+            linestyle=s.get("linestyle", "-"),
             linewidth=2.0,
             markersize=6.5,
             capsize=3,

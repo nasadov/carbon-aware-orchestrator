@@ -333,6 +333,16 @@ def create_success_rate_plot(
         'global-optimal-proportional': 'o',
         'global-optimal-uniform': '^',
     }
+    linestyles = {
+        # Align with runtime overlays: TotEm solid, Oracle dashed, baseline dash-dot
+        'vanilla': '-.',
+        'heuristic': '-',
+        'heuristic-proportional': '-',
+        'heuristic-uniform': '-',
+        'global-optimal': '--',
+        'global-optimal-proportional': '--',
+        'global-optimal-uniform': '--',
+    }
 
     labels = {
         'vanilla': 'Carbon-Agnostic',
@@ -349,6 +359,7 @@ def create_success_rate_plot(
         algo_label = labels.get(algo, algo.replace('-', ' ').title())
         color = colors.get(algo, '#1f77b4')
         marker = markers.get(algo, 'o')
+        linestyle = linestyles.get(algo, '-')
 
         x_vals = []
         y_vals = []
@@ -366,13 +377,13 @@ def create_success_rate_plot(
             plt.errorbar(
                 x_vals, y_vals, yerr=y_errs,
                 marker=marker, color=color, label=algo_label,
-                linewidth=2.0, markersize=6.5, alpha=0.9, capsize=3
+                linewidth=2.0, markersize=6.5, alpha=0.9, capsize=3, linestyle=linestyle
             )
         else:
             plt.plot(
                 x_vals, y_vals,
                 marker=marker, color=color, label=algo_label,
-                linewidth=2.0, markersize=6.5, alpha=0.9
+                linewidth=2.0, markersize=6.5, alpha=0.9, linestyle=linestyle
             )
 
     if x_axis_mode == 'utilization':
