@@ -2,6 +2,8 @@
 
 TotEm (Total Emissions) is a carbon-aware scheduler for Kubernetes that minimizes operational **and** embodied emissions using regional carbon-intensity forecasts. This repository packages the TotEm heuristic, an Oracle MILP benchmark, a carbon-agnostic baseline, reproducible workloads, and the analysis pipeline used in our paper under `docs/paper-two/`.
 
+![TotEm overview](docs/visTotEm.png)
+
 ## What’s inside
 - **TotEm (heuristic, `--algorithm heuristic`)**: fast carbon-aware scheduler for multi-timeslot workloads.
 - **Oracle (MILP benchmark, `--algorithm global-optimal`)**: lexicographic two-phase optimizer for lower-bound comparisons.
