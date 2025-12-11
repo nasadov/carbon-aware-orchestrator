@@ -86,7 +86,7 @@ Carbon-aware computing, container orchestration, Kubernetes, sustainable computi
 
 \section{Introduction}
 
-Cloud and edge data centers have spent the last decade optimizing Power Usage Effectiveness (PUE) and operational energy efficiency, achieving remarkable gains \cite{Masanet2020Science, IEA2024DataCenters}. However, as operational efficiency approaches physical limits, the environmental frontier is shifting. Hardware manufacturing (``embodied'' carbon) has emerged as a dominant contributor to the lifecycle footprint of distributed systems, often rivaling or exceeding operational emissions \cite{cao2024}. Yet, today’s container orchestration stacks, exemplified by Kubernetes \cite{k8s}, remain stuck in the ``energy efficiency'' era: they optimize primarily for resource packing and availability while ignoring both the time-varying carbon intensity of the grid and the sunk carbon cost of the hardware itself \cite{Ember2024GlobalElectricity}. This ``Embodied Gap'' between what orchestrators optimize and what matters for total decarbonization motivates a principled, system-level approach that treats embodied carbon not as an external accounting detail, but as a first-class scheduling constraint. While pioneering efforts have introduced carbon-awareness into scheduling \cite{Google2020CarbonIntelligent, gu2023}, they predominantly focus on operational emissions, leaving the embodied gap unaddressed.
+Cloud and edge data centers have spent the last decade optimizing Power Usage Effectiveness (PUE) and operational energy efficiency, achieving remarkable gains \cite{Masanet2020Science}. However, as operational efficiency approaches physical limits, the environmental frontier is shifting. Hardware manufacturing (``embodied'' carbon) has emerged as a dominant contributor to the lifecycle footprint of distributed systems, often rivaling or exceeding operational emissions \cite{cao2024}. Yet, today’s container orchestration stacks, exemplified by Kubernetes \cite{k8s}, remain stuck in the ``energy efficiency'' era: they optimize primarily for resource packing and availability while ignoring both the time-varying carbon intensity of the grid and the sunk carbon cost of the hardware itself \cite{Ember2024GlobalElectricity}. This ``Embodied Gap'' between what orchestrators optimize and what matters for total decarbonization motivates a principled, system-level approach that treats embodied carbon not as an external accounting detail, but as a first-class scheduling constraint. While pioneering efforts have introduced carbon-awareness into scheduling \cite{Google2020CarbonIntelligent, gu2023}, they predominantly focus on operational emissions, leaving the embodied gap unaddressed.
 
 However, making container orchestration carbon-aware is nontrivial. Practical schedulers must respect placement feasibility (CPU/RAM), temporal constraints (earliest start and deadlines), and dynamic demand patterns, all while coping with carbon signals that change over time and across regions. Incorporating both operational and embodied carbon into placement decisions further complicates the objective, and any approach must remain computationally tractable at cluster scale. This raises the central research question: can we reduce total carbon emissions through orchestration decisions without sacrificing feasibility or incurring prohibitive precomputation costs?
 
@@ -96,7 +96,7 @@ We implemented a prototype scheduler and evaluated it offline on controlled work
 
 Our results show that carbon-aware scheduling can substantially reduce emissions while preserving high placement success and practical runtime. TotEm achieves favorable carbon–performance trade-offs and scales efficiently across realistic pod and node counts, while the MILP benchmark establishes a strong lower bound on achievable emissions (and thus an upper bound on reductions) at a higher computational cost. Beyond demonstrating feasibility, we provide a reusable evaluation methodology—covering emissions modeling, constraint handling, and time-complexity sweeps—that enables rigorous, reproducible comparisons of carbon-aware orchestration strategies.
 
-The remainder of this paper is organized as follows: Section~\ref{s:rel} reviews related work. Section~\ref{s:method} introduces our carbon-aware scheduler, including accounting models (Section~\ref{s:acc}), problem formulation (Section~\ref{s:prob}), the MILP benchmark (Section~\ref{s:milp}), and the TotEm algorithm (Section~\ref{s:totem}). Section~\ref{s:setup} details the experimental setup. Section~\ref{s:res} presents results. Section~\ref{s:disc} discusses implications and limitations. Section~\ref{s:conc} concludes with sustainability implications and future work.
+%The remainder of this paper is organized as follows: Section~\ref{s:rel} reviews related work. Section~\ref{s:method} introduces our carbon-aware scheduler, including accounting models (Section~\ref{s:acc}), problem formulation (Section~\ref{s:prob}), the MILP benchmark (Section~\ref{s:milp}), and the TotEm algorithm (Section~\ref{s:totem}). Section~\ref{s:setup} details the experimental setup. Section~\ref{s:res} presents results. Section~\ref{s:disc} discusses implications and limitations. Section~\ref{s:conc} concludes with sustainability implications and future work.
 
 \section{Related Work}
 \label{s:rel}
@@ -150,7 +150,7 @@ We therefore treat a time- and location-indexed forecast as a shared input to al
 
 Each node exposes a two-point power profile with an idle baseline \(P_{idle}\) and a maximum \(P_{max}\). We model node power \(P(U)\) as a piecewise linear function of aggregate CPU utilization \(U \in [0,1]\), where \(P(0)=0\) and \(P(U) = P_{idle} + (P_{max} - P_{idle}) \cdot U\) for \(U>0\). This linear approximation is widely standard in cluster scheduling research \cite{fan2007power} and sufficiently captures the dominant dynamic power component of CPU-bound workloads. This implies that the idle baseline is incurred only when at least one workload is active, and is zero otherwise.
 
-For a pod \(i\) with CPU request \(c_i\) on a node \(j\) with total capacity \(C_j^{tot}\) (see Table~\ref{t:params} for notation), we attribute per-pod power per slot \(t\) using the same linear interpolation for the incremental component and allocate the idle baseline across concurrent workloads in proportion to CPU share:
+For a pod \(i\) with CPU request \(c_i\) on a node \(j\) with total capacity \(C_j^{tot}\), we attribute per-pod power per slot \(t\) using the same linear interpolation for the incremental component and allocate the idle baseline across concurrent workloads in proportion to CPU share:
 \begin{equation}
 p_{ijt} = (P_{max} - P_{idle}) \cdot \frac{c_i}{C_j^{tot}} + \theta_{ijt} \cdot P_{idle},
 \end{equation}
@@ -164,22 +164,23 @@ The embodied carbon calculations are based on lifecycle assessment (LCA) data fr
 
 \begin{table}[!t]
 \centering
-\caption{Category-wise average embodied emissions and lifetimes}
-\label{t:emb}
-\begin{tabular}{lcc}
+\caption{Hardware profiles and embodied emissions}
+\label{t:hw_combined}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lcccccc}
 \toprule
-\textbf{Hardware Category} & \textbf{Embodied Emissions} & \textbf{Lifetime} \\
-                           & \textbf{(kg CO\textsubscript{2}e)} & \textbf{(years)} \\
+\textbf{Category} & \textbf{Cores} & \textbf{RAM} & \textbf{Idle} & \textbf{Max} & \textbf{Embodied} & \textbf{Life} \\
+                  &                & \textbf{(GiB)} & \textbf{(W)}  & \textbf{(W)} & \textbf{(kg CO\textsubscript{2}e)} & \textbf{(y)} \\
 \midrule
-IoT                        & 27.47                      & 5.20 \\
-Smartphone                 & 52.73                      & 3.03 \\
-Laptop                     & 231.86                     & 4.13 \\
-Server                     & 1230.66                    & 3.87 \\
+IoT               & 2              & 2              & 0.5           & 5.0          & 27.47  & 5.20 \\
+Smartphone        & 4              & 4              & 1.0           & 15.0         & 52.73  & 3.03 \\
+Laptop            & 8              & 8              & 10.0          & 150.0        & 231.86 & 4.13 \\
+Server            & 16             & 16             & 100.0         & 400.0        & 1230.66& 3.87 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The dataset encompasses over 200 hardware configurations from major manufacturers including Dell, Lenovo, and others, providing representative embodied carbon values and expected lifetimes across different hardware categories. We computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{t:emb}.
+The dataset encompasses over 200 hardware configurations from major manufacturers including Dell, Lenovo, and others, providing representative embodied carbon values and expected lifetimes across different hardware categories. We computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{t:hw_combined}.
 
 The core challenge in embodied carbon accounting is properly amortizing the upfront manufacturing emissions over the hardware's operational lifetime and allocating them to individual workloads. Consistent with SCI's time-and-resource attribution, we amortize per hour of lifetime and allocate by resource share:
 
@@ -205,36 +206,7 @@ We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Progr
 
 \paragraph*{Sets} Let $\mathcal{P}$ denote the set of pods (indexed by $i$), $\mathcal{F}$ the set of nodes (indexed by $j$), and $\mathcal{T}$ the set of timeslots (indexed by $t$).
 
-\paragraph*{Parameters} Table~\ref{t:params} lists the notation and description of the inputs used in the formulation.
-\begin{table}[!t]
-\centering
-\caption{Glossary of parameters}
-\label{t:params}
-\begin{tabular}{ll}
-\toprule
-\textbf{Parameter} & \textbf{Description} \\
-\midrule
-$D_i \in \mathbb{N}^+$ & Deadline timeslot for pod $i$ \\
-$s_i \in \mathbb{N}^+$ & Earliest timeslot for pod $i$ \\
-$d_i \in \mathbb{N}^+$ & Duration of pod $i$ (in timeslots) \\
-$w_i \in \mathbb{N}^+$ & Temporal slack for pod $i$ \\
-$c_i \in \mathbb{R}^+$ & CPU request of pod $i$ \\
-$r_i \in \mathbb{R}^+$ & RAM request of pod $i$ \\
-$C_j^{tot} \in \mathbb{R}^+$ & Total CPU capacity of node $j$ \\
-$C_{jt} \in \mathbb{R}^+$ & Available CPU of node $j$ in timeslot $t$ \\
-$R_{jt} \in \mathbb{R}^+$ & Available RAM of node $j$ in timeslot $t$ \\
-$p_{ijt} \in \mathbb{R}^+$ & Power consumption of pod $i$ on node $j$ at time $t$ \\
-$m_{ijt} \in \mathbb{R}^+$ & Total carbon mass of pod $i$ on node $j$ at time $t$ \\
-$m^{op}_{ijt} \in \mathbb{R}^+$ & Operational carbon of pod $i$ on node $j$ at time $t$ \\
-$m^{emb}_{ijt} \in \mathbb{R}^+$ & Embodied carbon of pod $i$ on node $j$ at time $t$ \\
-$\mathrm{CI}_{jt} \in \mathbb{R}^+$ & Carbon intensity of node $j$ in timeslot $t$ \\
-$\mathrm{EC}_j \in \mathbb{R}^+$ & Embodied carbon of node $j$ \\
-$L_j \in \mathbb{R}^+$ & Expected lifetime of node $j$ \\
-$u_j \in \mathbb{R}^+$ & Utilization factor of node $j$ \\
-$\theta_{ijt} \in [0,1]$ & Allocation share of pod $i$ on node $j$ at time $t$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+\paragraph*{Parameters} We define pod $i$'s deadline $D_i$, earliest start $s_i$, duration $d_i$, and requests $c_i, r_i$. Node $j$ has capacities $C_{jt}, R_{jt}$ and embodied attributes. $m_{ijt}$ represents total carbon (operational + embodied) for placing pod $i$ on node $j$ at time $t$.
 
 \paragraph*{Decision Variables} The binary decision variable is defined as:
 \begin{align}
@@ -348,34 +320,20 @@ If no feasible $(j,t)$ exists for a pod (e.g., due to capacity or window constra
 \caption{TotEm Scheduler}
 \label{a:totem}
 \begin{algorithmic}[1]
-\State \textbf{Input:} Pods $\mathcal{P}$, nodes $\mathcal{F}$, timeslots $\mathcal{T}$;
-\Statex \hspace{2.2em} pod parameters $\{(c_i,r_i,d_i,s_i,D_i)\}_{i\in\mathcal{P}}$;
-\Statex \hspace{2.2em} capacities $\{(C_{jt},R_{jt})\}_{j\in\mathcal{F},t\in\mathcal{T}}$;
-\Statex \hspace{2.2em} carbon intensity $\{\mathrm{CI}_{j,t}\}_{j,t}$; power $p_{ij}$; embodied $(\mathrm{EC}_j,L_j)$
-\State \textbf{Output:} Schedule $S \subseteq \mathcal{P}\times\mathcal{F}\times\mathcal{T}$
-\State
-\State Initialize residuals $\tilde C_{jt}\gets C_{jt}$, $\tilde R_{jt}\gets R_{jt}$ for all $j,t$; \quad $S\gets\emptyset$
-\State Compute $w_i \gets D_i - d_i$; \quad sort $\mathcal{P}$ by $(w_i\uparrow,\; c_i\downarrow,\; r_i\downarrow,\; d_i\downarrow)$
-\For{each $i \in \mathcal{P}$}
-  \State $m^\star \gets \infty$, $(j^\star,t^\star)\gets (\varnothing,\varnothing)$, $\pi^\star \gets \infty$
-  \For{each $t \in \mathcal{T}$ with $t \ge s_i$ and $t + d_i \le D_i$}
-    \For{each $j \in \mathcal{F}$}
-      \If{$\tilde C_{j,t+\tau} \ge c_i$ and $\tilde R_{j,t+\tau} \ge r_i$ for all $\tau \in \{0,\ldots,d_i-1\}$}
-        \State $\widehat m_{ijt} \gets \sum_{\tau=0}^{d_i-1}\big( m^{op}_{ij,\,t+\tau} + m^{emb}_{ij,\,t+\tau} \big)$
-        \State $\pi_{ijt} \gets \sum_{\tau=0}^{d_i-1}\Big(\frac{\tilde C_{j,t+\tau}-c_i}{C_{j,t+\tau}} + \frac{\tilde R_{j,t+\tau}-r_i}{R_{j,t+\tau}}\Big)$
-        \If{$\widehat m_{ijt} < m^\star - \epsilon$ \textbf{ or } ($|\widehat m_{ijt}-m^\star|\le \epsilon$ \textbf{ and } $\pi_{ijt} < \pi^\star$)}
-          \State $m^\star \gets \widehat m_{ijt}$, $(j^\star,t^\star)\gets (j,t)$, $\pi^\star \gets \pi_{ijt}$
-        \EndIf
+\State \textbf{Input:} Pods $\mathcal{P}$, Nodes $\mathcal{F}$, Timeslots $\mathcal{T}$, Capacities, Carbon Data.
+\State Init residuals $\tilde C_{jt}, \tilde R_{jt}$; $S\gets\emptyset$.
+\State Sort $\mathcal{P}$ by slack $(D_i-d_i)$, then size/duration.
+\For{$i \in \mathcal{P}$}
+  \State Best: $m^\star \gets \infty, (j^\star,t^\star)\gets \bot, \pi^\star \gets \infty$
+  \For{$t \in [s_i, D_i-d_i]$ \textbf{and} $j \in \mathcal{F}$}
+    \If{resources available for $i$ on $j$ at $t \dots t+d_i-1$}
+      \State $\widehat m \gets \sum_{\tau=0}^{d_i-1} (m^{op}_{ij(t+\tau)} + m^{emb}_{ij(t+\tau)})$; \quad $\pi \gets$ packing score
+      \If{$\widehat m < m^\star - \epsilon$ \textbf{or} ($|\widehat m - m^\star| \le \epsilon$ \textbf{and} $\pi < \pi^\star$)}
+        \State $m^\star \gets \widehat m, (j^\star,t^\star)\gets (j,t), \pi^\star \gets \pi$
       \EndIf
-    \EndFor
+    \EndIf
   \EndFor
-  \If{$(j^\star,t^\star)\neq(\varnothing,\varnothing)$}
-    \State $S \gets S \cup \{(i,j^\star,t^\star)\}$
-    \For{$\tau=0$ \textbf{to} $d_i-1$}
-      \State $\tilde C_{j^\star,t^\star+\tau} \gets \tilde C_{j^\star,t^\star+\tau} - c_i$; \quad
-             $\tilde R_{j^\star,t^\star+\tau} \gets \tilde R_{j^\star,t^\star+\tau} - r_i$
-    \EndFor
-  \EndIf
+  \If{$(j^\star,t^\star) \neq \bot$} $S \gets S \cup \{(i,j^\star,t^\star)\}$; update residuals. \EndIf
 \EndFor
 \State \Return $S$
 \end{algorithmic}
@@ -397,13 +355,7 @@ Our carbon-aware orchestration system is implemented as a distributed architectu
 
 The architecture in Figure~\ref{f:arch} comprises four layers: (i) a client-facing ingress, (ii) a pluggable algorithm engine with three schedulers, (iii) internal data services, and (iv) external data sources. This separation (blue = core components/algorithms; green = internal data; orange = external sources) decouples scheduling logic from data acquisition and persistence.
 
-\paragraph*{Ingress and dispatch} A Go client running in Kubernetes calls a gRPC placement service that implements a stable service interface definition. The service forwards scheduling requests (cluster snapshot and workloads) to the algorithm engine, which dispatches to one of three schedulers: a carbon-agnostic baseline, TotEm (a real-time carbon-aware heuristic), or a MILP scheduler used for offline benchmarking.
-
-\paragraph*{Algorithms and data dependencies} TotEm and MILP benchmark consume carbon data (time- and location-varying forecasts) and hardware metadata (power curves, embodied carbon, lifetimes). The baseline interacts only with state storage and ignores carbon inputs. All algorithms read/write state storage to persist placements and metrics for reproducibility and experiment continuity.
-
-\paragraph*{Internal data services} Carbon data maintains rolling 24--48 hour forecasts aligned to regions/nodes. Hardware metadata stores per-node power/embodied parameters sourced from Kubernetes node labels and Boavizta LCA values. State storage persists scheduling state and experiment logs.
-
-\paragraph*{External sources} Electricity Maps \cite{electricityMaps2024} provides carbon-intensity forecasts that feed carbon data; Kubernetes node information supplies hardware attributes to hardware metadata; Boavizta DB supplies embodied-carbon and lifetime parameters.
+\paragraph*{Architecture Components} A Go client submits requests via gRPC to the algorithm engine, which dispatches to TotEm, MILP, or the baseline. Schedulers consume carbon forecasts (from Electricity Maps \cite{electricityMaps2024}), hardware metadata (from Kubernetes/Boavizta), and state storage. The system isolates algorithms from data ingestion, maintaining rolling forecasts and persistent logs for reproducibility.
 
 \paragraph*{Availability} We release the full implementation as open-source software \cite{asadov_nasadovcarbon-aware-orchestrator_2025} and provide a `kubectl` plugin for cluster operators \cite{asadov_nasadovkubectl-carbon_2025}.
 
@@ -465,23 +417,8 @@ The architecture in Figure~\ref{f:arch} comprises four layers: (i) a client-faci
 We evaluate all algorithms on a shared synthetic testbed with consistent infrastructure, workloads, and carbon forecasts:
 
 \paragraph*{Infrastructure and Nodes} Nodes are described by hardware metadata including region, embodied carbon and lifetime, and power profiles. Regions cover European grids with heterogeneous carbon intensity.
-\begin{table}[!t]
-\centering
-\caption{Hardware profiles used in the synthetic testbed (capacity and power points).}
-\label{t:hw}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Category} & \textbf{CPU (cores)} & \textbf{RAM (GiB)} & \textbf{Idle (W)} & \textbf{Max (W)} \\
-\midrule
-IoT & 2 & 2 & 0.5 & 5.0 \\
-Smartphone & 4 & 4 & 1.0 & 15.0 \\
-Laptop & 8 & 8 & 10.0 & 150.0 \\
-Server & 16 & 16 & 100.0 & 400.0 \\
-\bottomrule
-\end{tabular}
-\end{table}
 
-The hardware parameters in Table~\ref{t:hw} are calibrated against representative real-world device specifications. The \textbf{IoT} profile mimics high-efficiency single-board computers similar to the Raspberry Pi Zero 2 W (typical idle $\sim$0.6W, max $\sim$3W) \cite{rpi_zero2w_product_brief}. The \textbf{Smartphone} values align with mid-range mobile devices under active load (e.g., typical 1--15W power envelope) \cite{samsung_s24_spec}. \textbf{Laptop} parameters represent high-performance workstations (e.g., Dell XPS 15 class with 130W--150W adapters) \cite{dell_xps15_spec}. The \textbf{Server} profile models a standard dual-socket rack server (e.g., Dell PowerEdge R750 class, idling $\sim$100W with 300W+ peak) \cite{dell_r750_spec}; notably, the 16~GiB RAM configuration reflects a ``compute-optimized'' ratio (1:1 vCPU:RAM) similar to dedicated cloud instances (e.g., AWS c-series \cite{aws_c7g} or Azure F-series) rather than memory-abundant general-purpose servers.
+The hardware parameters in Table~\ref{t:hw_combined} are calibrated against representative real-world device specifications. The \textbf{IoT} profile mimics high-efficiency single-board computers similar to the Raspberry Pi Zero 2 W (typical idle $\sim$0.6W, max $\sim$3W) \cite{rpi_zero2w_product_brief}. The \textbf{Smartphone} values align with mid-range mobile devices under active load (e.g., typical 1--15W power envelope) \cite{samsung_s24_spec}. \textbf{Laptop} parameters represent high-performance workstations (e.g., Dell XPS 15 class with 130W--150W adapters) \cite{dell_xps15_spec}. The \textbf{Server} profile models a standard dual-socket rack server (e.g., Dell PowerEdge R750 class, idling $\sim$100W with 300W+ peak) \cite{dell_r750_spec}; notably, the 16~GiB RAM configuration reflects a ``compute-optimized'' ratio (1:1 vCPU:RAM) similar to dedicated cloud instances (e.g., AWS c-series \cite{aws_c7g} or Azure F-series) rather than memory-abundant general-purpose servers.
 
 \paragraph*{Carbon Forecasts} Hourly average carbon-intensity (ACI) forecasts are loaded from a consolidated JSON (aligned across algorithms). Forecast horizons span 12–24 hours, enabling temporal shifting while respecting earliest/deadline constraints.
 
@@ -613,7 +550,7 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
 
 \subsection{Sensitivity to Embodied Assumptions}\label{s:sens}
    
-   \noindent\textit{Protocol.} Embodied emissions and lifetimes in Table~\ref{t:emb} are derived from Boavizta~\cite{boavizta2023}, but real deployments see variation between individual hardware configurations and management policies. To test that our conclusions do not hinge on exact values, we run a one-factor-at-a-time sensitivity study at the same representative utilization level. Guided by the Boavizta variability analysis, we apply uniform perturbations across all node classes: embodied emissions scaled by \(\{0.60, 0.80, 1.00, 1.20, 1.60\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\), averaged over independent seeds.
+   \noindent\textit{Protocol.} Embodied emissions and lifetimes in Table~\ref{t:hw_combined} are derived from Boavizta~\cite{boavizta2023}, but real deployments see variation between individual hardware configurations and management policies. To test that our conclusions do not hinge on exact values, we run a one-factor-at-a-time sensitivity study at the same representative utilization level. Guided by the Boavizta variability analysis, we apply uniform perturbations across all node classes: embodied emissions scaled by \(\{0.60, 0.80, 1.00, 1.20, 1.60\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\), averaged over independent seeds.
    
    \begin{figure}[t]
    \centering
