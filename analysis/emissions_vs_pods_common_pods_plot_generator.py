@@ -376,13 +376,13 @@ def create_common_pods_emissions_plot(x_axis: str = 'utilization'):
             all_pods.add(pods)
             arr = np.array(vals, dtype=float)
             mean_vals[algo][pods] = float(np.mean(arr))
-            stderr_vals[algo][pods] = float(np.std(arr, ddof=1) / np.sqrt(arr.size)) if arr.size > 1 else 0.0
+            stderr_vals[algo][pods] = float(np.std(arr, ddof=1)) if arr.size > 1 else 0.0
     for algo, byp in per_pod.items():
         for pods, vals in byp.items():
             all_pods.add(pods)
             arr = np.array(vals, dtype=float)
             mean_per_pod[algo][pods] = float(np.mean(arr))
-            stderr_per_pod[algo][pods] = float(np.std(arr, ddof=1) / np.sqrt(arr.size)) if arr.size > 1 else 0.0
+            stderr_per_pod[algo][pods] = float(np.std(arr, ddof=1)) if arr.size > 1 else 0.0
     pod_counts_sorted = sorted(all_pods)
 
     # Map pod counts to x-axis values (default: 24h-normalized CPU utilization).

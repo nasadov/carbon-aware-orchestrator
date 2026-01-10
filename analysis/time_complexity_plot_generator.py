@@ -106,7 +106,7 @@ def _aggregate_time(series: dict[int, list[float]]):
         if arr.size == 0:
             continue
         means[x] = float(np.mean(arr))
-        stderrs[x] = float(np.std(arr, ddof=1) / np.sqrt(arr.size)) if arr.size > 1 else 0.0
+        stderrs[x] = float(np.std(arr, ddof=1)) if arr.size > 1 else 0.0
     return xs, means, stderrs
 
 

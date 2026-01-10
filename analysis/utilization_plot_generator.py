@@ -537,7 +537,7 @@ def _aggregate_results(results):
             arr = np.array(vals, dtype=float)
             mean_vals[algo][pods] = float(np.mean(arr))
             if arr.size > 1:
-                std_errs[algo][pods] = float(np.std(arr, ddof=1) / np.sqrt(arr.size))
+                std_errs[algo][pods] = float(np.std(arr, ddof=1))
             else:
                 std_errs[algo][pods] = 0.0
 

@@ -55,14 +55,14 @@
         Vlad~C.~Coroam\u{a},
         Martin~Roch-Neirey,
         Marco~Zambianco,
-        Silvio~Cretti,
         and~Matthias~Finkbeiner% <-this % stops a space
 \thanks{N. Asadov, V. C. Coroam\u{a}, and M. Finkbeiner are with the Department
 of Environmental Technology, Technische Universit\"at Berlin, Strasse des 17. Juni 135, 10623 Berlin, Germany
 (e-mail: nasir.asadov@tu-berlin.de; coroama@tu-berlin.de; matthias.finkbeiner@tu-berlin.de).}% <-this % stops a space
-\thanks{M. Roch-Neirey is with the Department of Computer Systems Networking and Telecommunications, Polytechnique Montréal, Montreal, Canada (e-mail: martin.roch-neirey@hefr.ch).}% <-this % stops a space
-\thanks{M. Zambianco and S. Cretti are with Fondazione Bruno Kessler,
-38123 Trento, Italy (e-mail: zambianco@fbk.eu; cretti@fbk.eu).}% <-this % stops a space
+\thanks{M. Roch-Neirey is with the Department of Computer Sciences, School of Engineering and Architecture of Fribourg,
+HES-SO - University of Applied Sciences and Arts Western Switzerland (e-mail: martin@roch-neirey.com).}% <-this % stops a space
+\thanks{M. Zambianco is with Fondazione Bruno Kessler,
+38123 Trento, Italy (e-mail: mzambianco@fbk.eu).}% <-this % stops a space
 \thanks{Corresponding author: Nasir Asadov (e-mail: nasir.asadov@tu-berlin.de).}% <-this % stops a space
 \thanks{Manuscript received Month Day, Year; revised Month Day, Year.}}
 
@@ -72,7 +72,7 @@ of Environmental Technology, Technische Universit\"at Berlin, Strasse des 17. Ju
 
 \IEEEtitleabstractindextext{%
 \begin{abstract}
-Data centers account for over 1\% of global electricity use, yet today's container orchestrators optimize for performance and availability while ignoring carbon emissions that vary across time and location. At the same time, manufacturing (``embodied'') emissions are a first-order contributor that existing schedulers do not model. We ask whether container scheduling can reduce total emissions---operational and embodied---without sacrificing feasibility or incurring prohibitive runtime, and how closely a practical scheduler can approach a MILP benchmark. To this end, we formulate a carbon-aware placement problem that integrates operational and embodied emissions under resource and timing constraints; design TotEm (Total Emissions scheduler), a fast heuristic that minimizes a comprehensive emissions objective; and implement a global mixed-integer linear program (MILP) as a strong benchmark, alongside a carbon-agnostic Kubernetes-like baseline. All methods are evaluated on identical workloads, horizons, carbon forecasts, and power/embodied models. Across scales, TotEm substantially reduces emissions while preserving high placement success and practical runtime. At a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), average per-pod emissions fall from 36.6 to 24.7 g CO\textsubscript{2}e (32.5\%) relative to the carbon-agnostic baseline, while the MILP benchmark achieves 14.1 g. Runtime grows smoothly with pods and nodes and remains in single-digit seconds at our largest settings. These results establish carbon-aware container orchestration as a practical path to lower total emissions and provide a reproducible, open-source evaluation protocol for comparing heuristic and MILP approaches in sustainable cloud computing.
+Data centers account for over 1\% of global electricity use, yet today's container orchestrators optimize for performance and availability while ignoring carbon emissions that vary across time and location. At the same time, manufacturing (``embodied'') emissions are a first-order contributor that existing schedulers do not model. We ask whether container scheduling can reduce total emissions---operational and embodied---without sacrificing feasibility or incurring prohibitive runtime, and how closely a practical scheduler can approach a mixed-integer linear program (MILP)  benchmark. To this end, we formulate a carbon-aware placement problem that integrates operational and embodied emissions under resource and timing constraints; design TotEm (Total Emissions scheduler), a fast heuristic that minimizes a comprehensive emissions objective; and implement a global MILP as a strong benchmark, alongside a carbon-agnostic Kubernetes-like baseline. All methods are evaluated on identical workloads, horizons, carbon forecasts, and power/embodied models. Across scales, TotEm substantially reduces emissions while preserving high placement success and practical runtime. At a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), average per-pod emissions fall from 36.6 to 24.7 g CO\textsubscript{2}e (32.5\%) relative to the carbon-agnostic baseline, while the MILP benchmark achieves 14.1 g. Runtime grows smoothly with pods and nodes and remains in single-digit seconds at our largest settings. These results establish carbon-aware container orchestration as a practical path to lower total emissions and provide a reproducible, open-source evaluation protocol for comparing heuristic and MILP approaches in sustainable cloud computing.
 \end{abstract}
 \begin{IEEEkeywords}
 Carbon-aware computing, container orchestration, Kubernetes, sustainable computing, green cloud computing, optimization algorithms, mixed integer linear programming, global optimization.
@@ -90,28 +90,30 @@ Cloud and edge data centers have spent the last decade optimizing Power Usage Ef
 
 However, making container orchestration carbon-aware is nontrivial. Practical schedulers must respect placement feasibility (CPU/RAM), temporal constraints (earliest start and deadlines), and dynamic demand patterns, all while coping with carbon signals that change over time and across regions. Incorporating both operational and embodied carbon into placement decisions further complicates the objective, and any approach must remain computationally tractable at cluster scale. This raises the central research question: can we reduce total carbon emissions through orchestration decisions without sacrificing feasibility or incurring prohibitive precomputation costs?
 
-To this end, we present TotEm, a scheduler architecture designed for Kubernetes that greedily minimizes a combined operational+embodied carbon objective under resource and timing constraints, validated here via trace-driven emulation to ensure reproducibility and explore theoretical bounds. Complementarily, we also explore a MILP formulation with a lexicographic objective (first maximize successful placements, then minimize emissions) that we solve under a fixed time limit as a MILP benchmark (a carbon-emissions lower bound in our experiments); and a carbon-agnostic baseline that mirrors Kubernetes’ resource-only scoring (a carbon-emissions upper bound) for our TotEm scheduler \cite{KubernetesSchedulingFramework2025}. We integrate carbon-intensity forecasts with a co-location–aware power and embodied-carbon model, enforce earliest-start and deadline constraints, and evaluate all approaches in an offline precomputation mode that simulates multi-timeslot scheduling. Our experimental design systematically varies pods and nodes to assess both effectiveness and time complexity, producing apples-to-apples comparisons across algorithms.
+To this end, we present TotEm, a scheduler architecture designed for Kubernetes that greedily minimizes a combined operational and embodied carbon objective under resource and timing constraints, validated here via trace-driven emulation to ensure reproducibility and explore theoretical bounds. Complementarily, we also explore a mixed-integer linear program (MILP) formulation with a lexicographic objective (first maximize successful placements, then minimize emissions) that we solve under a fixed time limit as a MILP benchmark (a carbon-emissions lower bound in our experiments); and a carbon-agnostic baseline that mirrors Kubernetes’ resource-only scoring (a carbon-emissions upper bound) for our TotEm scheduler \cite{KubernetesSchedulingFramework2025}. We integrate carbon-intensity forecasts with a co-location–aware power and embodied-carbon model, enforce earliest-start and deadline constraints, and evaluate all approaches in an offline precomputation mode that simulates multi-timeslot scheduling. Our experimental design systematically varies pods (Kubernetes’ smallest schedulable unit) and nodes to assess both effectiveness and time complexity, producing apples-to-apples comparisons across algorithms.
 
-We implemented a prototype scheduler and evaluated it offline on controlled workloads across 12–24 hour horizons while varying pod and node scales; at a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), TotEm reduced average per-pod emissions from 36.6 to 24.7 g CO\textsubscript{2}e (\(-32.5\%\)) relative to a carbon-agnostic baseline, while end-to-end precompute remained in single-digit seconds.
+In a representative moderate-load setting, TotEm reduces modeled per-pod total emissions by \(\approx 33\%\) versus a carbon-agnostic baseline while keeping offline precomputation in single-digit seconds (Section~\ref{s:res}).
 
-Our results show that carbon-aware scheduling can substantially reduce emissions while preserving high placement success and practical runtime. TotEm achieves favorable carbon–performance trade-offs and scales efficiently across realistic pod and node counts, while the MILP benchmark establishes a strong lower bound on achievable emissions (and thus an upper bound on reductions) at a higher computational cost. Beyond demonstrating feasibility, we provide a reusable evaluation methodology—covering emissions modeling, constraint handling, and time-complexity sweeps—that enables rigorous, reproducible comparisons of carbon-aware orchestration strategies.
+%We implemented a prototype scheduler and evaluated it offline on controlled workloads across 12–24 hour horizons while varying pod and node scales; at a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), TotEm reduced average per-pod emissions from 36.6 to 24.7 g CO\textsubscript{2}e (\(-32.5\%\)) relative to a carbon-agnostic baseline, while end-to-end precompute remained in single-digit seconds.
+
+%Our results show that carbon-aware scheduling can substantially reduce emissions while preserving high placement success and practical runtime. TotEm achieves favorable carbon–performance trade-offs and scales efficiently across realistic pod and node counts, while the MILP benchmark establishes a strong lower bound on achievable emissions (and thus an upper bound on reductions) at a higher computational cost. Beyond demonstrating feasibility, we provide a reusable evaluation methodology—covering emissions modeling, constraint handling, and time-complexity sweeps—that enables rigorous, reproducible comparisons of carbon-aware orchestration strategies.
 
 %The remainder of this paper is organized as follows: Section~\ref{s:rel} reviews related work. Section~\ref{s:method} introduces our carbon-aware scheduler, including accounting models (Section~\ref{s:acc}), problem formulation (Section~\ref{s:prob}), the MILP benchmark (Section~\ref{s:milp}), and the TotEm algorithm (Section~\ref{s:totem}). Section~\ref{s:setup} details the experimental setup. Section~\ref{s:res} presents results. Section~\ref{s:disc} discusses implications and limitations. Section~\ref{s:conc} concludes with sustainability implications and future work.
 
 \section{Related Work}
 \label{s:rel}
 
-Carbon-aware workload scheduling leverages variations in the carbon intensity of electricity across \textit{time} and \textit{location}. Early research typically focused on \textit{either} shifting workloads in time (temporal shifting) or across geographic locations (spatial shifting), but not both. A recent survey ~\cite{asadov2025} found that most studies prior to 2023 pursued disjunct strategies---either temporal or spatial---rather than integrated approaches. Roughly 65\% of works examined only one axis (time or space), though by 2024--2025 a growing share began to consider both. Beyond when and where workloads run, a complementary line of work examines how to allocate embodied (manufacturing) emissions in evaluating and optimizing schedulers. Standards such as SCI~\cite{gsf2024} and recent studies propose time- and utilization-aware attribution; we review these approaches and their implications in Subsection~\ref{s:emb-alloc}. The subsequent analysis does not aim to be an exhaustive presentation of the related work. Instead, it shows — via chosen examples — how the research landscape evolved from the early, disjunct spatial or temporal scheduling towards algorithms considering the two and those considering embodied emissions as well. For the early works in particular only a few archetypical examples are shown; a thorough analysis is provided in \cite{asadov2025}.
+Carbon-aware workload scheduling leverages variations in the carbon intensity of electricity across \textit{time} and \textit{location}. Early research typically focused on \textit{either} shifting workloads in time (temporal shifting) or across geographic locations (spatial shifting), but not both. A recent survey ~\cite{asadov2025} found that most studies prior to 2023 pursued disjunct strategies---either temporal or spatial---rather than integrated approaches. Roughly 65\% of works examined only one axis (time or space), though by 2024--2025 a growing share began to consider both. Beyond when and where workloads run, a complementary line of work examines how to allocate embodied (manufacturing) emissions in evaluating and optimizing schedulers. Standards such as the Software Carbon Intensity (SCI)~\cite{gsf2024} and recent studies propose time- and utilization-aware attribution; we review these approaches and their implications in Subsection~\ref{s:emb-alloc}. The subsequent analysis does not aim to be an exhaustive presentation of the related work. Instead, it shows — via selected examples — how the research landscape evolved from the early, disjunct spatial or temporal scheduling towards algorithms considering the two and those considering embodied emissions as well. For the early works in particular only a few archetypical examples are shown; a thorough analysis is provided in \cite{asadov2025}.
 
 \subsection{Disjunct Temporal or Spatial Scheduling}
 
-\textbf{Temporal scheduling} aims to defer workloads to periods when electricity is cleaner. For example, a carbon-aware Kubernetes scheduler that postpones non-critical batch jobs to predicted low-carbon hours was implemented in \cite{piontek2023}. Using historical data to forecast carbon intensity, about 1.3\% emissions reduction was achieved compared to default scheduling. Similar findings are reported in \cite{wiesner2021}, indicating that selectively delaying tasks can meaningfully shrink emissions, especially under high renewable penetration and workload slack.
+\textbf{Temporal scheduling} aims to defer workloads to periods when electricity is cleaner. For example, \cite{wiesner2021} demonstrated that shifting flexible batch jobs can reduce emissions by 11--33\% depending on the region and deadline slack. In practice, however, realized gains can be lower; a Kubernetes-based implementation in \cite{piontek2023} achieved $\approx$1.3\% reduction for non-critical jobs using historical forecasts. These findings indicate that selectively delaying tasks can substantially shrink emissions, especially under high renewable penetration and sufficient workload flexibility.
 
-\textbf{Spatial scheduling}, by contrast, exploits geographic diversity in grid carbon intensity. Kubernetes was extended to prioritize data centers with lower carbon costs during job placement in \cite{james2019}. More recently, a geo-distributed service manager that routes requests to greener regions while minimizing user-perceived latency was developed in \cite{souza2024}. An approach that schedules serverless functions across cloud regions based on real-time carbon efficiency was proposed in \cite{chadha2024}. A model for VM placement across geo-distributed data centers, optimizing for carbon, cost, and energy efficiency jointly, was introduced in \cite{rawas2022}. Spatial shifting can yield large gains when regions differ significantly in grid mix, provided available capacity at the receiving end.
+\textbf{Spatial scheduling}, by contrast, exploits geographic diversity in grid carbon intensity. Recent studies demonstrate significant potential: geo-distributed service managers can reduce emissions by 25--70\% depending on latency constraints \cite{souza2024}, while location-aware VM and serverless placement strategies report gains ranging from $\approx$13\% to 30\% \cite{chadha2024, rawas2022}. Early work extending Kubernetes also established the feasibility of ranking regions by real-time intensity \cite{james2019}. These results confirm that spatial shifting can yield large gains when regions differ significantly in grid mix, provided available capacity at the receiving end.
 
 \subsection{Combined Spatio-Temporal Scheduling}
 
-Modern spatio-temporal schedulers seek to jointly optimize both \textit{when} and \textit{where} to execute workloads. A Kubernetes-based system that schedules jobs at the right cluster and time using carbon forecasts and Quality-of-Service (QoS) constraints was proposed in \cite{bahreini2024}, achieving a 33\% carbon footprint reduction compared to QoS-only baselines. A dynamic multi-cloud scheduler that integrates live carbon intensity data to dispatch workloads across cloud regions and time windows was introduced in \cite{beena2025}. A framework that provisions and schedules workloads for carbon savings, though with less emphasis on real-time orchestration, was presented in \cite{hanafy2025}.
+Modern spatio-temporal schedulers seek to jointly optimize both \textit{when} and \textit{where} to execute workloads. A Kubernetes-based system that schedules jobs at the right cluster and time using carbon forecasts and Quality-of-Service (QoS) constraints was proposed in \cite{bahreini2024}, achieving a 33\% CF reduction compared to QoS-only baselines. A dynamic multi-cloud scheduler that integrates live carbon intensity data to dispatch workloads across cloud regions and time windows was introduced in \cite{beena2025}. A framework that provisions and schedules workloads for carbon savings, though with less emphasis on real-time orchestration, was presented in \cite{hanafy2025}.
 
 A cautionary note is offered in \cite{sukprasert2024}: many workloads show limited additional benefit from spatio-temporal scheduling beyond what single-axis strategies can achieve. Modeling across 123 regions found that simple heuristics often captured most gains, and joint shifting showed diminishing returns in carbon-stable grids or inflexible workloads.
 
@@ -120,29 +122,23 @@ Despite these caveats, the direction of research clearly favors holistic strateg
 \subsection{Embodied Emissions Allocation in Carbon-aware Scheduling}\label{s:emb-alloc}
 Embodied emissions (during raw material extraction, manufacturing, logistics, and end-of-life of the underlying hardware) are increasingly recognized as an important contributor to a service's overall emissions and thus important to cover in carbon-aware scheduling. Yet, they are often omitted or uniformly amortized over calendar time. Two broad allocation strategies appear in the literature: (i) lifetime amortization (time-based), and (ii) utilization-aware attribution that splits embodied carbon by actual time-in-use and resource share.
 
-\paragraph*{Standards and frameworks} The Software Carbon Intensity (SCI) specification formalizes embodied allocation with
-\begin{equation*}
-M = \mathit{TE} \cdot \mathit{TS} \cdot \mathit{RS},
-\end{equation*}
-where $TE$ is total device embodied emissions from LCA, $TS$ is the time share (e.g., reserved or in-use fraction of expected lifetime), and $RS$ is the resource share (e.g., vCPU, memory) attributed to the software component \cite{gsf2024}. This structure subsumes both simple time-based amortization ($RS=1$) and finer-grained attribution when detailed utilization or reservations are available.
+\paragraph*{Standards and frameworks} The SCI specification proposes attributing embodied emissions to software using the device's total embodied emissions and two allocation factors: a time share (fraction of expected lifetime reserved/in-use) and a resource share (e.g., vCPU, memory) \cite{gsf2024}.
 
 \paragraph*{Recent research} Beyond uniform amortization, several works incorporate embodied carbon into scheduling and hardware-management decisions: (i) carbon depreciation models that allocate a larger share of embodied carbon to newly provisioned servers and recover idle-time impacts during active use are proposed in \cite{ji2025}, showing that traditional accounting can inadvertently favor premature refresh; (ii) aging-aware CPU core management that extends lifetime and reduces embodied-attributed emissions in inference clusters with minimal QoS impact is demonstrated in \cite{hewage2025}; (iii) joint embodied+operational objectives with heterogeneity and age in dispatch are formulated in \cite{zhang2025}, yielding lower total emissions under utilization-aware lifetime models; and (iv) for edge contexts, co-optimizing embodied and operational carbon under intermittent utilization and tight resource constraints is advocated by \cite{panteleaki2025}. Finally, (v) EcoServe~\cite{Li2025EcoServe} addresses embodied carbon in AI inference via hardware-level strategies; while it optimizes specialized AI infrastructure, our work provides a generalized framework for the wider cloud-native ecosystem.
 
 \paragraph*{Implications for scheduling} (1) Pure calendar-based amortization is appropriate when only coarse information is available, but it obscures idle periods and can inflate per-workload embodied intensity. (2) With utilization traces (e.g., hourly CPU), allocating embodied emissions in proportion to time-in-use and resource share yields more faithful attribution and can shift policies toward reusing capacity, consolidating strategically, or delaying refresh. (3) Accounting for device age and heterogeneity reveals that newer hardware, despite higher performance-per-watt, carries substantial embodied carbon that must be amortized through sustained use before outperforming older devices on total emissions. (4) These effects are amplified at the edge, where intermittency and under-utilization are common.
 
-In this paper, we adopt a refined, SCI-consistent allocation: we attribute embodied emissions using time-in-use and resource share derived from hourly CPU utilization. We argue that this choice is critical for \emph{Incentive Alignment}: unlike simple time-based amortization (which charges a fixed ``rent'' regardless of utility), utilization-based allocation strictly aligns the scheduler's incentives with the physical reality of the hardware. By linking the carbon ``cost'' to actual resource consumption, the model correctly rewards maximizing the utility of the manufactured asset---thereby deferring the environmental debt of new hardware production---consistent with the economic intent of the SCI standard. We discuss the validity of this attributional approach as a proxy for consequential reductions in Section~\ref{s:disc}.
-
 \section{Carbon-Aware Scheduling Strategy}\label{s:method}
 
-As stated from the outset, the aim of our carbon-aware scheduler is to minimize the carbon footprint (FP) for a random collection of nodes and pods. The carbon FP consists of operation and embodied carbon and therefore first and foremost we describe a model that accounts for both in Section \ref{s:acc}. We continue with problem formulation in Section~\ref{s:prob}. Since this problem is NP-hard and finding a global optimum is computationally intractable at scale, we pursue two complementary approaches: Section~\ref{s:milp} introduces a MILP benchmark to approximate the theoretical lower bound, while Section~\ref{s:totem} presents our TotEm scheduler designed to capture most of these benefits with practical runtime.
+As stated from the outset, the aim of our carbon-aware scheduler is to minimize the carbon footprint (CF) for a random collection of nodes and pods. The CF consists of operation and embodied carbon and therefore first and foremost we describe a model that accounts for both in Section \ref{s:acc}. We continue with problem formulation in Section~\ref{s:prob}. Since this problem is NP-hard and finding a global optimum is computationally intractable at scale, we pursue two complementary approaches: Section~\ref{s:milp} introduces a MILP benchmark to approximate the theoretical lower bound, while Section~\ref{s:totem} presents our TotEm scheduler designed to capture most of these benefits with practical runtime.
 
 \subsection{Carbon Accounting Models}\label{s:acc}
 
-As the carbon footprint needs to be assessed before it can be allocated, we first establish the accounting foundations: the actionable carbon-intensity signal (Section~\ref{s:sig}) is multiplied by the energy consumption of the workload. For this purpose we use a node power model that maps pod requests to energy (Section~\ref{s:pwr}). We elaborate on the actual amortization and allocation of embodied emissions in (Section~\ref{s:emb}). These components compose the per-candidate emissions objective used in the problem formulation (Section~\ref{s:prob}).
+As the CF needs to be assessed before it can be allocated, we first establish the accounting foundations: the actionable carbon-intensity signal (Section~\ref{s:sig}) is multiplied by the energy consumption of the workload. For this purpose we use a node power model that maps pod requests to energy (Section~\ref{s:pwr}). We elaborate on the actual amortization and allocation of embodied emissions in (Section~\ref{s:emb}). These components compose the per-candidate emissions objective used in the problem formulation (Section~\ref{s:prob}).
 
 \subsubsection{Operational: Carbon Signals}\label{s:sig}
 
-We use carbon intensity (ACI) as the actionable signal that varies by region and hour. Forecasts are essential because our scheduler chooses not just where to run a pod, but also when, within its deadline window. With a forward view of the grid, it can push flexible jobs toward cleaner hours, steer away from expected spikes, and, when options exist, favor greener regions.
+We use average carbon intensity (ACI) as the actionable signal that varies by region and hour. Since standard carbon forecasts are provided at hourly resolution, we discretize the scheduling horizon into 1-hour timeslots. Forecasts are essential because our scheduler chooses not just where to run a pod, but also when, within its deadline window. With a forward view of the grid, it can push flexible jobs toward cleaner hours, steer away from expected spikes, and, when options exist, favor greener regions.
 
 We therefore treat a time- and location-indexed forecast as a shared input to all algorithms. Both the MILP benchmark and TotEm use it to score candidate placements; TotEm also uses it to quickly rank hours and to break ties consistently across nodes. We align the forecast horizon with the scheduling horizon (12–24 h in our experiments). Forecasts are imperfect, but using the same input for all algorithms keeps comparisons fair. Section~\ref{s:setup} details sources, coverage, and preprocessing.
 
@@ -182,7 +178,11 @@ Server            & 16             & 16             & 100.0         & 400.0     
 
 The dataset encompasses over 200 hardware configurations from major manufacturers including Dell, Lenovo, and others, providing representative embodied carbon values and expected lifetimes across different hardware categories. We computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{t:hw_combined}.
 
-The core challenge in embodied carbon accounting is properly amortizing the upfront manufacturing emissions over the hardware's operational lifetime and allocating them to individual workloads. Consistent with SCI's time-and-resource attribution, we amortize per hour of lifetime and allocate by resource share:
+The core challenge in embodied carbon accounting is properly amortizing the upfront manufacturing emissions over the hardware's operational lifetime and allocating them to individual workloads. Following the Software Carbon Intensity (SCI) specification, embodied emissions attributed to a software component can be expressed as \cite{gsf2024}:
+\begin{equation*}
+M = \mathit{TE} \cdot \mathit{TS} \cdot \mathit{RS},
+\end{equation*}
+where $TE$ is total device embodied emissions from LCA, $TS$ is the time share (e.g., reserved or in-use fraction of expected lifetime), and $RS$ is the resource share (e.g., vCPU, memory) attributed to the software component. This structure subsumes both simple time-based amortization ($RS=1$) and finer-grained attribution when detailed utilization or reservations are available. In our setting, $\mathit{TE}$ corresponds to $\mathrm{EC}_j$, $\mathit{TS}$ corresponds to amortization over the device lifetime and the pod's scheduled runtime, and $\mathit{RS}$ corresponds to the per-slot allocation share $\theta_{ijt}$. Concretely, we amortize per hour of lifetime and allocate by resource share:
 
 \begin{equation}
 m^{emb}_{jt} = \frac{\mathrm{EC}_j}{L_{j} \times 365 \times 24}
@@ -194,19 +194,21 @@ For workload allocation, embodied emissions are attributed proportionally to bot
 \begin{equation}
 m^{emb}_{i} = \sum_{k=0}^{d_i-1} m^{emb}_{j(t+k)} \cdot \theta_{ij(t+k)}
 \end{equation}
-where $\theta_{ij(t+k)}$ is the allocation share for pod $i$ on node $j$ at slot $t$ (proportional to its resource share, with $\sum_i \theta_{ij(t+k)}=1$ for active slots). This utilization-based allocation aligns scheduling incentives with hardware lifespan extension (as motivated in Section~\ref{s:emb-alloc}) by ensuring that longer-running and higher-share workloads bear proportionally larger embodied carbon.
+where $\theta_{ij(t+k)}$ is the allocation share for pod $i$ on node $j$ at slot $t$ (proportional to its resource share, with $\sum_i \theta_{ij(t+k)}=1$ for active slots).
 
-The embodied carbon calculation is integrated directly into the scheduling objective function, where it combines with operational emissions to provide a comprehensive carbon footprint assessment for each placement decision. This integrated approach ensures that both emission components influence scheduling decisions simultaneously, rather than treating them as separate optimization phases. We quantify the effect on placement patterns in Section~\ref{s:impact}.
+We adopt a refined, SCI-consistent allocation: we attribute embodied emissions using time-in-use and resource share derived from hourly CPU utilization. We argue that this choice is critical for \emph{Incentive Alignment}: unlike simple time-based amortization (which charges a fixed ``rent'' regardless of utility), utilization-based allocation strictly aligns the scheduler's incentives with the physical reality of the hardware. By linking the carbon ``cost'' to actual resource consumption, the model correctly rewards maximizing the utility of the manufactured asset---thereby deferring the environmental debt of new hardware production---consistent with the economic intent of the SCI standard. We discuss the validity of this attributional approach as a proxy for consequential reductions in Section~\ref{s:disc}.
+
+The embodied carbon calculation is integrated directly into the scheduling objective function, where it combines with operational emissions to provide a comprehensive CF assessment for each placement decision. This integrated approach ensures that both emission components influence scheduling decisions simultaneously, rather than treating them as separate optimization phases. We quantify the effect on placement patterns in Section~\ref{s:impact}.
 
 \subsection{Problem Formulation}\label{s:prob}
 
-We formulate the carbon-aware scheduling problem as a Mixed Integer Linear Programming (MILP) optimization that finds optimal assignments of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing total carbon emissions incorporating both operational and embodied components. The following subsections detail the problem formulation. 
+We formulate the carbon-aware scheduling problem as a MILP optimization that finds optimal assignments of pods (computational tasks) to nodes (computing resources) and timeslots while minimizing total carbon emissions incorporating both operational and embodied components. The following subsections detail the problem formulation. 
 
 \subsubsection{Sets, Parameters and Decision Variables}
 
 \paragraph*{Sets} Let $\mathcal{P}$ denote the set of pods (indexed by $i$), $\mathcal{F}$ the set of nodes (indexed by $j$), and $\mathcal{T}$ the set of timeslots (indexed by $t$).
 
-\paragraph*{Parameters} We define pod $i$'s deadline $D_i$, earliest start $s_i$, duration $d_i$, and requests $c_i, r_i$. Node $j$ has capacities $C_{jt}, R_{jt}$ and embodied attributes. $m_{ijt}$ represents total carbon (operational + embodied) for placing pod $i$ on node $j$ at time $t$.
+\paragraph*{Parameters} We define pod $i$'s deadline $D_i$, earliest start $s_i$, duration $d_i$, slack $w_i$, and requests $c_i, r_i$. Node $j$ has capacities $C_{jt}, R_{jt}$ and embodied attributes. $m_{ijt}$ represents total carbon (operational + embodied) for placing pod $i$ on node $j$ at time $t$.
 
 \paragraph*{Decision Variables} The binary decision variable is defined as:
 \begin{align}
@@ -225,7 +227,7 @@ x_{ijt} =
 & R_{j(t+k)} \geq r_i \; \forall k \in \{0,\ldots,d_i-1\} \}
 \end{align}
 
-\noindent where the deadline timeslot $D_i = s_i + d_i + w_i$ includes the pod's execution duration and temporal slack for scheduling flexibility.
+\noindent where the deadline timeslot $D_i = s_i + d_i + w_i$ is determined by the earliest start $s_i$, duration $d_i$, and a temporal slack window $w_i$ allowing for scheduling flexibility.
 
 \subsubsection{Objective Function}
 
@@ -243,7 +245,7 @@ The carbon emissions $m_{ijt}$ incorporate both operational and embodied compone
 \begin{equation}
 m_{ijt} = \sum_{k=0}^{d_i-1} \left( m^{op}_{ij(t+k)} + m^{emb}_{ij(t+k)} \right)
 \end{equation}
-where operational emissions $m^{op}_{ij(t+k)} = p_{ij(t+k)} \cdot \text{CI}_{j(t+k)}$ depend on per-slot power $p_{ij(t+k)}$ and carbon intensity $\text{CI}_{j(t+k)}$, and embodied emissions per timeslot are $m^{emb}_{ij(t+k)} = \frac{\text{EC}_j}{L_j} \cdot \theta_{ij(t+k)}$ based on total embodied carbon $\text{EC}_j$, lifetime $L_j$, and allocation share $\theta_{ij(t+k)}$ (proportional to CPU share; $\sum_i \theta_{ij(t+k)}=1$ for active slots).
+where operational emissions $m^{op}_{ij(t+k)} = p_{ij(t+k)} \cdot \text{CI}_{j(t+k)}$ depend on per-slot power $p_{ij(t+k)}$ and carbon intensity $\text{CI}_{j(t+k)}$, and embodied emissions per timeslot are $m^{emb}_{ij(t+k)} = \frac{\text{EC}_j}{L_j \times 8760} \cdot \theta_{ij(t+k)}$ based on total embodied carbon $\text{EC}_j$, lifetime $L_j$ (in years), and allocation share $\theta_{ij(t+k)}$ (proportional to CPU share; $\sum_i \theta_{ij(t+k)}=1$ for active slots).
 
 \subsubsection{Constraints}\label{s:constr}
 
@@ -266,7 +268,7 @@ Temporal feasibility is encoded by the feasible set $\mathcal{V}_i$ defined earl
 
 \subsection{Theoretical Solution: MILP Benchmark}\label{s:milp}
 
-Before Section~\ref{s:totem} presents our proposed algorithm, the current section first discusses the theoretically ideal solution: the mixed-integer linear program (MILP) that, in principle, globally optimizes scheduling decisions for minimum carbon under our model. In practice, solving this NP-hard problem to proven optimality quickly becomes intractable at scale, so we rely on a MILP implementation (Section~\ref{s:base}) as a strong, but not always globally optimal, benchmark. The role of this MILP benchmark is twofold: First, to approximate lower-bound achievable emissions under identical data and constraints. Secondly, it is used in Sections~\ref{s:res} and~\ref{s:disc} as one of the two reference points for our algorithm.
+Before Section~\ref{s:totem} presents our proposed algorithm, the current section first discusses the theoretically ideal solution: the MILP that, in principle, globally optimizes scheduling decisions for minimum carbon under our model. In practice, solving this NP-hard problem to proven optimality quickly becomes intractable at scale, so we rely on a MILP implementation (Section~\ref{s:base}) as a strong, but not always globally optimal, benchmark. The role of this MILP benchmark is twofold: First, to approximate lower-bound achievable emissions under identical data and constraints. Secondly, it is used in Sections~\ref{s:res} and~\ref{s:disc} as one of the two reference points for our algorithm.
 
 \subsubsection{Feasibility and Relaxations}\label{s:relax}
 
@@ -283,19 +285,19 @@ This hierarchy ensures responsiveness in intractable instances and yields upper 
 
 \subsubsection{Computational Complexity}\label{s:milp-complex}
 
-The MILP contains $O(|\mathcal{P}|\,|\mathcal{F}|\,|\mathcal{T}|)$ binary variables over feasible pairs and is NP-hard with worst-case exponential time. Practical solvers (e.g., CBC or CP-SAT) employ branch-and-bound with cutting planes; performance is reasonable at moderate scales but degrades with increasing horizon and candidate sets. We therefore use solver time limits and the above relaxation to bound latency and to obtain MILP references at tractable sizes.
+The MILP contains up to $|\mathcal{P}| \cdot |\mathcal{F}| \cdot |\mathcal{T}|$ binary variables over feasible pairs. The problem is NP-hard as it reduces to the NP-hard Generalized Assignment Problem (GAP) in the single-timeslot case (assigning tasks to capacity-constrained agents to minimize cost), while our formulation further extends this complexity with multidimensional resources (CPU, RAM) and temporal placement. Practical solvers (e.g., CBC or CP-SAT) employ branch-and-bound with cutting planes; performance is reasonable at moderate scales but degrades with increasing horizon and candidate sets. We therefore use solver time limits and the above relaxation to bound latency and to obtain MILP references at tractable sizes.
 
 \subsection{TotEm: Heuristic Carbon-Aware Scheduler}
 \label{s:totem}
 
-While the MILP formulation defines an optimal solution in principle, solving it to proven optimality becomes computationally intractable for large-scale deployments with hundreds of pods and nodes; in practice we rely on MILP runs as a high-quality reference. To address these challenges, we developed a spatio-temporal scheduling algorithm named TotEm. The principles of this algorithm were first presented in \cite{asadov2025}; an improved---now implemented and benchmarked---version is presented in Algorithm~\ref{a:totem} below.
+To address the scalability limits of the global MILP formulation, we developed TotEm, a spatio-temporal scheduling heuristic designed for practical runtimes. The principles of this algorithm were first presented in \cite{asadov2025}; an improved---now implemented and benchmarked---version is presented in Algorithm~\ref{a:totem} below.
 
 The current paper introduces the further-developed version of this algorithm (Section~\ref{s:algo-frame}). Section~\ref{s:setup} details the experimental protocol, while Section~\ref{s:res} compares TotEm against both the carbon-agnostic baseline and the MILP benchmark.
 
 
 \subsubsection{Algorithmic Framework}\label{s:algo-frame}
 
-The core algorithm maintains a priority queue of pending pods ordered by deadline urgency and evaluates all feasible (node, timeslot) combinations, scoring each candidate by $e_{ijt}$ as defined in Section~\ref{s:carb-model}.
+The core algorithm maintains a priority queue of pending pods ordered by deadline urgency and evaluates all feasible (node, timeslot) combinations, scoring each candidate by $m_{ijt}$ as defined in Section~\ref{s:carb-model}.
 
 \paragraph*{Constraint handling}
 A candidate $(j,t)$ is feasible only if per-slot CPU and RAM capacities hold across the pod's duration and $t$ respects deadline windows, as defined in Section~\ref{s:constr}.
@@ -353,9 +355,9 @@ To ensure clarity and reproducibility, we document the evaluation setup in the s
 
 Our carbon-aware orchestration system is implemented as a distributed architecture that integrates with Kubernetes through a custom gRPC-based interface \cite{cretti_fogatlas-k8s_2024}. The system decouples carbon-aware scheduling logic from the underlying orchestration platform, enabling algorithmic experimentation.
 
-The architecture in Figure~\ref{f:arch} comprises four layers: (i) a client-facing ingress, (ii) a pluggable algorithm engine with three schedulers, (iii) internal data services, and (iv) external data sources. This separation (blue = core components/algorithms; green = internal data; orange = external sources) decouples scheduling logic from data acquisition and persistence.
+The architecture in Figure~\ref{f:arch} comprises four layers: (i) a client-facing ingress, (ii) a pluggable algorithm engine with three schedulers, (iii) internal data services, and (iv) external data sources. Each layer is color-coded in the figure (purple, blue, green, and orange, respectively). This separation decouples scheduling logic from data acquisition and persistence.
 
-\paragraph*{Architecture Components} A Go client submits requests via gRPC to the algorithm engine, which dispatches to TotEm, MILP, or the baseline. Schedulers consume carbon forecasts (from Electricity Maps \cite{electricityMaps2024}), hardware metadata (from Kubernetes/Boavizta), and state storage. The system isolates algorithms from data ingestion, maintaining rolling forecasts and persistent logs for reproducibility.
+\paragraph*{Architecture Components} A Go client submits requests via gRPC to the algorithm engine, which dispatches to TotEm, Oracle, or the baseline. Schedulers consume carbon forecasts (from Electricity Maps \cite{electricityMaps2024}), hardware metadata (from Kubernetes/Boavizta), and state storage. The system isolates algorithms from data ingestion, maintaining rolling forecasts and persistent logs for reproducibility.
 
 \paragraph*{Availability} We release the full implementation as open-source software \cite{asadov_nasadovcarbon-aware-orchestrator_2025} and provide a `kubectl` plugin for cluster operators \cite{asadov_nasadovkubectl-carbon_2025}.
 
@@ -363,19 +365,20 @@ The architecture in Figure~\ref{f:arch} comprises four layers: (i) a client-faci
 \centering
 \begin{tikzpicture}[node distance=1.0cm, auto, thick, scale=0.75, transform shape, >=latex,
     edge/.style={->, shorten >=2pt},
+    ingress/.style={rectangle, draw, fill=purple!20, text width=1.8cm, text centered, minimum height=0.7cm, font=\scriptsize},
     block/.style={rectangle, draw, fill=blue!20, text width=1.8cm, text centered, minimum height=0.7cm, font=\scriptsize},
     external/.style={rectangle, draw, fill=orange!20, text width=1.6cm, text centered, minimum height=0.6cm, font=\scriptsize},
     data/.style={rectangle, draw, fill=green!20, text width=1.6cm, text centered, minimum height=0.6cm, font=\scriptsize}]
     
     % Vertical layout for double-column
-    \node[block] (client) at (0,5) {Go Client\\(K8s)};
-    \node[block] (grpc) at (0,4) {gRPC\\Service};
+    \node[ingress] (client) at (0,5) {Go Client\\(K8s)};
+    \node[ingress] (grpc) at (0,4) {gRPC\\Service};
     \node[block] (engine) at (0,3) {Algorithm\\Engine};
     
     % Algorithms side by side (now three algorithms)
     \node[block] (totem) at (-3.0,2) {TotEm};
     \node[block] (baseline) at (0,2) {Baseline};
-    \node[block] (oracle) at (3.0,2) {MILP};
+    \node[block] (oracle) at (3.0,2) {Oracle};
     
     % Data services vertical stack
     \node[data] (carbon) at (0,0) {Carbon\\Data};
@@ -408,7 +411,7 @@ The architecture in Figure~\ref{f:arch} comprises four layers: (i) a client-faci
     
 \end{tikzpicture}
 \caption{Carbon-aware orchestration system architecture with component interactions and data flow.
-\footnotesize{Color Key:}\;\fcolorbox{black}{blue!20}{\phantom{\rule{0.8em}{0.8em}}} Core components and algorithms\;\fcolorbox{black}{green!20}{\phantom{\rule{0.8em}{0.8em}}} Internal data services\;\fcolorbox{black}{orange!20}{\phantom{\rule{0.8em}{0.8em}}} External data sources}
+\footnotesize{Color keys:}\;\fcolorbox{black}{purple!20}{\phantom{\rule{0.8em}{0.8em}}} Client/Ingress\;\fcolorbox{black}{blue!20}{\phantom{\rule{0.8em}{0.8em}}} Core algorithms\;\fcolorbox{black}{green!20}{\phantom{\rule{0.8em}{0.8em}}} Internal data services\;\fcolorbox{black}{orange!20}{\phantom{\rule{0.8em}{0.8em}}} External data sources}
 \label{f:arch}
 \end{figure}
 
@@ -420,50 +423,51 @@ We evaluate all algorithms on a shared synthetic testbed with consistent infrast
 
 The hardware parameters in Table~\ref{t:hw_combined} are calibrated against representative real-world device specifications. The \textbf{IoT} profile mimics high-efficiency single-board computers similar to the Raspberry Pi Zero 2 W (typical idle $\sim$0.6W, max $\sim$3W) \cite{rpi_zero2w_product_brief}. The \textbf{Smartphone} values align with mid-range mobile devices under active load (e.g., typical 1--15W power envelope) \cite{samsung_s24_spec}. \textbf{Laptop} parameters represent high-performance workstations (e.g., Dell XPS 15 class with 130W--150W adapters) \cite{dell_xps15_spec}. The \textbf{Server} profile models a standard dual-socket rack server (e.g., Dell PowerEdge R750 class, idling $\sim$100W with 300W+ peak) \cite{dell_r750_spec}; notably, the 16~GiB RAM configuration reflects a ``compute-optimized'' ratio (1:1 vCPU:RAM) similar to dedicated cloud instances (e.g., AWS c-series \cite{aws_c7g} or Azure F-series) rather than memory-abundant general-purpose servers.
 
-\paragraph*{Carbon Forecasts} Hourly average carbon-intensity (ACI) forecasts are loaded from a consolidated JSON (aligned across algorithms). Forecast horizons span 12–24 hours, enabling temporal shifting while respecting earliest/deadline constraints.
+\paragraph*{Carbon Forecasts} Hourly ACI forecasts are loaded from a consolidated JSON (aligned across algorithms). Forecast horizons span 12–24 hours, enabling temporal shifting while respecting earliest/deadline constraints.
 
 \paragraph*{Scheduling Horizon} All methods operate over identical timeslot horizons. For fairness, feasibility checks require capacity across the entire execution duration of a pod for any candidate start slot.
 
 \paragraph*{Validation} A batch validator checks deadline, and capacity constraints on produced placements for all algorithms; current experiments pass with zero violations.
 
 \paragraph*{Workload Characteristics}
-Workloads are synthetically generated to simulate a heterogeneous cluster environment. Pods are assigned CPU and RAM requests sampled from a set of standard sizes (CPU: 0.1--2.0 cores; RAM: 128~MiB--2~GiB), mirroring standard cloud-native container sizes (e.g., AWS Fargate task configurations \cite{aws_fargate_pricing}). Durations are selected from $\{1, 3, 6\}$ hours, consistent with the ``middle ground'' of batch processing tasks (e.g., CI/CD pipelines, ML training epochs) observed in public cloud traces \cite{azure_trace_2020}. Deadlines are defined as $D_i = s_i + d_i + w_i$, where the slack $w_i \in \{1, 3, 6\}$ hours. This structure creates bounded scheduling windows with varying flexibility. For controlled scaling experiments, we use an ``exact total'' generation strategy that distributes a fixed number of pods (ranging from 20 to 400) across the scheduling horizon to precisely control workload density. While real-world traces exist, synthetic generation allows us to systematically sweep utilization levels (from 10\% to 100\%) to identify the algorithm's behavior boundaries, which is difficult with fixed-density traces.
+Workloads are synthetically generated to simulate a heterogeneous cluster environment. Pods are assigned CPU and RAM requests sampled from a set of standard sizes (CPU: 0.1--2.0 cores; RAM: 128~MiB--2~GiB), mirroring standard cloud-native container sizes (e.g., AWS Fargate task configurations \cite{aws_fargate_pricing}). Durations are selected from $\{1, 3, 6\}$ hours, consistent with the ``middle ground'' of batch processing tasks (e.g., CI/CD pipelines, ML training epochs) observed in public cloud traces \cite{azure_trace_2020}. Deadlines are defined as $D_i = s_i + d_i + w_i$, where the slack $w_i \in \{1, 3, 6\}$ hours. This structure creates bounded scheduling windows with varying flexibility. For controlled scaling experiments, we use an ``exact total'' generation strategy that distributes a fixed number of pods (ranging from 20 to 200) across the scheduling horizon to precisely control workload density. While real-world traces exist, synthetic generation allows us to systematically sweep utilization levels (from 10\% to 100\%) to identify the algorithm's behavior boundaries, which is difficult with fixed-density traces.
 
 \subsection{Benchmarking Baselines}
 \label{s:base}
 
-The performance of the proposed algorithm is compared against two alternatives that together span the possible performance range of carbon orchestration: A plain carbon-agnostic scheduler represents the default vanilla choice. At the other end, a MILP scheduler (with oracle capabilities) approximates the best possible solution under our model.
+The performance of the proposed algorithm is compared against two alternatives that together span the possible performance range of carbon orchestration: A plain carbon-agnostic scheduler represents the default vanilla choice. At the other end, the Oracle (MILP) scheduler, whose theoretical basis we presented in Section~\ref{s:milp}, approximates the best possible solution under our model.
 
 
-\paragraph*{MILP oracle} We instantiate the two-phase MILP benchmark as an oracle with full knowledge of all workloads arriving over the entire horizon. We use the following solver setup: OR-Tools CP-SAT by default (per-phase time limit 900 s, 8 threads), with PuLP fallbacks for HiGHS/Gurobi/CPLEX/CBC using the same time limit and a 5\% relative-gap tolerance. Phase~2 uses binary activation variables to charge idle+embodied once per active (node, timeslot) with standard linking; we warm-start from Phase~1 where supported and, on timeout, run a dynamic-only fallback to return a usable bound. We log solver status, iteration counts (when available), and wall time. Because of this time limit (and, for MILP backends, the relative-gap stopping criterion), reported MILP emissions at larger scales should be interpreted as upper bounds on the true global optimum rather than certified optima.
+\paragraph*{Oracle (MILP)} We instantiate the two-phase MILP benchmark as an oracle with full knowledge of all workloads arriving over the entire horizon. We use the following solver setup: OR-Tools CP-SAT by default (per-phase time limit 900 s, 8 threads), with PuLP fallbacks for HiGHS/Gurobi/CPLEX/CBC using the same time limit and a 5\% relative-gap tolerance. Phase~2 uses binary activation variables to charge idle+embodied once per active (node, timeslot) with standard linking; we warm-start from Phase~1 where supported and, on timeout, run a dynamic-only fallback to return a usable bound. We log solver status, iteration counts (when available), and wall time. Because of this time limit (and, for MILP backends, the relative-gap stopping criterion), reported MILP emissions at larger scales should be interpreted as upper bounds on the true global optimum rather than certified optima.
 
 \paragraph*{Carbon-agnostic baseline} For a straightforward reference, we mirror Kubernetes’ \emph{filter → score → select} path: (i) filter nodes that satisfy CPU/RAM across the pod’s duration at a candidate start, (ii) score feasible nodes with a LeastAllocated-like metric (equal CPU/RAM weights), and (iii) pick the best score at the earliest feasible start. It enforces earliest/deadline windows and ignores carbon in scoring. To keep behavior close to upstream, we enable node sampling and early feasible-stop so runtime and choices look like vanilla. Configuration: \texttt{percentage\_of\_nodes\_to\_score}=50\%, \texttt{min\_nodes\_to\_score}=50, \texttt{max\_nodes\_to\_score}=1000, early stop after \(k=16\) feasible candidates. Feasibility uses a sliding-window check across the pod’s duration on each node. While the baseline ignores carbon during scheduling, we calculate the resulting total emissions offline using the same shared accounting model to ensure a fair comparison.
+Because it prioritizes earliest-start placement with a spread-oriented (LeastAllocated-like) score, the baseline can increase fragmentation under deadline windows, reducing placement success at higher load compared to slack-aware schedulers.
 
 \subsection{Evaluation Methodology}\label{s:methodology}
 
 \paragraph*{Metrics}
 We report:
 \begin{itemize}
-  \item \textbf{Total emissions}: operational + amortized embodied (kg CO\textsubscript{2}e), per run and per algorithm
+  \item \textbf{Total emissions}: operational and allocated embodied (kg CO\textsubscript{2}e), per run and per algorithm
   \item \textbf{Emissions per pod}: total divided by placed pods
-  \item \textbf{Success rate}: fraction of pods placed (feasibility under constraints)
+  \item \textbf{Success rate}: share of pods placed (feasibility under constraints)
   \item \textbf{Runtime}: median/mean per-placement execution time and end-to-end precompute time
 \end{itemize}
 
 \paragraph*{Protocol and Fairness}
-To quantify carbon reductions, we evaluate three schedulers—\emph{carbon-agnostic} (baseline), \emph{TotEm} (carbon-aware), and \emph{MILP}—over controlled workload scales (20–200 pods) and time horizons. All algorithms operate under the same constraints (earliest timeslot, CPU/Memory, node capacity/affinity) and the same emissions model (operational + amortized embodied carbon; identical regional carbon-intensity forecasts and node power profiles). We fix seeds where stochasticity is used and report confidence intervals when averaging over three independent runs. Finally, we assess the robustness of our results through sensitivity analyses on forecast error and embodied carbon parameters.
+To quantify carbon reductions, we evaluate three schedulers—\emph{carbon-agnostic} (baseline), \emph{TotEm} (carbon-aware), and \emph{Oracle} (MILP benchmark)—over controlled workload scales (20–200 pods) and time horizons. All algorithms operate under the same constraints (earliest timeslot, CPU/Memory, node capacity/affinity) and the same emissions model (operational + amortized embodied carbon; identical regional carbon-intensity forecasts and node power profiles). We fix seeds where stochasticity is used and report the mean and standard deviation across three independent runs. Finally, we assess the robustness of our results through sensitivity analyses on forecast error and embodied carbon parameters.
 
 Apples-to-apples comparison is non-trivial because algorithms can schedule different subsets of pods under the same load, confounding emissions with feasibility. We therefore present the coverage-inclusive view: emissions computed over all pods each algorithm successfully schedules, reflecting end-to-end impact (quality and coverage).
 
 \paragraph*{Runtime Measurement}
-We report median precompute runtime in offline mode with a 12-slot horizon. For node-scaling overlays, we fix pods at 200 and vary node count; for pod-scaling overlays, we fix nodes at 16 and vary pod count. Curves overlay multiple schedulers; error bars (when present) denote $\pm1\sigma$ over three replicates.
+We report median precompute runtime in offline mode with a 12-slot horizon. For node-scaling overlays, we fix pods at 200 and vary node count; for pod-scaling overlays, we fix nodes at 32 and vary pod count. Curves overlay multiple schedulers; error bars (when present) denote standard deviation ($\sigma$) over three replicates.
 
 \section{Results}\label{s:res}  % nice to have: stat confidence or repeated runs; sensitivity to forecast error
 
 We report how embodied emissions change placement behavior (Section~\ref{s:impact}), quantify emissions reductions and success rates (Section~\ref{s:red} and Fig.~\ref{f:succ}), and analyze runtime scaling (Section~\ref{s:time}). Finally, we assess robustness to embodied parameters and forecast errors (Sections~\ref{s:sens} and~\ref{s:forecast}).
 
 \subsection{Impact of Embodied Emissions on Scheduling}\label{s:impact}
-Including embodied emissions fundamentally changes placement behavior. An operational-only strategy (Fig.~\ref{f:op-only}) tends to greedily cluster workloads in timeslots or regions with the lowest grid intensity, disregarding hardware utilization efficiency. In contrast, the comprehensive objective (Fig.~\ref{f:comp}) balances this grid-chasing with an incentive to maximize hardware utility. While operational signals might pull workloads toward a specific 'green' window, the embodied term imposes a penalty on low utilization, driving the scheduler to consolidate placements where possible---or, conversely, to utilize available capacity in slightly higher-carbon regions if doing so avoids the ``embodied penalty'' of spinning up new, underutilized hardware elsewhere.
+Including embodied emissions fundamentally changes placement behavior. An operational-only strategy (Fig.~\ref{f:op-only}) tends to greedily cluster workloads in timeslots or regions with the lowest grid intensity, disregarding hardware utilization efficiency. By contrast, the comprehensive objective (Fig.~\ref{f:comp}) balances this grid-chasing with an incentive to maximize hardware utility. While operational signals might pull workloads toward a specific 'green' window, the embodied term imposes a penalty on low utilization, driving the scheduler to consolidate placements where possible---or, conversely, to utilize available capacity in slightly higher-carbon regions if doing so avoids the ``embodied penalty'' of spinning up new, underutilized hardware elsewhere.
 
 \begin{figure*}[t]
 \centering
@@ -483,13 +487,13 @@ Including embodied emissions fundamentally changes placement behavior. An operat
 \label{f:density}
 \end{figure*}
 
-Taken together, Figures~\ref{f:op-only} and~\ref{f:comp} show that accounting for embodied emissions alters the optimization landscape. The operational-only strategy blindly chases low-CI regions, often leaving hardware underutilized. In contrast, the comprehensive objective drives consolidation to amortize the fixed embodied carbon costs, activating fewer nodes at higher utilization. This trade-off can increase operational emissions slightly in some slots but reduces total (operational+embodied) emissions across the horizon; in the 100-pod runs TotEm cuts total emissions by 13.4\% relative to operational-only (2.75\,kg vs. 3.18\,kg CO$_2$e).
+Taken together, Figures~\ref{f:op-only} and~\ref{f:comp} show that accounting for embodied emissions alters the optimization landscape. The operational-only strategy blindly chases low-CI regions, often leaving hardware underutilized. By contrast, the comprehensive objective drives consolidation to amortize the fixed embodied carbon costs, activating fewer nodes at higher utilization. This trade-off can increase operational emissions slightly in some slots but reduces total (operational+embodied) emissions across the horizon; in the 100-pod runs TotEm cuts total emissions by 13.4\% relative to operational-only (2.75\,kg vs. 3.18\,kg CO$_2$e).
 
 The result aligns with our allocation model: embodied emissions are a fixed, time-amortized cost that incentivizes sustained, efficient hardware use. Ignoring them underestimates true impact and can create seemingly efficient but globally suboptimal utilization patterns.
 
 \subsection{Carbon Reduction}\label{s:red}
    
-   Figure~\ref{f:emit-inc} shows total emissions versus workload intensity, expressed as implied average cluster CPU utilization over a 24-hour horizon (coverage-inclusive). For each pod count, utilization is computed once from the workload generator as total requested CPU-core hours across all pods divided by the cluster’s available CPU-core hours (30 cores \(\times\) 24 hours); this mapping is shared across all algorithms. As load increases, the carbon-aware schedulers reduce emissions relative to the carbon-agnostic baseline; the MILP benchmark consistently provides the lowest emissions, and TotEm tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{f:succ} (protocol in Section~\ref{s:setup}).
+   Figure~\ref{f:emit-inc} shows total emissions versus workload intensity, expressed as implied average cluster CPU utilization over a 24-hour horizon (coverage-inclusive). For each pod count, utilization is computed once from the workload generator as total requested CPU-core hours across all pods divided by the cluster’s available CPU-core hours (30 cores \(\times\) 24 hours); this mapping is shared across all algorithms. Across most loads, the carbon-aware schedulers reduce emissions relative to the carbon-agnostic baseline; the Oracle benchmark consistently provides the lowest emissions, and TotEm tracks it closely in most scales. Because inclusive totals aggregate whatever each algorithm could schedule, we jointly report success rate in Figure~\ref{f:succ} (protocol in Section~\ref{s:setup}).
    
    % Matched-set analysis removed
    
@@ -498,12 +502,12 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
    \begin{figure*}[t]
    \centering
    \subfloat[]{
-     \includegraphics[width=0.48\textwidth]{figures/emissions_vs_pods_20251207_113200.pdf}
+     \includegraphics[width=0.48\textwidth]{figures/emissions_vs_pods_20260109_091206.pdf}
      \label{f:emit-inc}
    }
    \hfil
    \subfloat[]{
-     \includegraphics[width=0.48\textwidth]{figures/emissions_per_pod_vs_pods_20251207_113200.pdf}
+        \includegraphics[width=0.48\textwidth]{figures/emissions_per_pod_vs_pods_20260109_091206.pdf}
      \label{f:emit-pod}
    }
    \caption{(a) Total emissions vs. implied average cluster CPU utilization over 24 hours (coverage-inclusive). (b) Average emissions per placed pod (kg CO\textsubscript{2}e/pod). Both use the shared operational+embodied model.}
@@ -514,20 +518,21 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
 
    % Figure for emissions per common pod removed
 
-\noindent\textit{Concrete findings.} At this representative utilization ($\approx 28$\% implied average CPU utilization over 24 hours), per-pod emissions were: carbon-agnostic baseline 36.6 g CO\textsubscript{2}e, TotEm 24.7 g (\(\approx\)-32.5\%), and MILP 14.1 g (\(\approx\)-61.5\%). Because the MILP is solved with a 900 s per-phase time limit (and, for MILP backends, a 5\% relative-gap target), the 2.6 g CO\textsubscript{2}e value should be interpreted as the best solution found under this budget—that is, an upper bound on the true global optimum—rather than a certified optimum. This gap nevertheless illustrates that TotEm captures most of the MILP benchmark's benefit while remaining deployable.
+\noindent\textit{Concrete findings.} At this representative utilization ($\approx 28$\% implied average CPU utilization over 24 hours), per-pod emissions were: carbon-agnostic baseline 36.6 g CO\textsubscript{2}e, TotEm 24.7 g (\(\approx\)-32.5\%), and Oracle 14.1 g (\(\approx\)-61.5\%). Because the MILP is solved with a 900 s per-phase time limit (and, for MILP backends, a 5\% relative-gap target), the 14.1 g CO\textsubscript{2}e value should be interpreted as the best solution found under this budget—that is, an upper bound on the true global optimum—rather than a certified optimum. This gap nevertheless illustrates that TotEm captures most of the MILP benchmark's benefit while remaining deployable.
 
 \subsection{Placement Success Rate}\label{s:succ}
    % Update to newest success-rate plot (computed from per-run CSVs; ignores stale pods.txt)
-   Figure~\ref{f:succ} shows scheduling success rate versus implied average cluster CPU utilization over 24 hours. At low load, all three methods are near 100\%; as load increases, TotEm remains above the carbon-agnostic baseline and close to the MILP benchmark.
+   Figure~\ref{f:succ} shows scheduling success rate versus implied average cluster CPU utilization over 24 hours. At low load, all three methods are near 100\%; as load increases, TotEm remains above the carbon-agnostic baseline and close to the Oracle benchmark.
+   This gap is expected: the baseline greedily selects the earliest feasible start and favors spreading, which can fragment node--timeslot capacity and consume scarce early windows needed by tighter-deadline pods. TotEm’s slack-aware ordering and spatio-temporal search better preserve feasibility under window constraints.
    \begin{figure}[t]
      \centering
-     \includegraphics[width=0.85\linewidth]{figures/SuccessRate/success_rate_comparison_20251207_113201.pdf}
+     \includegraphics[width=0.85\linewidth]{figures/SuccessRate/success_rate_comparison_20260109_091208.pdf}
      \caption{Scheduling success rate vs. implied average cluster CPU utilization over 24 hours. Higher is better. Used jointly with inclusive emissions to disambiguate feasibility from carbon efficiency.}
      \label{f:succ}
    \end{figure}
 
 \subsection{Runtime Cost: Time Complexity}\label{s:time}
-   Figures~\ref{f:time-node} and~\ref{f:time-pod} summarise runtime. It grows roughly with the number of pods and remains compatible with online use at our largest scales. The MILP scheduler is far slower and sensitive to solver limits, so we treat it as a benchmarking tool rather than a production scheduler. Following the carbon-agnostic baseline optimizations described above, the baseline series shifts down substantially in both overlays.
+   Figures~\ref{f:time-node} and~\ref{f:time-pod} summarise runtime. It grows roughly with the number of pods and remains compatible with online use at our largest scales. The MILP scheduler is far slower and sensitive to solver limits. Following the carbon-agnostic baseline optimizations described above, the baseline series shifts down substantially in both overlays.
    % Overlay time complexity plots (multi-algorithm)
    \begin{figure*}[t]
    \centering
@@ -577,7 +582,7 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
 \section{Discussion}
 \label{s:disc}
 
-Our results demonstrate that incorporating both operational and embodied emissions into container orchestration is not only feasible but essential for genuine sustainability. TotEm achieves substantial carbon reductions ($\approx$32.5\% at moderate load) relative to a carbon-agnostic baseline, tracking the Oracle benchmark effectively across most scales. In this section, we analyze the mechanisms driving these reductions, discuss the computational trade-offs, and evaluate robustness and validity.
+Our results demonstrate that incorporating both operational and embodied emissions into container orchestration is not only feasible but important for genuinely reducing CF. TotEm achieves substantial carbon reductions ($\approx$33\% at moderate load) relative to a carbon-agnostic baseline, tracking the Oracle benchmark effectively across most scales. In this section, we analyze the mechanisms driving these reductions, discuss the computational trade-offs, and evaluate robustness and validity.
 
 \subsection{Mechanisms of Carbon Reduction}
 The significant emissions gap between the carbon-agnostic baseline and TotEm stems from fundamentally different placement strategies. The baseline, mirroring standard Kubernetes behavior (LeastAllocated), tends to spread workloads across nodes. While beneficial for failover and burst capacity, this strategy maximizes the number of active nodes, thereby incurring the idle power and embodied carbon ``entry tax'' of many machines simultaneously. 
@@ -590,7 +595,7 @@ It is crucial to distinguish between attributional and consequential lifecycle a
 \subsection{The Oracle Gap and Computational Practicality}
 While TotEm captures a large fraction of the potential savings, a gap remains between it and the MILP-based Oracle ($\approx$10~g CO\textsubscript{2}e/pod at moderate load). This gap reflects the difference between a greedy heuristic and global optimization. TotEm makes irreversible decisions per pod, potentially saturating ``good'' windows early, whereas the Oracle can rearrange the entire schedule to fit difficult pods into optimal slots.
 
-However, this optimality comes at a prohibitive cost. As shown in Section~\ref{s:time}, the Oracle's runtime scales poorly, making it unsuitable for dynamic clusters. TotEm, with its polynomial time complexity and single-digit second runtimes, offers a practical trade-off: it delivers most of the sustainability benefit—changing the ``order of magnitude'' of emissions—while remaining deployable in real-time or near-line admission control loops.
+However, this optimality comes at a prohibitive cost and requires future knowledge. As shown in Section~\ref{s:time}, the Oracle's runtime scales poorly, making it unsuitable for dynamic clusters. TotEm, with its polynomial time complexity and single-digit second runtimes, offers a practical trade-off: it delivers most of the sustainability benefit—changing the ``order of magnitude'' of emissions—while remaining deployable in real-time or near-line admission control loops.
 
 \subsection{Robustness to Real-World Uncertainty}
 A critical barrier to adopting carbon-aware scheduling has been the fear that forecast errors will degrade performance. Our sensitivity analysis (Section~\ref{s:forecast}) provides reassuring evidence to the contrary. TotEm maintains consistent savings even as forecast error (MAPE) increases to 20\%. 
@@ -598,22 +603,22 @@ A critical barrier to adopting carbon-aware scheduling has been the fear that fo
 We attribute this robustness to the nature of the decision space. The scheduler relies on the \textit{relative ranking} of time windows rather than absolute precision. Even with noise, a ``clean'' night-time window generally remains cleaner than a ``dirty'' evening peak. As long as the signal preserves the coarse-grained structure of the grid's daily cycle, TotEm can successfully shift work to lower-carbon periods. Similarly, Section~\ref{s:sens} shows that while exact embodied carbon values shift the absolute numbers, the relative ordering of algorithms and the benefits of consolidation remain stable, insulating the approach from supply-chain data uncertainties.
 
 \subsection{Threats to Validity}
-\paragraph*{Internal Validity} Our experiments rely on synthetic workloads. While we modeled requests and durations based on common cluster traces, real production environments may exhibit burstier arrival patterns or complex dependencies (e.g., microservice chains) that we do not model. We mitigate this by sweeping a wide range of load factors to ensure the trends hold across utilization regimes.
+\paragraph*{Internal Validity} Our experiments rely on synthetic workloads. While we modeled requests and durations based on common cluster traces, real production environments may exhibit burstier arrival patterns or complex dependencies (e.g., microservice chains) that we did not model. We mitigate this by sweeping a wide range of load factors to ensure the trends hold across utilization regimes.
 
-\paragraph*{External Validity} We utilize Average Carbon Intensity (ACI) as our optimization signal. Some economists argue that Marginal Emissions Factors (MEF) more accurately reflect the immediate grid impact of load changes. While TotEm is agnostic to the signal source—it minimizes whatever time-series it is given—the magnitude of savings might differ under MEF. Furthermore, our offline precomputation assumes perfect knowledge of job arrival (batch processing); in an online setting, the ``greedy'' penalty might increase as the scheduler cannot see future arrivals, though this is a standard limitation of online algorithms.
+\paragraph*{External Validity} We utilize ACI as our optimization signal. Some economists argue that Marginal Emissions Factors (MEF) more accurately reflect the immediate grid impact of load changes. While TotEm is agnostic to the signal source—it minimizes whatever time-series it is given—the magnitude of savings might differ under MEF. Furthermore, our offline precomputation assumes perfect knowledge of job arrival (batch processing); in an online setting, the ``greedy'' penalty might increase as the scheduler cannot see future arrivals, though this is a standard limitation of online algorithms.
 
 \paragraph*{Construct Validity} Our model assumes that ``embodied carbon'' can be linearly amortized over time and utilization. While consistent with the SCI standard, this is an accounting convention. It does not physically ``emit'' carbon during the job's run but rather attributes a share of the sunk cost. We argue this is the correct incentive for software design: it encourages maximizing the utility of manufactured devices, thereby deferring the need for new hardware production. Finally, our current model focuses on server-side operational and embodied emissions; it does not explicitly model network energy consumption (data transfer) or the embodied carbon of networking equipment (switches, routers), which may be significant for data-intensive workloads.
 
 \section{Conclusion and Future Work}\label{s:conc}
 	
-This paper shows that container orchestration can reduce \emph{total} emissions—operational and embodied—without sacrificing feasibility or incurring prohibitive runtime. Across controlled scales, TotEm consistently lowers emissions relative to a carbon-agnostic baseline while closely tracking the Oracle benchmark. At a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), average per-pod emissions dropped from 36.6 to 24.7 g CO\textsubscript{2}e (\(-32.5\%\)) versus baseline, with the Oracle reaching 14.1 g. Runtime grows smoothly with pods and nodes and remains within single-digit seconds at our largest settings, indicating practicality for precompute or nearline use. Furthermore, our sensitivity analysis demonstrates that TotEm's carbon savings are robust to forecast errors up to 20\% MAPE, validating the reliability of carbon-aware scheduling even with imperfect grid intelligence.
+This paper showed that container orchestration can reduce \emph{total} emissions—operational and embodied—without sacrificing feasibility or incurring prohibitive runtime. Across controlled scales, TotEm consistently lowers emissions relative to a carbon-agnostic baseline while closely tracking the Oracle benchmark. At a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), average per-pod emissions dropped from 36.6 to 24.7 g CO\textsubscript{2}e (\(-32.5\%\)) versus baseline, with the Oracle reaching 14.1 g. Runtime grows smoothly with pods and nodes and remains within single-digit seconds at our largest settings, indicating practicality for precompute or nearline use. Furthermore, our sensitivity analysis demonstrates that TotEm's carbon savings are robust to forecast errors up to 20\% MAPE, validating the reliability of carbon-aware scheduling even with imperfect grid intelligence.
 
 For practitioners, these results suggest an actionable path: integrate forecasted carbon signals and amortized embodied costs into placement, and deploy a fast heuristic to capture most of the achievable benefit. By optimizing this attributional efficiency, operators can generate the demand-side signals necessary to drive long-term consequential reductions in hardware procurement. Our evaluation protocol—shared signals, models, constraints, and coverage-inclusive reporting—provides a reproducible basis for comparing algorithms and for tuning trade-offs between feasibility, carbon efficiency, and latency.
 
-Future work will: (i) integrate additional environmental indicators (e.g., water footprint, land use etc.); and (ii) evaluate on production traces and in live clusters with online admission. Together, these steps move carbon-aware orchestration from controlled studies toward robust production deployments.
+Future work will: (i) integrate additional environmental indicators (in particular water footprint); and (ii) evaluate on production traces and in live clusters with online admission. Together, these steps should help moving carbon-aware orchestration from controlled studies toward robust production deployments.
 
 \section*{Acknowledgments}
-The authors would like to extend their gratitude to Electricity Maps for providing access to their carbon intensity data, which was invaluable for the development of this work.
+The authors would like to extend their gratitude to Electricity Maps for providing access to their carbon intensity data, which was invaluable for the development of this work. We further thank Philipp Wiesner, Silvio Cretti, and Sébastien Rumley for fruitful discussions early in the development process.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
