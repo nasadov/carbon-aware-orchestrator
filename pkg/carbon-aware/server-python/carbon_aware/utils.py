@@ -12,7 +12,8 @@ import decimal
 from kubernetes import utils as k8sutils
 
 # Import models (should be defined in models.py)
-from carbon_aware.models import CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot
+from carbon_aware.models import CarbonAwarePod, CarbonAwareTimeslot, EnvironmentalFlavor
+from carbon_aware.water_signals import attach_water_metadata
 
 # Define constants for microservice status
 MICROSERVICE_STATUS_MAP = {
@@ -28,7 +29,7 @@ MICROSERVICE_STATUS_MAP = {
 #####################################
 
 def compute_emissions(
-    flavour: CarbonAwareFlavour,
+    flavour: EnvironmentalFlavor,
     timeslot_id: int,
     pod: CarbonAwarePod,
     used_cpu_before_by_slot: Optional[Dict[int, float]] = None,
@@ -59,7 +60,7 @@ def compute_emissions(
     return total
 
 
-def compute_emissions_operational_only(flavour: CarbonAwareFlavour, timeslot_id: int, pod: CarbonAwarePod) -> float:
+def compute_emissions_operational_only(flavour: EnvironmentalFlavor, timeslot_id: int, pod: CarbonAwarePod) -> float:
     """
     Compute only the operational carbon emissions for placing 'pod' on 'flavour' during timeslot 'timeslot_id'.
     
@@ -109,12 +110,12 @@ def compute_emissions_operational_only(flavour: CarbonAwareFlavour, timeslot_id:
 # Node-aware power/emissions API
 # =============================
 
-def get_carbon_intensity(flavour: CarbonAwareFlavour, timeslot_id: int, default_intensity: float = 200.0) -> float:
+def get_carbon_intensity(flavour: EnvironmentalFlavor, timeslot_id: int, default_intensity: float = 200.0) -> float:
     """Return carbon intensity (gCO2/kWh) for a given node (region) and timeslot."""
     return flavour.forecast.get(timeslot_id, default_intensity)
 
 
-def compute_node_power_watts(flavour: CarbonAwareFlavour, total_cpu_ratio: float) -> float:
+def compute_node_power_watts(flavour: EnvironmentalFlavor, total_cpu_ratio: float) -> float:
     """Compute node power (W) at aggregate CPU utilization ratio U in [0,1].
     Power model: P_node(U) = P_idle + (P_max - P_idle) * U if U > 0, else 0.
     We attribute node idle whenever there is any work (U>0).
@@ -127,19 +128,19 @@ def compute_node_power_watts(flavour: CarbonAwareFlavour, total_cpu_ratio: float
     return idle_power + dynamic_coeff * max(0.0, min(1.0, total_cpu_ratio))
 
 
-def compute_node_dynamic_coeff_watts(flavour: CarbonAwareFlavour) -> float:
+def compute_node_dynamic_coeff_watts(flavour: EnvironmentalFlavor) -> float:
     """Return dynamic coefficient k (W) such that dynamic(W) = k * U."""
     return flavour.power["max"] - flavour.power["idle"]
 
 
-def compute_embodied_per_hour_g(flavour: CarbonAwareFlavour) -> float:
+def compute_embodied_per_hour_g(flavour: EnvironmentalFlavor) -> float:
     """Compute embodied emissions per hour (gCO2e/h) for a node."""
     hours_in_lifetime = flavour.lifetime if flavour.lifetime and flavour.lifetime > 0 else 1e-6
     return flavour.embodiedCarbon / hours_in_lifetime
 
 
 def compute_emissions_with_allocation(
-    flavour: CarbonAwareFlavour,
+    flavour: EnvironmentalFlavor,
     start_slot: int,
     pod: CarbonAwarePod,
     used_cpu_before_by_slot: Optional[Dict[int, float]] = None,
@@ -206,7 +207,7 @@ def compute_emissions_with_allocation(
 
 
 def compute_marginal_emissions_for_pod_over_duration(
-    flavour: CarbonAwareFlavour,
+    flavour: EnvironmentalFlavor,
     start_slot: int,
     duration_hours: float,
     pod_cpu_request: float,
@@ -534,7 +535,7 @@ def is_timeslot_valid(ts: CarbonAwareTimeslot, pod: CarbonAwarePod) -> bool:
 
 
 def check_node_resource(
-    flavour: CarbonAwareFlavour,
+    flavour: EnvironmentalFlavor,
     ts: CarbonAwareTimeslot,
     pod: CarbonAwarePod,
     available_cpu: float,
@@ -622,15 +623,15 @@ def parse_duration_to_hours(duration_str: str) -> float:
 # Parsing Utilities
 #####################################
 
-def parse_infrastructure(infra) -> list[CarbonAwareFlavour]:
+def parse_infrastructure(infra) -> list[EnvironmentalFlavor]:
     """
-    Parse infrastructure data to create CarbonAwareFlavour objects.
+    Parse infrastructure data to create EnvironmentalFlavor objects.
     
     Args:
         infra: Infrastructure protobuf object containing node information
         
     Returns:
-        List of CarbonAwareFlavour objects
+        List of EnvironmentalFlavor objects
     """
     # Load carbon intensity data once
     carbon_data = load_carbon_intensity_data()
@@ -665,7 +666,7 @@ def parse_infrastructure(infra) -> list[CarbonAwareFlavour]:
             forecast_dict = {i: random.uniform(20, 1000) for i in range(24)}
             logging.warning(f"No carbon data for region {node_region}, using random values for node {node.name}")
 
-        flavour_obj = CarbonAwareFlavour(
+        flavour_obj = EnvironmentalFlavor(
             id=node.name,
             embodiedCarbon=embodied_carbon,
             lifetime=lifetime,
@@ -673,11 +674,18 @@ def parse_infrastructure(infra) -> list[CarbonAwareFlavour]:
             totalRam=total_ram,
             totalStorage=1000,
             forecast=forecast_dict,
-            power=power_consumption  # Add power consumption to the CarbonAwareFlavour
+            power=power_consumption
+        )
+        hardware_subcategory = getattr(node, "subcategory", "")
+        attach_water_metadata(
+            flavour_obj,
+            region=node_region,
+            hardware_subcategory=hardware_subcategory,
+            slot_count=max(len(forecast_dict), 24),
         )
         logging.debug(
-            f"[parse_infrastructure] Created flavour for node {node.name}: "
-            f"region={node_region}, embodiedCarbon={embodied_carbon}, lifetime={lifetime}, "
+            f"[parse_infrastructure] Created environmental flavor for node {node.name}: "
+            f"region={node_region}, country={flavour_obj.country}, embodiedCarbon={embodied_carbon}, lifetime={lifetime}, "
             f"idle_power={power_consumption['idle']}W, active_power={power_consumption['active']}W, "
             f"max_power={power_consumption['max']}W"
         )
@@ -810,7 +818,7 @@ def print_resource_utilization_report(flavours, leftover_cpu, leftover_ram, max_
     Prints a detailed utilization report for all nodes and timeslots.
     
     Args:
-        flavours: List of CarbonAwareFlavour objects
+        flavours: List of EnvironmentalFlavor objects
         leftover_cpu: Dictionary of remaining CPU resources by node and timeslot
         leftover_ram: Dictionary of remaining RAM resources by node and timeslot
         max_time_slots: Total number of timeslots to consider
@@ -1011,7 +1019,7 @@ class PerformanceLogger:
             "avg_placement_time_ms": avg_placement_time_ms
         }
 
-    def compute_emissions_per_cpu(flavour: CarbonAwareFlavour, timeslot_id: int, pod: CarbonAwarePod) -> float:
+    def compute_emissions_per_cpu(flavour: EnvironmentalFlavor, timeslot_id: int, pod: CarbonAwarePod) -> float:
         """
         Calculate the carbon emissions per CPU core for a specific pod placement.
         This function helps prioritize nodes that are more carbon efficient per unit of compute.

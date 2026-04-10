@@ -1,6 +1,7 @@
 """
 Carbon-aware scheduling heuristic algorithm implementation.
 """
+from dataclasses import dataclass
 import logging
 import time
 from typing import Dict, List, Optional, Tuple
@@ -9,8 +10,20 @@ import os
 from datetime import datetime
 
 from carbon_aware.algorithms.base import SchedulingAlgorithm
-from carbon_aware.models import CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot
-from carbon_aware.utils import is_timeslot_valid, compute_emissions, compute_emissions_with_allocation
+from carbon_aware.footprints import FootprintVector, build_used_cpu_before_map, compute_footprint_vector
+from carbon_aware.models import CarbonAwarePod, CarbonAwareTimeslot, EnvironmentalFlavor
+from carbon_aware.water_signals import attach_water_metadata
+from carbon_aware.utils import is_timeslot_valid
+
+
+@dataclass
+class CandidatePlacement:
+    flavour: EnvironmentalFlavor
+    timeslot: CarbonAwareTimeslot
+    footprint: FootprintVector
+    pack_score: float
+    used_cpu_before: Dict[int, float]
+    objective_score: float = float("inf")
 
 
 class HeuristicAlgorithm(SchedulingAlgorithm):
@@ -25,12 +38,15 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         self._session_log_dir: Optional[str] = None
         self._operational_only = False  # Flag for operational-only emissions mode
         self._embodied_allocation_mode = "proportional"  # or "uniform"
+        self._objective_mode = "carbon"
+        self._carbon_weight = 1.0
+        self._water_metric = "scarcity"
         
         self._placement_csv_file_handle = None
         self._placement_csv_writer = None
         self._placement_csv_path: Optional[str] = None
 
-    def _load_nodes_from_yaml(self, nodes_file: str) -> List[CarbonAwareFlavour]:
+    def _load_nodes_from_yaml(self, nodes_file: str) -> List[EnvironmentalFlavor]:
         """
         Load nodes directly from nodes.yaml file.
         
@@ -38,7 +54,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             nodes_file: Path to nodes.yaml file
         
         Returns:
-            List of CarbonAwareFlavour objects
+            List of EnvironmentalFlavor objects
         """
         import yaml
         import re
@@ -126,18 +142,31 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                         except ValueError:
                             embodied_carbon = 0.0
                     
-                    # Parse lifetime
-                    if "hardware.carbon/lifetime" in annotations:
+                    # Parse lifetime in years and convert to hours.
+                    if "hardware.carbon/lifetime_years" in annotations:
+                        try:
+                            lifetime_hours = float(annotations["hardware.carbon/lifetime_years"]) * 365 * 24
+                        except ValueError:
+                            lifetime_hours = 8760.0
+                    elif "hardware.carbon/lifetime" in annotations:
                         try:
                             lifetime_hours = float(annotations["hardware.carbon/lifetime"])
                         except ValueError:
                             lifetime_hours = 8760.0
                     
-                    # Parse power consumption settings
-                    if "hardware.carbon/power_consumption" in annotations:
+                    # Parse power consumption settings from the current node annotations.
+                    if "hardware.power/idle_watts" in annotations or "hardware.power/max_watts" in annotations:
+                        try:
+                            power_settings = {
+                                "idle": float(annotations.get("hardware.power/idle_watts", power_settings["idle"])),
+                                "active": float(annotations.get("hardware.power/active_watts", annotations.get("hardware.power/idle_watts", power_settings["active"]))),
+                                "max": float(annotations.get("hardware.power/max_watts", power_settings["max"])),
+                            }
+                        except ValueError:
+                            pass  # Keep defaults
+                    elif "hardware.carbon/power_consumption" in annotations:
                         try:
                             power_str = annotations["hardware.carbon/power_consumption"]
-                            # Expected format: "idle:X,active:Y,max:Z"
                             power_parts = power_str.split(',')
                             for part in power_parts:
                                 if ':' in part:
@@ -159,7 +188,9 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                         logging.warning(f"No carbon data for region {region_label}, using default values for node {node_id}")
                     
                     # Create the flavor (node representation)
-                    flavour = CarbonAwareFlavour(
+                    hardware_subcategory = labels.get("hardware.carbon/subcategory", "")
+
+                    flavour = EnvironmentalFlavor(
                         id=node_id,
                         embodiedCarbon=embodied_carbon,
                         lifetime=lifetime_hours,  # In hours
@@ -169,9 +200,12 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                         forecast=forecast_dict,
                         power=power_settings
                     )
-                    
-                    # Add region as an additional attribute
-                    flavour.region = region_label.upper() if region_label else ""
+                    attach_water_metadata(
+                        flavour,
+                        region=region_label,
+                        hardware_subcategory=hardware_subcategory,
+                        slot_count=max(len(forecast_dict), 24),
+                    )
                     
                     flavours.append(flavour)
                     
@@ -210,7 +244,10 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             base_filename = "heuristic_op_placements_session.csv"
         else:
             suffix = "prop" if getattr(self, "_embodied_allocation_mode", "proportional") == "proportional" else "uniform"
-            base_filename = f"heuristic_{suffix}_placements_session.csv"
+            objective_suffix = ""
+            if getattr(self, "_objective_mode", "carbon") == "weighted-sum":
+                objective_suffix = f"_wsum{int(round(getattr(self, '_carbon_weight', 1.0) * 100)):02d}"
+            base_filename = f"heuristic_{suffix}{objective_suffix}_placements_session.csv"
         self._placement_csv_path = os.path.join(self._session_log_dir, base_filename)
         
         if hasattr(self, '_placement_csv_file_handle') and self._placement_csv_file_handle:
@@ -226,7 +263,14 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             self._placement_csv_writer = csv.writer(self._placement_csv_file_handle)
             
             if not file_exists_and_not_empty:
-                self._placement_csv_writer.writerow(["pod_id", "node_id", "start_slot", "duration", "cpu_request", "ram_request", "embodied_mode"])
+                self._placement_csv_writer.writerow([
+                    "pod_id", "node_id", "start_slot", "duration", "cpu_request", "ram_request",
+                    "embodied_mode", "objective_mode", "carbon_weight", "water_metric",
+                    "region", "country", "operational_energy_kwh",
+                    "operational_carbon_kg", "embodied_carbon_kg", "total_carbon_emissions",
+                    "direct_water_l", "indirect_water_l", "embodied_water_l", "total_raw_water_l",
+                    "scarcity_characterized_water", "criticality_adjusted_water"
+                ])
                 self._placement_csv_file_handle.flush()
             logging.info(f"Heuristic placements will be logged to: {self._placement_csv_path}")
 
@@ -244,11 +288,45 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             except Exception as e:
                 logging.error(f"Error closing placement CSV file in __del__: {e}")
 
-    def _write_placement_to_csv(self, pod_id: str, node_id: str, start_slot: int, duration: float, cpu_request: float = 0.0, ram_request: float = 0.0):
+    def _write_placement_to_csv(
+        self,
+        pod_id: str,
+        node_id: str,
+        start_slot: int,
+        duration: float,
+        cpu_request: float = 0.0,
+        ram_request: float = 0.0,
+        flavour: Optional[EnvironmentalFlavor] = None,
+        footprint: Optional[FootprintVector] = None,
+    ):
         if self._placement_csv_writer and self._placement_csv_file_handle:
             try:
                 mode = "operational-only" if self._operational_only else getattr(self, "_embodied_allocation_mode", "proportional")
-                self._placement_csv_writer.writerow([pod_id, node_id, start_slot, duration, cpu_request, ram_request, mode])
+                csv_fields = footprint.as_csv_fields() if footprint else FootprintVector().finalize().as_csv_fields()
+                self._placement_csv_writer.writerow([
+                    pod_id,
+                    node_id,
+                    start_slot,
+                    duration,
+                    cpu_request,
+                    ram_request,
+                    mode,
+                    getattr(self, "_objective_mode", "carbon"),
+                    getattr(self, "_carbon_weight", 1.0),
+                    getattr(self, "_water_metric", "scarcity"),
+                    getattr(flavour, "region", "") if flavour else "",
+                    getattr(flavour, "country", "") if flavour else "",
+                    csv_fields["operational_energy_kwh"],
+                    csv_fields["operational_carbon_kg"],
+                    csv_fields["embodied_carbon_kg"],
+                    csv_fields["total_carbon_emissions"],
+                    csv_fields["direct_water_l"],
+                    csv_fields["indirect_water_l"],
+                    csv_fields["embodied_water_l"],
+                    csv_fields["total_raw_water_l"],
+                    csv_fields["scarcity_characterized_water"],
+                    csv_fields["criticality_adjusted_water"],
+                ])
                 self._placement_csv_file_handle.flush()
             except Exception as e:
                 logging.error(f"Error writing to placement CSV for heuristic: {e}")
@@ -337,6 +415,32 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             mode = "proportional"
         self._embodied_allocation_mode = mode
         logging.info(f"HeuristicAlgorithm: embodied_allocation_mode set to {self._embodied_allocation_mode}")
+
+    def set_environmental_objective(self, mode: str = "carbon", carbon_weight: float = 1.0, water_metric: str = "scarcity"):
+        """Set heuristic scoring objective. Weighted-sum currently uses scarcity-characterized water."""
+        if mode not in ("carbon", "weighted-sum"):
+            logging.warning(f"Unknown heuristic objective '{mode}', defaulting to 'carbon'")
+            mode = "carbon"
+
+        try:
+            carbon_weight = float(carbon_weight)
+        except (TypeError, ValueError):
+            carbon_weight = 1.0
+        carbon_weight = min(max(carbon_weight, 0.0), 1.0)
+
+        if water_metric not in ("scarcity", "raw"):
+            logging.warning(f"Unknown heuristic water metric '{water_metric}', defaulting to 'scarcity'")
+            water_metric = "scarcity"
+
+        self._objective_mode = mode
+        self._carbon_weight = carbon_weight
+        self._water_metric = water_metric
+        logging.info(
+            "HeuristicAlgorithm: objective=%s carbon_weight=%.2f water_metric=%s",
+            self._objective_mode,
+            self._carbon_weight,
+            self._water_metric,
+        )
         
     def set_workloads_dir(self, workloads_dir: str):
         """Set the workloads directory for YAML file lookup."""
@@ -350,12 +454,12 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
     def find_placement(
         self,
         pod: CarbonAwarePod,
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot],
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]],
         max_time_slots: int = 48
-    ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
+    ) -> Tuple[Optional[EnvironmentalFlavor], Optional[CarbonAwareTimeslot], float]:
         """Find the best placement for a pod using the carbon-aware heuristic."""
         # Set earliest_timeslot based on pod ID before scheduling
         self._set_pod_earliest_timeslot(pod)
@@ -364,7 +468,17 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         considered_options = len(flavours) * len(timeslots)
         
         best_node, best_slot, emissions = find_best_node_and_timeslot(
-            pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots, self._operational_only, self._embodied_allocation_mode
+            pod,
+            flavours,
+            timeslots,
+            leftover_cpu,
+            leftover_ram,
+            max_time_slots,
+            self._operational_only,
+            self._embodied_allocation_mode,
+            getattr(self, "_objective_mode", "carbon"),
+            getattr(self, "_carbon_weight", 1.0),
+            getattr(self, "_water_metric", "scarcity"),
         )
         
         if self.experiment_logger:
@@ -382,13 +496,30 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             )
 
         if best_node and best_slot:
+            used_cpu_before = build_used_cpu_before_map(
+                flavour=best_node,
+                start_slot=best_slot.id,
+                duration_hours=pod.duration,
+                leftover_cpu_by_slot=leftover_cpu[best_node.id],
+            )
+            footprint = compute_footprint_vector(
+                flavour=best_node,
+                start_slot=best_slot.id,
+                pod=pod,
+                used_cpu_before_by_slot=used_cpu_before,
+                embodied_allocation_mode=getattr(self, "_embodied_allocation_mode", "proportional"),
+                operational_only=self._operational_only,
+                use_pod_power_only=self._operational_only,
+            )
             self._write_placement_to_csv(
                 pod_id=pod.id,
                 node_id=best_node.id,
                 start_slot=best_slot.id,
                 duration=pod.duration,
                 cpu_request=pod.cpuRequest,
-                ram_request=pod.ramRequest
+                ram_request=pod.ramRequest,
+                flavour=best_node,
+                footprint=footprint,
             )
         
         return best_node, best_slot, emissions
@@ -396,11 +527,11 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
     def find_placement_atomic(
         self,
         pod: CarbonAwarePod,
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot],
         persistent_state,
         max_time_slots: int = 48
-    ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
+    ) -> Tuple[Optional[EnvironmentalFlavor], Optional[CarbonAwareTimeslot], float]:
         """
         Find and atomically allocate the best placement for a pod.
         
@@ -425,7 +556,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         logging.info(f"    Resource requirements: CPU={pod.cpuRequest:.3f}, RAM={pod.ramRequest:.0f}MB")
         logging.info(f"    Search space: {len(flavours)} nodes × {len(timeslots)} timeslots = {len(flavours) * len(timeslots)} combinations")
         
-        candidates = []  # List of (node, timeslot, emissions, pack_score) tuples
+        candidates: List[CandidatePlacement] = []
         
         # First pass: find all feasible placements and calculate their emissions
         valid_timeslots = 0
@@ -483,26 +614,36 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                             cpu_slack_sum += max(leftover_cpu_now - pod.cpuRequest, 0.0)
                             ram_slack_sum += max(leftover_ram_now - pod.ramRequest, 0.0)
 
-                        if self._operational_only:
-                            from carbon_aware.utils import compute_emissions_operational_only
-                            total_emi = compute_emissions_operational_only(flv, ts.id, pod)
-                        else:
-                            from carbon_aware.utils import compute_emissions_with_allocation
-                            total_emi = compute_emissions_with_allocation(
-                                flavour=flv,
-                                start_slot=ts.id,
-                                pod=pod,
-                                used_cpu_before_by_slot=used_cpu_before,
-                                embodied_allocation_mode=getattr(self, "_embodied_allocation_mode", "proportional"),
-                            )
+                        footprint = compute_footprint_vector(
+                            flavour=flv,
+                            start_slot=ts.id,
+                            pod=pod,
+                            used_cpu_before_by_slot=used_cpu_before,
+                            embodied_allocation_mode=getattr(self, "_embodied_allocation_mode", "proportional"),
+                            operational_only=self._operational_only,
+                            use_pod_power_only=self._operational_only,
+                        )
 
                         # Packing-aware tie-breaker: prefer tighter fit (smaller slack)
                         cpu_norm = flv.totalCpu * max(int(pod.duration), 1)
                         ram_norm = flv.totalRam * max(int(pod.duration), 1)
                         pack_score = (cpu_slack_sum / max(cpu_norm, 1e-6)) + (ram_slack_sum / max(ram_norm, 1e-6))
 
-                        candidates.append((flv, ts, total_emi, pack_score))
-                        logging.debug(f"[find_placement_atomic] Valid candidate: pod={pod.id}, node={flv.id}, timeslot={ts.id}, emissions={total_emi:.3f}, pack={pack_score:.6f}")
+                        candidates.append(
+                            CandidatePlacement(
+                                flavour=flv,
+                                timeslot=ts,
+                                footprint=footprint,
+                                pack_score=pack_score,
+                                used_cpu_before=used_cpu_before,
+                            )
+                        )
+                        logging.debug(
+                            f"[find_placement_atomic] Valid candidate: pod={pod.id}, node={flv.id}, "
+                            f"timeslot={ts.id}, carbon={footprint.total_carbon_g:.3f}, "
+                            f"water={_candidate_water_value(footprint, getattr(self, '_water_metric', 'scarcity')):.3f}, "
+                            f"pack={pack_score:.6f}"
+                        )
                     else:
                         failure_reason = "insufficient_resources"
                         logging.debug(f"[find_placement_atomic] Pod {pod.id} on {flv.id} at slot {ts.id}: {failure_reason}")
@@ -527,54 +668,129 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             
             return None, None, float('inf')
         
-        # Sort candidates by emissions (best first), then by packing score (tighter is better)
-        candidates.sort(key=lambda x: (x[2], x[3]))
-        logging.info(f"    Best candidate: node={candidates[0][0].id}, timeslot={candidates[0][1].id}, emissions={candidates[0][2]:.3f}, pack={candidates[0][3]:.6f}")
+        ranked_candidates = _rank_candidates(
+            candidates,
+            objective_mode=getattr(self, "_objective_mode", "carbon"),
+            carbon_weight=getattr(self, "_carbon_weight", 1.0),
+            water_metric=getattr(self, "_water_metric", "scarcity"),
+        )
+        best_candidate = ranked_candidates[0]
+        logging.info(
+            "    Best candidate: node=%s, timeslot=%s, objective=%.6f, carbon=%.3f, water=%.3f, pack=%.6f",
+            best_candidate.flavour.id,
+            best_candidate.timeslot.id,
+            best_candidate.objective_score,
+            best_candidate.footprint.total_carbon_g,
+            _candidate_water_value(best_candidate.footprint, getattr(self, "_water_metric", "scarcity")),
+            best_candidate.pack_score,
+        )
         
         # Second pass: try to atomically allocate the best candidate
         allocation_attempts = 0
-        for flv, ts, emissions, _pack in candidates:
+        for candidate in ranked_candidates:
             allocation_attempts += 1
             success = persistent_state.atomic_check_and_allocate(
-                flv.id, ts.id, int(pod.duration), 
+                candidate.flavour.id, candidate.timeslot.id, int(pod.duration), 
                 pod.cpuRequest, pod.ramRequest
             )
             
             if success:
                 logging.info(f"[find_placement_atomic] Successfully allocated pod={pod.id} on attempt {allocation_attempts}")
-                logging.info(f"    Final placement: node={flv.id}, timeslot={ts.id}, emissions={emissions:.3f}")
+                logging.info(
+                    "    Final placement: node=%s, timeslot=%s, carbon=%.3f, objective=%.6f",
+                    candidate.flavour.id,
+                    candidate.timeslot.id,
+                    candidate.footprint.total_carbon_g,
+                    candidate.objective_score,
+                )
                 
                 # Write placement to CSV (same as in find_placement method)
                 self._write_placement_to_csv(
                     pod_id=pod.id,
-                    node_id=flv.id,
-                    start_slot=ts.id,
+                    node_id=candidate.flavour.id,
+                    start_slot=candidate.timeslot.id,
                     duration=pod.duration,
                     cpu_request=pod.cpuRequest,
-                    ram_request=pod.ramRequest
+                    ram_request=pod.ramRequest,
+                    flavour=candidate.flavour,
+                    footprint=candidate.footprint,
                 )
                 
-                return flv, ts, emissions
+                return candidate.flavour, candidate.timeslot, candidate.footprint.total_carbon_g
             else:
-                logging.debug(f"[find_placement_atomic] Allocation failed for pod={pod.id} on node={flv.id}, timeslot={ts.id} (resources taken)")
+                logging.debug(
+                    "[find_placement_atomic] Allocation failed for pod=%s on node=%s, timeslot=%s (resources taken)",
+                    pod.id,
+                    candidate.flavour.id,
+                    candidate.timeslot.id,
+                )
         
         # No candidate could be allocated (all resources were taken by other threads)
         logging.warning(f"[find_placement_atomic] All {allocation_attempts} candidates exhausted for pod={pod.id} - resources taken by other processes")
         return None, None, float('inf')
 
 
+def _candidate_water_value(footprint: FootprintVector, water_metric: str) -> float:
+    if water_metric == "raw":
+        return footprint.total_raw_water_l
+    return footprint.scarcity_characterized_water
+
+
+def _normalize_to_unit_interval(value: float, lower: float, upper: float) -> float:
+    if upper <= lower + 1e-12:
+        return 0.0
+    return (value - lower) / (upper - lower)
+
+
+def _rank_candidates(
+    candidates: List[CandidatePlacement],
+    objective_mode: str,
+    carbon_weight: float,
+    water_metric: str,
+) -> List[CandidatePlacement]:
+    if not candidates:
+        return []
+
+    if objective_mode == "weighted-sum":
+        carbon_values = [candidate.footprint.total_carbon_g for candidate in candidates]
+        water_values = [_candidate_water_value(candidate.footprint, water_metric) for candidate in candidates]
+        carbon_min, carbon_max = min(carbon_values), max(carbon_values)
+        water_min, water_max = min(water_values), max(water_values)
+
+        for candidate in candidates:
+            carbon_norm = _normalize_to_unit_interval(candidate.footprint.total_carbon_g, carbon_min, carbon_max)
+            water_norm = _normalize_to_unit_interval(_candidate_water_value(candidate.footprint, water_metric), water_min, water_max)
+            candidate.objective_score = carbon_weight * carbon_norm + (1.0 - carbon_weight) * water_norm
+    else:
+        for candidate in candidates:
+            candidate.objective_score = candidate.footprint.total_carbon_g
+
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate.objective_score,
+            candidate.footprint.total_carbon_g,
+            _candidate_water_value(candidate.footprint, water_metric),
+            candidate.pack_score,
+        ),
+    )
+
+
 def find_best_node_and_timeslot(
     pod: CarbonAwarePod,
-    flavours: List[CarbonAwareFlavour],
+    flavours: List[EnvironmentalFlavor],
     timeslots: List[CarbonAwareTimeslot],
     leftover_cpu: Dict[str, Dict[int, float]],
     leftover_ram: Dict[str, Dict[int, float]],
     max_time_slots: int = 48,
     operational_only: bool = False,
-    embodied_allocation_mode: str = "proportional"
-) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
+    embodied_allocation_mode: str = "proportional",
+    objective_mode: str = "carbon",
+    carbon_weight: float = 1.0,
+    water_metric: str = "scarcity",
+) -> Tuple[Optional[EnvironmentalFlavor], Optional[CarbonAwareTimeslot], float]:
     """
-    Find the best node and timeslot for a pod that minimizes carbon emissions.
+    Find the best node and timeslot for a pod using the configured heuristic objective.
     
     The algorithm iterates through all valid combinations of nodes and timeslots,
     checking resource constraints and calculating emissions for each.
@@ -587,13 +803,15 @@ def find_best_node_and_timeslot(
         leftover_ram: Remaining RAM capacity per node and timeslot
         max_time_slots: Maximum number of timeslots to consider
         operational_only: Flag to use operational-only emissions calculation
+        objective_mode: `carbon` or `weighted-sum`
+        carbon_weight: Weighted-sum carbon share in [0, 1]
+        water_metric: `scarcity` or `raw`
         
     Returns:
-        Tuple of (best_node, best_timeslot, emissions) or (None, None, inf) if no placement found
+        Tuple of (best_node, best_timeslot, chosen carbon emissions in gCO2e)
+        or (None, None, inf) if no placement found
     """
-    best_node = None
-    best_slot = None
-    minimal_emissions = float('inf')
+    candidates: List[CandidatePlacement] = []
 
     # Prefer lower-carbon hours first across nodes (best-effort)
     try:
@@ -632,49 +850,57 @@ def find_best_node_and_timeslot(
                 # Pre-compute packing slacks for tie-breaker
                 cpu_slack_sum = 0.0
                 ram_slack_sum = 0.0
+                used_cpu_before = {}
                 for slot_offset in range(int(pod.duration)):
                     slot_id = ts.id + slot_offset
                     leftover_cpu_now = leftover_cpu[flv.id][slot_id]
                     leftover_ram_now = leftover_ram[flv.id][slot_id]
                     cpu_slack_sum += max(leftover_cpu_now - pod.cpuRequest, 0.0)
                     ram_slack_sum += max(leftover_ram_now - pod.ramRequest, 0.0)
+                    total_capacity = flv.totalCpu
+                    used_cpu_before[slot_id] = max(total_capacity - leftover_cpu_now, 0.0)
 
-                if operational_only:
-                    from carbon_aware.utils import compute_emissions_operational_only
-                    total_emi = compute_emissions_operational_only(flv, ts.id, pod)
-                else:
-                    # Build a minimal used_cpu_before map for proportional/uniform embodied
-                    used_cpu_before = {}
-                    for slot_offset in range(int(pod.duration)):
-                        slot_id = ts.id + slot_offset
-                        total_capacity = flv.totalCpu
-                        leftover = leftover_cpu[flv.id][slot_id]
-                        used_cpu_before[slot_id] = max(total_capacity - leftover, 0.0)
-                    total_emi = compute_emissions_with_allocation(
+                footprint = compute_footprint_vector(
+                    flavour=flv,
+                    start_slot=ts.id,
+                    pod=pod,
+                    used_cpu_before_by_slot=used_cpu_before,
+                    embodied_allocation_mode=embodied_allocation_mode,
+                    operational_only=operational_only,
+                    use_pod_power_only=operational_only,
+                )
+
+                cpu_norm = flv.totalCpu * max(int(pod.duration), 1)
+                ram_norm = flv.totalRam * max(int(pod.duration), 1)
+                pack_score = (cpu_slack_sum / max(cpu_norm, 1e-6)) + (ram_slack_sum / max(ram_norm, 1e-6))
+                candidates.append(
+                    CandidatePlacement(
                         flavour=flv,
-                        start_slot=ts.id,
-                        pod=pod,
-                        used_cpu_before_by_slot=used_cpu_before,
-                        embodied_allocation_mode=embodied_allocation_mode,
+                        timeslot=ts,
+                        footprint=footprint,
+                        pack_score=pack_score,
+                        used_cpu_before=used_cpu_before,
                     )
-                # Apply packing-aware tie-breaker when emissions are equal (within tiny epsilon)
-                if total_emi + 1e-9 < minimal_emissions:
-                    minimal_emissions = total_emi
-                    best_node = flv
-                    best_slot = ts
-                    best_pack = (cpu_slack_sum, ram_slack_sum, flv.totalCpu, flv.totalRam)
-                elif abs(total_emi - minimal_emissions) <= 1e-9 and best_node is not None:
-                    # Prefer the tighter fit (smaller normalized slack sum)
-                    prior_cpu_slack, prior_ram_slack, prior_cpu_cap, prior_ram_cap = best_pack
-                    prior_norm = (prior_cpu_slack / max(prior_cpu_cap * max(int(pod.duration),1), 1e-6)) + (prior_ram_slack / max(prior_ram_cap * max(int(pod.duration),1), 1e-6))
-                    curr_norm = (cpu_slack_sum / max(flv.totalCpu * max(int(pod.duration),1), 1e-6)) + (ram_slack_sum / max(flv.totalRam * max(int(pod.duration),1), 1e-6))
-                    if curr_norm < prior_norm:
-                        best_node = flv
-                        best_slot = ts
-                        best_pack = (cpu_slack_sum, ram_slack_sum, flv.totalCpu, flv.totalRam)
-                    logging.debug(
-                        f"[find_best_node_and_timeslot] New best found for pod={pod.id}: "
-                        f"node={best_node.id}, timeslot={best_slot.id}, emissions={minimal_emissions:.3f}"
-                    )
+                )
 
-    return best_node, best_slot, minimal_emissions
+    if not candidates:
+        return None, None, float("inf")
+
+    ranked_candidates = _rank_candidates(
+        candidates,
+        objective_mode=objective_mode,
+        carbon_weight=carbon_weight,
+        water_metric=water_metric,
+    )
+    best_candidate = ranked_candidates[0]
+    logging.debug(
+        "[find_best_node_and_timeslot] Best candidate for pod=%s: node=%s timeslot=%s objective=%.6f carbon=%.3f water=%.3f",
+        pod.id,
+        best_candidate.flavour.id,
+        best_candidate.timeslot.id,
+        best_candidate.objective_score,
+        best_candidate.footprint.total_carbon_g,
+        _candidate_water_value(best_candidate.footprint, water_metric),
+    )
+
+    return best_candidate.flavour, best_candidate.timeslot, best_candidate.footprint.total_carbon_g

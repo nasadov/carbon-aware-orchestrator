@@ -13,10 +13,12 @@ import re
 from typing import List, Optional
 
 from carbon_aware.utils import (
-    CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot,
+    CarbonAwarePod, CarbonAwareTimeslot,
     parse_microservice, build_timeslots, load_carbon_intensity_data,
     PerformanceLogger,
 )
+from carbon_aware.models import EnvironmentalFlavor
+from carbon_aware.water_signals import attach_water_metadata
 from carbon_aware.algorithms.vanilla import VanillaAlgorithm
 import idl_pb2
 
@@ -270,7 +272,7 @@ def _extract_pods_from_yaml(yaml_file: str) -> List[CarbonAwarePod]:
     return pods
 
 
-def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
+def _load_nodes_from_yaml(nodes_file: str) -> List[EnvironmentalFlavor]:
     import re
 
     logging.info(f"🔄 Loading nodes infrastructure from {nodes_file}")
@@ -282,7 +284,7 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
         logging.error(f"❌ Nodes file is empty: {nodes_file}")
         return []
 
-    flavours: List[CarbonAwareFlavour] = []
+    flavours: List[EnvironmentalFlavor] = []
     try:
         logging.info(f"📂 Reading YAML content from {nodes_file}")
         with open(nodes_file, 'r') as f:
@@ -325,8 +327,10 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
                 else:
                     total_ram = 0.0
 
-                # Create flavour with default power and no forecast (unused here)
-                flavour = CarbonAwareFlavour(
+                region_label = node.get("metadata", {}).get("labels", {}).get("topology.kubernetes.io/region", "")
+                hardware_subcategory = node.get("metadata", {}).get("labels", {}).get("hardware.carbon/subcategory", "")
+
+                flavour = EnvironmentalFlavor(
                     id=node_id,
                     embodiedCarbon=0.0,
                     lifetime=1.0,
@@ -336,6 +340,12 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
                     forecast={},
                     power={"idle": 0.0, "active": 0.0, "max": 0.0},
                 )
+                attach_water_metadata(
+                    flavour,
+                    region=region_label,
+                    hardware_subcategory=hardware_subcategory,
+                    slot_count=24,
+                )
                 flavours.append(flavour)
 
         logging.info(f"Successfully loaded {len(flavours)} nodes from {nodes_file}")
@@ -344,5 +354,4 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
     except Exception as e:
         logging.error(f"Error loading nodes from {nodes_file}: {e}")
         return []
-
 

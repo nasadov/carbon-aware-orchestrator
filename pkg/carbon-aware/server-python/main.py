@@ -178,12 +178,25 @@ def main() -> None:
         help='Embodied allocation mode for heuristic/global-optimal precompute runs'
     )
     parser.add_argument(
+        '--heuristic-objective',
+        default='carbon',
+        choices=['carbon', 'weighted-sum'],
+        help='Heuristic scoring objective: carbon-only or weighted carbon-water sum'
+    )
+    parser.add_argument(
+        '--heuristic-carbon-weight',
+        type=float,
+        default=1.0,
+        help='Carbon weight for weighted-sum heuristic objective in [0, 1] (default: 1.0)'
+    )
+    parser.add_argument(
         '--precompute',
         action='store_true',
         help='Run precomputation mode: process all timeslot files sequentially and save placements to CSV without starting server (heuristic algorithm only)'
     )
     
     args = parser.parse_args()
+    args.heuristic_carbon_weight = min(max(args.heuristic_carbon_weight, 0.0), 1.0)
     
     # Configure logging with specified level
     log_level = getattr(logging, args.loglevel)
@@ -220,6 +233,8 @@ def main() -> None:
         else:
             mode_suffix = args.embodied_mode if args.algorithm in ('heuristic', 'global-optimal') else None
             algo_mode = f"{args.algorithm}_{mode_suffix}" if mode_suffix else args.algorithm
+        if args.algorithm == 'heuristic' and args.heuristic_objective == 'weighted-sum':
+            algo_mode = f"{algo_mode}_wsum{int(round(args.heuristic_carbon_weight * 100)):02d}"
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         logging.info(f"🧪 Experiment mode: {session_log_dir}")
@@ -238,6 +253,8 @@ def main() -> None:
         else:
             mode_suffix = args.embodied_mode if args.algorithm in ('heuristic', 'global-optimal') else None
             algo_mode = f"{args.algorithm}_{mode_suffix}" if mode_suffix else args.algorithm
+        if args.algorithm == 'heuristic' and args.heuristic_objective == 'weighted-sum':
+            algo_mode = f"{algo_mode}_wsum{int(round(args.heuristic_carbon_weight * 100)):02d}"
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         
@@ -327,7 +344,9 @@ def main() -> None:
                 perf_logger=perf_logger,
                 prioritize_efficiency=args.prioritize_efficiency,
                 operational_only=args.operational_only,
-                embodied_mode=args.embodied_mode
+                embodied_mode=args.embodied_mode,
+                heuristic_objective=args.heuristic_objective,
+                heuristic_carbon_weight=args.heuristic_carbon_weight,
             )
         elif args.algorithm == 'global-optimal':
             from carbon_aware.precompute_global_optimal import run_global_optimal_precomputation
@@ -378,7 +397,9 @@ def main() -> None:
         nodes_file=args.nodes_file,
         forecasts_file=args.forecasts_file,
         prioritize_efficiency=args.prioritize_efficiency,
-        operational_only=args.operational_only
+        operational_only=args.operational_only,
+        heuristic_objective=args.heuristic_objective,
+        heuristic_carbon_weight=args.heuristic_carbon_weight,
     )
 
 

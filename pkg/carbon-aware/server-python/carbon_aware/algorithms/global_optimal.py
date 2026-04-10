@@ -13,7 +13,9 @@ import csv
 from datetime import datetime
 
 from carbon_aware.algorithms.base import SchedulingAlgorithm
-from carbon_aware.models import CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot
+from carbon_aware.footprints import FootprintVector, build_used_cpu_before_map, compute_footprint_vector
+from carbon_aware.models import CarbonAwarePod, CarbonAwareTimeslot, EnvironmentalFlavor
+from carbon_aware.water_signals import attach_water_metadata
 from carbon_aware.utils import is_timeslot_valid, compute_emissions, compute_node_dynamic_coeff_watts, get_carbon_intensity, compute_embodied_per_hour_g, compute_emissions_with_allocation
 
 
@@ -26,7 +28,10 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
     SESSION_CSV_FILENAME = "global_optimal_placements_session.csv"  # New constant for session-wide CSV
     CSV_HEADERS = [
         "pod_id", "node_id", "start_slot", "duration",
-        "cpu_request", "ram_request", "total_carbon_emissions",
+        "cpu_request", "ram_request", "region", "country", "operational_energy_kwh",
+        "operational_carbon_kg", "embodied_carbon_kg", "total_carbon_emissions",
+        "direct_water_l", "indirect_water_l", "embodied_water_l", "total_raw_water_l",
+        "scarcity_characterized_water", "criticality_adjusted_water",
         "solver_status", "solver_iterations", "solution_time_seconds",
         "embodied_mode"
     ]
@@ -485,10 +490,29 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             self._csv_file_handle = None
             self._csv_writer = None
 
+    def _build_logging_footprint(
+        self,
+        pod: CarbonAwarePod,
+        flavour: EnvironmentalFlavor,
+        start_slot: int,
+        used_cpu_before_by_slot: Optional[Dict[int, float]] = None,
+    ) -> FootprintVector:
+        return compute_footprint_vector(
+            flavour=flavour,
+            start_slot=start_slot,
+            pod=pod,
+            used_cpu_before_by_slot=used_cpu_before_by_slot,
+            embodied_allocation_mode=self.embodied_allocation_mode,
+            operational_only=self.operational_only,
+            use_pod_power_only=self.operational_only,
+        )
+
     def _write_placement_to_csv(self, pod_id: str, node_id: str, start_slot: int, duration: float,
                                 cpu_request: float, ram_request: float, total_carbon_emissions: float,
                                 solver_status: str, solver_iterations: int, solution_time_seconds: float,
-                                embodied_mode: str = "proportional"):
+                                embodied_mode: str = "proportional",
+                                flavour: Optional[EnvironmentalFlavor] = None,
+                                footprint: Optional[FootprintVector] = None):
         """
         Write a placement decision to the CSV file.
         
@@ -506,9 +530,22 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         """
         if self._csv_writer and self._csv_file_handle:
             try:
+                csv_fields = footprint.as_csv_fields() if footprint else FootprintVector().finalize().as_csv_fields()
                 row = [
                     pod_id, node_id, start_slot, duration,
-                    cpu_request, ram_request, total_carbon_emissions,
+                    cpu_request, ram_request,
+                    getattr(flavour, "region", "") if flavour else "",
+                    getattr(flavour, "country", "") if flavour else "",
+                    csv_fields["operational_energy_kwh"],
+                    csv_fields["operational_carbon_kg"],
+                    csv_fields["embodied_carbon_kg"],
+                    total_carbon_emissions,
+                    csv_fields["direct_water_l"],
+                    csv_fields["indirect_water_l"],
+                    csv_fields["embodied_water_l"],
+                    csv_fields["total_raw_water_l"],
+                    csv_fields["scarcity_characterized_water"],
+                    csv_fields["criticality_adjusted_water"],
                     solver_status, solver_iterations, solution_time_seconds,
                     embodied_mode
                 ]
@@ -583,7 +620,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
 
         self.all_flavours = []
         for node in nodes_data:
-            flavour = CarbonAwareFlavour(
+            flavour = EnvironmentalFlavor(
                 id=node["id"],
                 embodiedCarbon=node.get("embodiedCarbon", 0.0),
                 lifetime=node.get("lifetime", 87600.0),  # Default 10 years in hours
@@ -591,6 +628,12 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 totalRam=node.get("totalRam", 0.0),
                 totalStorage=node.get("totalStorage", 0.0),
                 forecast=self._build_forecast_for_node(node["id"])
+            )
+            attach_water_metadata(
+                flavour,
+                region=node.get("region", ""),
+                hardware_subcategory=node.get("subcategory", ""),
+                slot_count=max(len(flavour.forecast), 24),
             )
             self.all_flavours.append(flavour)
 
@@ -703,7 +746,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
 
     def solve_global_optimization(
         self,
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot],
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]],
@@ -1209,6 +1252,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         current_pod = pending_pods_dict.get(pod_id_sol)
                         if not current_pod:
                             continue
+                        current_flavour = next((flv for flv in flavours if flv.id == flv_id_sol), None)
                         emissions_sol_g = pod_total_g.get(pod_id_sol, 0.0)
                         if self.is_precomputation_mode:
                             try:
@@ -1223,7 +1267,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                     solver_status=str(self.status),
                                     solver_iterations=self.iterations,
                                     solution_time_seconds=solution_time,
-                                    embodied_mode="proportional"
+                                    embodied_mode="proportional",
+                                    flavour=current_flavour,
+                                    footprint=self._build_logging_footprint(current_pod, current_flavour, ts_id_sol) if current_flavour else None,
                                 )
                                 placements_saved_to_csv += 1
                             except Exception:
@@ -1376,6 +1422,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             current_pod = pending_pods_dict.get(pod_id_sol)
                             if not current_pod:
                                 continue
+                            current_flavour = next((flv for flv in flavours if flv.id == flv_id_sol), None)
                             emissions_sol_g = pod_total_g.get(pod_id_sol, 0.0)
                             if self.is_precomputation_mode:
                                 try:
@@ -1390,7 +1437,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                         solver_status=str(status_dyn),
                                         solver_iterations=self.iterations,
                                         solution_time_seconds=solution_time,
-                                        embodied_mode="proportional"
+                                        embodied_mode="proportional",
+                                        flavour=current_flavour,
+                                        footprint=self._build_logging_footprint(current_pod, current_flavour, ts_id_sol) if current_flavour else None,
                                     )
                                     placements_saved_to_csv += 1
                                 except Exception:
@@ -1709,6 +1758,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
 
                     if self.is_precomputation_mode:
                         try:
+                            current_flavour = next((flv for flv in flavours if flv.id == flv_id_sol), None)
                             self._write_placement_to_csv(
                                 pod_id=current_pod.id,
                                 node_id=flv_id_sol,
@@ -1720,7 +1770,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                 solver_status=str(self.status),
                                 solver_iterations=self.iterations,
                                 solution_time_seconds=solution_time,
-                                embodied_mode="proportional"
+                                embodied_mode="proportional",
+                                flavour=current_flavour,
+                                footprint=self._build_logging_footprint(current_pod, current_flavour, ts_id_sol) if current_flavour else None,
                             )
                             placements_saved_to_csv += 1
                             logging.debug(f"  - Wrote placement for pod {current_pod.id} to CSV (precomputation mode)")
@@ -1820,7 +1872,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
     def _validate_solution_constraints(
         self,
         solution: Dict[str, Tuple[str, int, float]],
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot],
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]]
@@ -1946,12 +1998,12 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
     def find_placement(
         self,
         pod: CarbonAwarePod,
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot],
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]],
         max_time_slots: int = 48
-    ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
+    ) -> Tuple[Optional[EnvironmentalFlavor], Optional[CarbonAwareTimeslot], float]:
         """
         Return placement for a pod, using the pre-computed comprehensive solution if available.
         Otherwise, fall back to incremental global optimization.
@@ -2040,11 +2092,11 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
     def _greedy_placement(
         self,
         pod: CarbonAwarePod,
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot],
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]]
-    ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
+    ) -> Tuple[Optional[EnvironmentalFlavor], Optional[CarbonAwareTimeslot], float]:
         """
         Greedy placement fallback when global optimization fails.
         """
@@ -2106,7 +2158,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
 
     def _solve_with_relaxation(
         self,
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot], 
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]],
@@ -2188,7 +2240,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
     def _try_milp_with_pods(
         self,
         pods_subset: List[CarbonAwarePod],
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot],
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]],
@@ -2277,6 +2329,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                             # Write to CSV
                             if self.is_precomputation_mode:
                                 pod_obj = next((p for p in pods_subset if p.id == pod_id), None)
+                                flavour_obj = next((flv for flv in flavours if flv.id == flv_id), None)
                                 if pod_obj:
                                     self._write_placement_to_csv(
                                         pod_id=pod_id, node_id=flv_id, start_slot=ts_id,
@@ -2284,7 +2337,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                         ram_request=pod_obj.ramRequest,
                                         total_carbon_emissions=emissions / 1000.0,
                                         solver_status="Relaxed_MILP", solver_iterations=0,
-                                        solution_time_seconds=solve_time
+                                        solution_time_seconds=solve_time,
+                                        flavour=flavour_obj,
+                                        footprint=self._build_logging_footprint(pod_obj, flavour_obj, ts_id) if flavour_obj else None,
                                     )
                             break
                 
@@ -2300,7 +2355,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
     def _try_greedy_placement_for_removed_pods(
         self,
         removed_pods: List[CarbonAwarePod],
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot],
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]]
@@ -2338,6 +2393,18 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 # Record placement
                 self.global_solution[pod.id] = (flv.id, ts.id, emissions)
                 
+                placement_footprint = self._build_logging_footprint(
+                    pod=pod,
+                    flavour=flv,
+                    start_slot=ts.id,
+                    used_cpu_before_by_slot=build_used_cpu_before_map(
+                        flavour=flv,
+                        start_slot=ts.id,
+                        duration_hours=pod.duration,
+                        leftover_cpu_by_slot=working_cpu[flv.id],
+                    ),
+                )
+
                 # Update working resources
                 for offset in range(int(pod.duration)):
                     slot = ts.id + offset
@@ -2353,7 +2420,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         ram_request=pod.ramRequest,
                         total_carbon_emissions=emissions / 1000.0,
                         solver_status="Greedy_Fallback", solver_iterations=0,
-                        solution_time_seconds=0.0
+                        solution_time_seconds=0.0,
+                        flavour=flv,
+                        footprint=placement_footprint,
                     )
                 
                 placed_count += 1
@@ -2461,7 +2530,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         logging.error("  4. Use relaxation strategy to place subset of pods")
 
 
-    def _load_nodes_from_yaml(self, nodes_file: str) -> List[CarbonAwareFlavour]:
+    def _load_nodes_from_yaml(self, nodes_file: str) -> List[EnvironmentalFlavor]:
         """
         Load nodes directly from nodes.yaml file.
         
@@ -2469,7 +2538,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             nodes_file: Path to nodes.yaml file
         
         Returns:
-            List of CarbonAwareFlavour objects
+            List of EnvironmentalFlavor objects
         """
         import yaml
         import re
@@ -2566,8 +2635,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     # Extract region for later forecasting
                     region_label = node.get("metadata", {}).get("labels", {}).get("topology.kubernetes.io/region", "")
                     
-                    # Create the flavor (node representation)
-                    flavour = CarbonAwareFlavour(
+                    hardware_subcategory = node.get("metadata", {}).get("labels", {}).get("hardware.carbon/subcategory", "")
+
+                    flavour = EnvironmentalFlavor(
                         id=node_id,
                         embodiedCarbon=embodied_carbon,
                         lifetime=lifetime_hours,  # In hours
@@ -2577,9 +2647,12 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         forecast={},  # Empty forecast, will be filled later
                         power=power_settings
                     )
-                    
-                    # Add region as an additional attribute
-                    flavour.region = region_label.upper() if region_label else ""
+                    attach_water_metadata(
+                        flavour,
+                        region=region_label,
+                        hardware_subcategory=hardware_subcategory,
+                        slot_count=24,
+                    )
                     
                     flavours.append(flavour)
                     

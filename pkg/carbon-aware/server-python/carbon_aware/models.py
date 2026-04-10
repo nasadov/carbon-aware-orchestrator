@@ -34,12 +34,30 @@ class CarbonAwarePod:
         else:
             self.deadline_slot = None
 
-class CarbonAwareFlavour:
-    """Represents a node with carbon-aware characteristics"""
-    
-    def __init__(self, id: str, embodiedCarbon: float, lifetime: float, 
-                 totalCpu: float, totalRam: float, totalStorage: float, 
-                 forecast: Dict[int, float], power: Dict[str, float] = None):
+class EnvironmentalFlavor:
+    """Represents a schedulable node with environmental metadata."""
+
+    def __init__(
+        self,
+        id: str,
+        embodiedCarbon: float,
+        lifetime: float,
+        totalCpu: float,
+        totalRam: float,
+        totalStorage: float,
+        forecast: Dict[int, float],
+        power: Dict[str, float] = None,
+        region: str = "",
+        country: str = "",
+        pue: float = 1.0,
+        embodiedWater: float = 0.0,
+        wue_by_slot: Optional[Dict[int, float]] = None,
+        ewif_by_slot: Optional[Dict[int, float]] = None,
+        water_scarcity_direct_cf: float = 1.0,
+        water_scarcity_indirect_cf: float = 1.0,
+        water_scarcity_embodied_cf: float = 1.0,
+        water_criticality: float = 1.0,
+    ):
         self.id = id
         self.embodiedCarbon = embodiedCarbon
         self.lifetime = lifetime
@@ -48,6 +66,21 @@ class CarbonAwareFlavour:
         self.totalStorage = totalStorage
         self.forecast = forecast
         self.power = power or {"idle": 100.0, "active": 200.0, "max": 400.0}
+
+        self.region = region
+        self.country = country
+        self.pue = pue
+        self.embodiedWater = embodiedWater
+        self.wue_by_slot = wue_by_slot or {}
+        self.ewif_by_slot = ewif_by_slot or {}
+        self.water_scarcity_direct_cf = water_scarcity_direct_cf
+        self.water_scarcity_indirect_cf = water_scarcity_indirect_cf
+        self.water_scarcity_embodied_cf = water_scarcity_embodied_cf
+        self.water_criticality = water_criticality
+
+
+# Backward-compatible alias while the codebase migrates from the old name.
+CarbonAwareFlavour = EnvironmentalFlavor
 
 class CarbonAwareTimeslot:
     """Represents a scheduling time slot"""

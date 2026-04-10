@@ -1,0 +1,183 @@
+"""
+Helpers for computing carbon and water footprint vectors for a placement.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, Optional
+
+from carbon_aware.models import CarbonAwarePod, EnvironmentalFlavor
+from carbon_aware.utils import compute_embodied_per_hour_g, compute_node_dynamic_coeff_watts, get_carbon_intensity
+
+
+@dataclass
+class FootprintVector:
+    operational_energy_kwh: float = 0.0
+    operational_carbon_g: float = 0.0
+    embodied_carbon_g: float = 0.0
+    total_carbon_g: float = 0.0
+    direct_water_l: float = 0.0
+    indirect_water_l: float = 0.0
+    embodied_water_l: float = 0.0
+    total_raw_water_l: float = 0.0
+    scarcity_characterized_water: float = 0.0
+    criticality_adjusted_water: float = 0.0
+
+    def finalize(self) -> "FootprintVector":
+        self.total_carbon_g = self.operational_carbon_g + self.embodied_carbon_g
+        self.total_raw_water_l = self.direct_water_l + self.indirect_water_l + self.embodied_water_l
+        self.scarcity_characterized_water = (
+            self.direct_water_l * self._direct_cf
+            + self.indirect_water_l * self._indirect_cf
+            + self.embodied_water_l * self._embodied_cf
+        )
+        self.criticality_adjusted_water = self.total_raw_water_l * self._criticality
+        return self
+
+    @property
+    def operational_carbon_kg(self) -> float:
+        return self.operational_carbon_g / 1000.0
+
+    @property
+    def embodied_carbon_kg(self) -> float:
+        return self.embodied_carbon_g / 1000.0
+
+    @property
+    def total_carbon_kg(self) -> float:
+        return self.total_carbon_g / 1000.0
+
+    def as_csv_fields(self) -> Dict[str, float]:
+        return {
+            "operational_energy_kwh": self.operational_energy_kwh,
+            "operational_carbon_kg": self.operational_carbon_kg,
+            "embodied_carbon_kg": self.embodied_carbon_kg,
+            "total_carbon_emissions": self.total_carbon_kg,
+            "direct_water_l": self.direct_water_l,
+            "indirect_water_l": self.indirect_water_l,
+            "embodied_water_l": self.embodied_water_l,
+            "total_raw_water_l": self.total_raw_water_l,
+            "scarcity_characterized_water": self.scarcity_characterized_water,
+            "criticality_adjusted_water": self.criticality_adjusted_water,
+        }
+
+    # These are set by compute_footprint_vector before finalize().
+    _direct_cf: float = 1.0
+    _indirect_cf: float = 1.0
+    _embodied_cf: float = 1.0
+    _criticality: float = 1.0
+
+
+def _hours(duration_hours: float) -> int:
+    return max(int(duration_hours), 0)
+
+
+def _slot_value(values: Dict[int, float], slot: int, default: float = 0.0) -> float:
+    if slot in values:
+        return float(values[slot])
+    if values:
+        return float(next(iter(values.values())))
+    return float(default)
+
+
+def _compute_embodied_share(
+    total_cpu_ratio_before: float,
+    pod_cpu_ratio: float,
+    embodied_allocation_mode: str,
+) -> float:
+    if pod_cpu_ratio <= 0.0:
+        return 0.0
+
+    if embodied_allocation_mode == "uniform":
+        return 1.0 if total_cpu_ratio_before <= 0.0 else 0.0
+
+    denom = max(total_cpu_ratio_before + pod_cpu_ratio, 1e-6)
+    return pod_cpu_ratio / denom
+
+
+def compute_embodied_water_per_hour(flavour: EnvironmentalFlavor) -> float:
+    """Return the node embodied water amortized over its lifetime."""
+    hours_in_lifetime = flavour.lifetime if flavour.lifetime and flavour.lifetime > 0 else 1e-6
+    return flavour.embodiedWater / hours_in_lifetime
+
+
+def build_used_cpu_before_map(
+    flavour: EnvironmentalFlavor,
+    start_slot: int,
+    duration_hours: float,
+    leftover_cpu_by_slot: Dict[int, float],
+) -> Dict[int, float]:
+    """Convert leftover CPU state into used CPU before placement for the covered slots."""
+    used_cpu_before = {}
+    total_capacity = max(flavour.totalCpu, 0.0)
+
+    for offset in range(_hours(duration_hours)):
+        slot = start_slot + offset
+        leftover_cpu = leftover_cpu_by_slot.get(slot, total_capacity)
+        used_cpu_before[slot] = max(total_capacity - leftover_cpu, 0.0)
+
+    return used_cpu_before
+
+
+def compute_footprint_vector(
+    flavour: EnvironmentalFlavor,
+    start_slot: int,
+    pod: CarbonAwarePod,
+    used_cpu_before_by_slot: Optional[Dict[int, float]] = None,
+    embodied_allocation_mode: str = "proportional",
+    operational_only: bool = False,
+    use_pod_power_only: bool = False,
+) -> FootprintVector:
+    """
+    Compute the full placement footprint vector for a pod.
+
+    `use_pod_power_only=True` mirrors the legacy operational-only carbon path where
+    each pod is charged idle + dynamic power independently of prior node occupancy.
+    """
+    total_cpu = max(flavour.totalCpu, 1e-6)
+    pod_cpu_ratio = pod.cpuRequest / total_cpu
+    dynamic_k = compute_node_dynamic_coeff_watts(flavour)
+    embodied_carbon_per_hour = compute_embodied_per_hour_g(flavour)
+    embodied_water_per_hour = compute_embodied_water_per_hour(flavour)
+
+    result = FootprintVector(
+        _direct_cf=float(getattr(flavour, "water_scarcity_direct_cf", 1.0) or 1.0),
+        _indirect_cf=float(getattr(flavour, "water_scarcity_indirect_cf", 1.0) or 1.0),
+        _embodied_cf=float(getattr(flavour, "water_scarcity_embodied_cf", 1.0) or 1.0),
+        _criticality=float(getattr(flavour, "water_criticality", 1.0) or 1.0),
+    )
+
+    for offset in range(_hours(pod.duration)):
+        slot = start_slot + offset
+        used_before = 0.0
+        if used_cpu_before_by_slot is not None:
+            used_before = used_cpu_before_by_slot.get(slot, 0.0)
+        total_cpu_ratio_before = used_before / total_cpu
+
+        if use_pod_power_only:
+            delta_power_w = flavour.power["idle"] + dynamic_k * pod_cpu_ratio
+        else:
+            delta_power_w = 0.0
+            if total_cpu_ratio_before <= 0.0 and pod_cpu_ratio > 0.0:
+                delta_power_w += flavour.power["idle"]
+            delta_power_w += dynamic_k * pod_cpu_ratio
+
+        energy_kwh = delta_power_w / 1000.0
+        carbon_intensity = get_carbon_intensity(flavour, slot)
+        wue = _slot_value(getattr(flavour, "wue_by_slot", {}) or {}, slot, 0.0)
+        ewif = _slot_value(getattr(flavour, "ewif_by_slot", {}) or {}, slot, 0.0)
+
+        result.operational_energy_kwh += energy_kwh
+        result.operational_carbon_g += carbon_intensity * energy_kwh
+        result.direct_water_l += energy_kwh * wue
+        result.indirect_water_l += energy_kwh * float(getattr(flavour, "pue", 1.0) or 1.0) * ewif
+
+        if not operational_only:
+            embodied_share = _compute_embodied_share(
+                total_cpu_ratio_before=total_cpu_ratio_before,
+                pod_cpu_ratio=pod_cpu_ratio,
+                embodied_allocation_mode=embodied_allocation_mode,
+            )
+            result.embodied_carbon_g += embodied_carbon_per_hour * embodied_share
+            result.embodied_water_l += embodied_water_per_hour * embodied_share
+
+    return result.finalize()

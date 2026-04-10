@@ -17,7 +17,7 @@ import idl_pb2_grpc
 from google.protobuf import empty_pb2
 
 # Import from our own modules
-from carbon_aware.models import CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot
+from carbon_aware.models import CarbonAwarePod, CarbonAwareTimeslot, EnvironmentalFlavor
 from carbon_aware.utils import (
     parse_infrastructure, parse_microservice, build_timeslots, 
     print_resource_utilization_report, MICROSERVICE_STATUS_MAP, PerformanceLogger
@@ -41,7 +41,8 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
     """
     def __init__(self, algorithm_name='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None, 
                  workloads_dir=None, nodes_file=None, forecasts_file=None, prioritize_efficiency=False,
-                 precomputed_solution=None, precomputation_done=False, operational_only=False):
+                 precomputed_solution=None, precomputation_done=False, operational_only=False,
+                 heuristic_objective="carbon", heuristic_carbon_weight=1.0):
         self.algo = Algorithm(algorithm_name, True)
         self.command_line_algorithm = algorithm_name 
         self.persistent_state = PersistentStateStorage()
@@ -60,6 +61,8 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         # Store precomputed solution if available
         self.precomputed_solution = precomputed_solution or {}
         self.precomputation_done = precomputation_done
+        self.heuristic_objective = heuristic_objective
+        self.heuristic_carbon_weight = heuristic_carbon_weight
         
         if precomputation_done:
             logging.info(f"🎯 PlacementAlgorithm initialized with precomputed solution containing {len(self.precomputed_solution)} placements")
@@ -205,6 +208,17 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
             
             # Get the right algorithm implementation based on name
             algorithm_instance = get_algorithm(self.algo.name)
+            if self.algo.name == "heuristic":
+                if hasattr(algorithm_instance, "set_operational_only"):
+                    algorithm_instance.set_operational_only(self.operational_only)
+                if hasattr(algorithm_instance, "set_workloads_dir") and self.workloads_dir:
+                    algorithm_instance.set_workloads_dir(self.workloads_dir)
+                if hasattr(algorithm_instance, "set_environmental_objective"):
+                    algorithm_instance.set_environmental_objective(
+                        mode=self.heuristic_objective,
+                        carbon_weight=self.heuristic_carbon_weight,
+                        water_metric="scarcity",
+                    )
 
             # Configure algorithm instance with the session directory for placement CSVs
             if self.session_log_dir:
@@ -504,10 +518,10 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 
     def _build_success_placement(
         self, microservice_name: str,
-        best_node: CarbonAwareFlavour,
+        best_node: EnvironmentalFlavor,
         best_slot: CarbonAwareTimeslot,
         emissions: float,
-        all_flavours: list[CarbonAwareFlavour]
+        all_flavours: list[EnvironmentalFlavor]
     ) -> idl_pb2.Placement:
         """
         Build a placement proto for a successful scheduling decision.
@@ -570,7 +584,8 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 
 def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None,
          workloads_dir="./workloads", nodes_file="../nodes.yaml", forecasts_file="./all_forecasts.json",
-         prioritize_efficiency=False, operational_only=False):
+         prioritize_efficiency=False, operational_only=False,
+         heuristic_objective="carbon", heuristic_carbon_weight=1.0):
     """
     Creates and runs the gRPC server on the specified port, registering the PlacementAlgorithm servicer.
     Implements graceful shutdown handling.
@@ -586,6 +601,8 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         forecasts_file (str): Path to all_forecasts.json
         prioritize_efficiency (bool): Whether to prioritize carbon efficiency per CPU
         operational_only (bool): Whether to use only operational emissions (omit embodied emissions)
+        heuristic_objective (str): Heuristic scoring objective
+        heuristic_carbon_weight (float): Carbon share for weighted-sum heuristic mode
     """
     shutdown_in_progress = False
     
@@ -673,7 +690,9 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         prioritize_efficiency=prioritize_efficiency,
         precomputed_solution=global_precomputed_solution,
         precomputation_done=global_optimization_done,
-        operational_only=operational_only
+        operational_only=operational_only,
+        heuristic_objective=heuristic_objective,
+        heuristic_carbon_weight=heuristic_carbon_weight,
     )
     idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(servicer, server)
     server.add_insecure_port('[::]:' + port)

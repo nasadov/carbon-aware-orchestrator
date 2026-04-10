@@ -13,10 +13,12 @@ from typing import List, Dict, Optional, Any
 
 # Import carbon aware data types and utilities
 from carbon_aware.utils import (
-    CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot,
+    CarbonAwarePod, CarbonAwareTimeslot,
     parse_microservice, build_timeslots, load_carbon_intensity_data,
     PerformanceLogger
 )
+from carbon_aware.models import EnvironmentalFlavor
+from carbon_aware.water_signals import attach_water_metadata
 from carbon_aware.algorithms.heuristic import HeuristicAlgorithm
 import idl_pb2
 
@@ -29,7 +31,9 @@ def run_heuristic_precomputation(
     perf_logger: Optional[PerformanceLogger] = None,
     prioritize_efficiency: bool = False,
     operational_only: bool = False,
-    embodied_mode: str = "proportional"
+    embodied_mode: str = "proportional",
+    heuristic_objective: str = "carbon",
+    heuristic_carbon_weight: float = 1.0,
 ) -> bool:
     """
     Run heuristic algorithm precomputation on all timeslot files.
@@ -42,6 +46,8 @@ def run_heuristic_precomputation(
         perf_logger: Performance logger instance
         prioritize_efficiency: Whether to prioritize carbon efficiency
         operational_only: Whether to use operational emissions only
+        heuristic_objective: Heuristic objective mode (`carbon` or `weighted-sum`)
+        heuristic_carbon_weight: Weighted-sum carbon share in [0, 1]
         
     Returns:
         True if successful, False otherwise
@@ -84,6 +90,12 @@ def run_heuristic_precomputation(
             algorithm.set_workloads_dir(workloads_dir)  # Fix hardcoded path bug!
         if hasattr(algorithm, 'set_embodied_allocation_mode'):
             algorithm.set_embodied_allocation_mode(embodied_mode)
+        if hasattr(algorithm, 'set_environmental_objective'):
+            algorithm.set_environmental_objective(
+                mode=heuristic_objective,
+                carbon_weight=heuristic_carbon_weight,
+                water_metric="scarcity",
+            )
         
         # Use provided session_log_dir as-is; main.py now includes the mode suffix
         if session_log_dir:
@@ -345,7 +357,7 @@ def _extract_pods_from_yaml(yaml_file: str) -> List[CarbonAwarePod]:
     return pods
 
 
-def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
+def _load_nodes_from_yaml(nodes_file: str) -> List[EnvironmentalFlavor]:
     """
     Load nodes directly from nodes.yaml file.
     
@@ -353,7 +365,7 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
         nodes_file: Path to nodes.yaml file
     
     Returns:
-        List of CarbonAwareFlavour objects
+        List of EnvironmentalFlavor objects
     """
     import re
     
@@ -446,8 +458,9 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
                 # Extract region for later forecasting
                 region_label = node.get("metadata", {}).get("labels", {}).get("topology.kubernetes.io/region", "")
                 
-                # Create the flavor (node representation)
-                flavour = CarbonAwareFlavour(
+                hardware_subcategory = node.get("metadata", {}).get("labels", {}).get("hardware.carbon/subcategory", "")
+
+                flavour = EnvironmentalFlavor(
                     id=node_id,
                     embodiedCarbon=embodied_carbon,
                     lifetime=lifetime_hours,  # In hours
@@ -457,9 +470,12 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
                     forecast={},  # Empty forecast, will be filled later
                     power=power_settings
                 )
-                
-                # Add region as an additional attribute
-                flavour.region = region_label.upper() if region_label else ""
+                attach_water_metadata(
+                    flavour,
+                    region=region_label,
+                    hardware_subcategory=hardware_subcategory,
+                    slot_count=24,
+                )
                 
                 flavours.append(flavour)
                 

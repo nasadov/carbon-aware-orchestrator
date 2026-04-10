@@ -16,7 +16,7 @@ import csv
 import os
 
 from carbon_aware.algorithms.base import SchedulingAlgorithm
-from carbon_aware.models import CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot
+from carbon_aware.models import CarbonAwarePod, CarbonAwareTimeslot, EnvironmentalFlavor
 from carbon_aware.utils import is_timeslot_valid
 
 
@@ -180,7 +180,7 @@ class VanillaAlgorithm(SchedulingAlgorithm):
 
     def _initialize_leftover_arrays(
         self,
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]],
         max_time_slots: int,
@@ -263,12 +263,12 @@ class VanillaAlgorithm(SchedulingAlgorithm):
     def find_placement(
         self,
         pod: CarbonAwarePod,
-        flavours: List[CarbonAwareFlavour],
+        flavours: List[EnvironmentalFlavor],
         timeslots: List[CarbonAwareTimeslot],
         leftover_cpu: Dict[str, Dict[int, float]],
         leftover_ram: Dict[str, Dict[int, float]],
         max_time_slots: int = 48
-    ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
+    ) -> Tuple[Optional[EnvironmentalFlavor], Optional[CarbonAwareTimeslot], float]:
         """
         Find a placement using earliest-feasible-time, LeastAllocated node selection.
 
@@ -402,5 +402,4 @@ class VanillaAlgorithm(SchedulingAlgorithm):
             )
 
         return None, None, float('inf')
-
 

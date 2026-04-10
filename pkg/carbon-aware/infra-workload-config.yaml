@@ -79,6 +79,66 @@ nodes:
         active: 200.0
         max: 400.0
   random_seed: 44
+water:
+  enabled: true
+  data_sources:
+    aware_country_factors_csv: data/water/aware20_country_nonagri_factors.csv
+    grid_water_factors_csv: data/water/wri_country_grid_water_factors.csv
+    wue_region_slot_csv: data/water/open_meteo_region_wue_by_slot.csv
+    embodied_water_reference_csv: data/water/embodied_water_reference.csv
+  defaults:
+    pue: 1.2
+    embodied_water: 0.0
+    wue: 0.0
+    ewif: 0.0
+    direct_scarcity_cf: 1.0
+    indirect_scarcity_cf: 1.0
+    embodied_scarcity_cf: 1.0
+    criticality: 1.0
+  region_to_country:
+    FR: FR
+    ES: ES
+    IT-NO: IT
+    DE: DE
+  by_region:
+    FR:
+      pue: 1.18
+      wue: 0.18
+      criticality: 1.05
+      weather_reference:
+        name: Paris
+        latitude: 48.8566
+        longitude: 2.3522
+    ES:
+      pue: 1.24
+      wue: 0.32
+      criticality: 1.35
+      weather_reference:
+        name: Madrid
+        latitude: 40.4168
+        longitude: -3.7038
+    IT-NO:
+      pue: 1.21
+      wue: 0.24
+      criticality: 1.18
+      weather_reference:
+        name: Milan
+        latitude: 45.4642
+        longitude: 9.1900
+    DE:
+      pue: 1.16
+      wue: 0.12
+      criticality: 1.02
+      weather_reference:
+        name: Frankfurt
+        latitude: 50.1109
+        longitude: 8.6821
+  by_country:
+    FR: {}
+    ES: {}
+    IT: {}
+    DE: {}
+  by_hardware_subcategory: {}
 workload:
   output_dir: workloads
   vanilla_output_dir: workloads-vanilla

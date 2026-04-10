@@ -53,6 +53,8 @@ htmlcov/
 
 # Ignore paper-two directory
 docs/paper-two/
+# Ignore paper-three working directory and notes
+docs/paper-three/
 # But track the MILP formulation document
 !docs/paper-two/milp.tex
 # Track figures under paper-two
@@ -103,6 +105,9 @@ analysis/*.pyc
 # Carbon emissions analysis cache and temporary files  
 analysis/*.pkl
 analysis/*.cache
+
+# Local water-data implementation note
+pkg/carbon-aware/data/water/README.md
 
 # Generated workloads
 workloads/

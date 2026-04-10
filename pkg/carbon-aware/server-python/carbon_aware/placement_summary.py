@@ -11,6 +11,20 @@ from datetime import datetime
 import yaml
 
 
+def _sum_column(df, column_name):
+    if column_name not in df.columns:
+        return None
+    try:
+        return float(df[column_name].fillna(0).sum())
+    except Exception:
+        return None
+
+
+def _append_metric(report_lines, label, value, fmt=".3f"):
+    if value is None:
+        return
+    report_lines.append(f"- {label}: {format(value, fmt)}")
+
 
 def get_total_pods_from_workloads(workloads_dir=None):
     """
@@ -147,6 +161,50 @@ def generate_placement_summary(csv_path, experiment_type, output_dir=None):
             report_lines.append(f"- {node}: {count} pods")
         
         report_lines.append("")
+
+        total_carbon_kg = _sum_column(df, "total_carbon_emissions")
+        operational_energy_kwh = _sum_column(df, "operational_energy_kwh")
+        direct_water_l = _sum_column(df, "direct_water_l")
+        indirect_water_l = _sum_column(df, "indirect_water_l")
+        embodied_water_l = _sum_column(df, "embodied_water_l")
+        total_raw_water_l = _sum_column(df, "total_raw_water_l")
+        scarcity_characterized_water = _sum_column(df, "scarcity_characterized_water")
+        criticality_adjusted_water = _sum_column(df, "criticality_adjusted_water")
+
+        if any(
+            metric is not None
+            for metric in (
+                total_carbon_kg,
+                operational_energy_kwh,
+                direct_water_l,
+                indirect_water_l,
+                embodied_water_l,
+                total_raw_water_l,
+                scarcity_characterized_water,
+                criticality_adjusted_water,
+            )
+        ):
+            report_lines.append("Aggregate Footprint Totals:")
+            _append_metric(report_lines, "Operational energy (kWh)", operational_energy_kwh)
+            _append_metric(report_lines, "Total carbon emissions (kgCO2e)", total_carbon_kg)
+            _append_metric(report_lines, "Direct water (L)", direct_water_l)
+            _append_metric(report_lines, "Indirect water (L)", indirect_water_l)
+            _append_metric(report_lines, "Embodied water (L)", embodied_water_l)
+            _append_metric(report_lines, "Total raw water (L)", total_raw_water_l)
+            _append_metric(report_lines, "Scarcity-characterized water", scarcity_characterized_water)
+            _append_metric(report_lines, "Criticality-adjusted water", criticality_adjusted_water)
+
+            if unique_pods > 0:
+                if total_carbon_kg is not None:
+                    report_lines.append(f"- Average carbon per placed pod (kgCO2e): {total_carbon_kg / unique_pods:.6f}")
+                if total_raw_water_l is not None:
+                    report_lines.append(f"- Average raw water per placed pod (L): {total_raw_water_l / unique_pods:.6f}")
+                if scarcity_characterized_water is not None:
+                    report_lines.append(
+                        f"- Average scarcity-characterized water per placed pod: {scarcity_characterized_water / unique_pods:.6f}"
+                    )
+
+            report_lines.append("")
         
         # Write the report
         with open(output_path, 'w') as f:
