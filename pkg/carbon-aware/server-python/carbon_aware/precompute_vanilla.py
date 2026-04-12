@@ -176,7 +176,11 @@ def run_vanilla_precomputation(
             logging.info(f"💾 Placements saved to: {csv_path}")
             try:
                 from carbon_aware.placement_summary import auto_generate_summary_from_session_dir
-                summary_path = auto_generate_summary_from_session_dir(session_log_dir, "vanilla")
+                summary_path = auto_generate_summary_from_session_dir(
+                    session_log_dir,
+                    "vanilla",
+                    workloads_dir=workloads_dir,
+                )
                 if summary_path:
                     logging.info(f"📋 Placement summary generated: {summary_path}")
                 else:
@@ -354,4 +358,3 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[EnvironmentalFlavor]:
     except Exception as e:
         logging.error(f"Error loading nodes from {nodes_file}: {e}")
         return []
-

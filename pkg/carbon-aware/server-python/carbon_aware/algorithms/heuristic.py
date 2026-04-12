@@ -24,6 +24,10 @@ class CandidatePlacement:
     pack_score: float
     used_cpu_before: Dict[int, float]
     objective_score: float = float("inf")
+    pareto_rank: int = 0
+    budget_violation: float = 0.0
+    water_pressure: float = 0.0
+    budget_slack_after: float = float("inf")
 
 
 class HeuristicAlgorithm(SchedulingAlgorithm):
@@ -41,6 +45,10 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         self._objective_mode = "carbon"
         self._carbon_weight = 1.0
         self._water_metric = "scarcity"
+        self._water_budget: Optional[float] = None
+        self._water_budget_used = 0.0
+        self._remaining_pods_estimate: Optional[int] = None
+        self._budget_pressure_weight = 1.0
         
         self._placement_csv_file_handle = None
         self._placement_csv_writer = None
@@ -247,6 +255,13 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             objective_suffix = ""
             if getattr(self, "_objective_mode", "carbon") == "weighted-sum":
                 objective_suffix = f"_wsum{int(round(getattr(self, '_carbon_weight', 1.0) * 100)):02d}"
+            elif getattr(self, "_objective_mode", "carbon") == "pareto":
+                objective_suffix = "_pareto"
+            elif getattr(self, "_objective_mode", "carbon") == "epsilon-pareto":
+                objective_suffix = f"_epspareto{getattr(self, '_water_metric', 'scarcity')}"
+                water_budget = getattr(self, "_water_budget", None)
+                if water_budget is not None:
+                    objective_suffix += str(water_budget).replace(".", "p")
             base_filename = f"heuristic_{suffix}{objective_suffix}_placements_session.csv"
         self._placement_csv_path = os.path.join(self._session_log_dir, base_filename)
         
@@ -417,8 +432,8 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         logging.info(f"HeuristicAlgorithm: embodied_allocation_mode set to {self._embodied_allocation_mode}")
 
     def set_environmental_objective(self, mode: str = "carbon", carbon_weight: float = 1.0, water_metric: str = "scarcity"):
-        """Set heuristic scoring objective. Weighted-sum currently uses scarcity-characterized water."""
-        if mode not in ("carbon", "weighted-sum"):
+        """Set heuristic scoring objective. Water-aware modes use the selected water metric."""
+        if mode not in ("carbon", "weighted-sum", "pareto", "epsilon-pareto"):
             logging.warning(f"Unknown heuristic objective '{mode}', defaulting to 'carbon'")
             mode = "carbon"
 
@@ -441,6 +456,69 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             self._carbon_weight,
             self._water_metric,
         )
+
+    def set_water_budget(
+        self,
+        water_budget: Optional[float] = None,
+        water_metric: str = "scarcity",
+        total_pods: Optional[int] = None,
+        budget_pressure_weight: float = 1.0,
+    ):
+        """
+        Configure the soft run-level water budget used by epsilon-pareto mode.
+
+        The budget is not treated as a hard feasibility cut in the heuristic. It
+        guides candidate ranking so tight budgets reduce water pressure while
+        still allowing a placement if every candidate would overshoot.
+        """
+        if water_budget is None:
+            self._water_budget = None
+        else:
+            try:
+                self._water_budget = max(float(water_budget), 0.0)
+            except (TypeError, ValueError):
+                logging.warning("Invalid heuristic water budget %r; disabling budget guidance", water_budget)
+                self._water_budget = None
+
+        if water_metric not in ("scarcity", "raw"):
+            logging.warning(f"Unknown heuristic water metric '{water_metric}', defaulting to 'scarcity'")
+            water_metric = "scarcity"
+        self._water_metric = water_metric
+
+        try:
+            self._remaining_pods_estimate = max(int(total_pods), 0) if total_pods is not None else None
+        except (TypeError, ValueError):
+            self._remaining_pods_estimate = None
+
+        try:
+            self._budget_pressure_weight = max(float(budget_pressure_weight), 0.0)
+        except (TypeError, ValueError):
+            self._budget_pressure_weight = 1.0
+
+        self._water_budget_used = 0.0
+        logging.info(
+            "HeuristicAlgorithm: water_budget=%s water_metric=%s total_pods=%s pressure_weight=%.2f",
+            self._water_budget,
+            self._water_metric,
+            self._remaining_pods_estimate,
+            self._budget_pressure_weight,
+        )
+
+    def _remaining_water_budget(self) -> Optional[float]:
+        if self._water_budget is None:
+            return None
+        return max(self._water_budget - self._water_budget_used, 0.0)
+
+    def _remaining_pods_for_budget(self) -> Optional[int]:
+        if self._remaining_pods_estimate is None:
+            return None
+        return max(self._remaining_pods_estimate, 1)
+
+    def _record_budget_progress(self, footprint: Optional[FootprintVector] = None):
+        if footprint is not None:
+            self._water_budget_used += _candidate_water_value(footprint, getattr(self, "_water_metric", "scarcity"))
+        if self._remaining_pods_estimate is not None and self._remaining_pods_estimate > 0:
+            self._remaining_pods_estimate -= 1
         
     def set_workloads_dir(self, workloads_dir: str):
         """Set the workloads directory for YAML file lookup."""
@@ -479,6 +557,9 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             getattr(self, "_objective_mode", "carbon"),
             getattr(self, "_carbon_weight", 1.0),
             getattr(self, "_water_metric", "scarcity"),
+            self._remaining_water_budget(),
+            self._remaining_pods_for_budget(),
+            getattr(self, "_budget_pressure_weight", 1.0),
         )
         
         if self.experiment_logger:
@@ -521,6 +602,9 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                 flavour=best_node,
                 footprint=footprint,
             )
+            self._record_budget_progress(footprint)
+        else:
+            self._record_budget_progress(None)
         
         return best_node, best_slot, emissions
 
@@ -666,6 +750,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                 max_ram_available = max(persistent_state.leftover_ram[flv.id].values())
                 logging.warning(f"        - Node {flv.id}: max_cpu={max_cpu_available:.3f}, max_ram={max_ram_available:.0f}MB")
             
+            self._record_budget_progress(None)
             return None, None, float('inf')
         
         ranked_candidates = _rank_candidates(
@@ -673,6 +758,9 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
             objective_mode=getattr(self, "_objective_mode", "carbon"),
             carbon_weight=getattr(self, "_carbon_weight", 1.0),
             water_metric=getattr(self, "_water_metric", "scarcity"),
+            water_budget_remaining=self._remaining_water_budget(),
+            remaining_pods=self._remaining_pods_for_budget(),
+            budget_pressure_weight=getattr(self, "_budget_pressure_weight", 1.0),
         )
         best_candidate = ranked_candidates[0]
         logging.info(
@@ -715,6 +803,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                     flavour=candidate.flavour,
                     footprint=candidate.footprint,
                 )
+                self._record_budget_progress(candidate.footprint)
                 
                 return candidate.flavour, candidate.timeslot, candidate.footprint.total_carbon_g
             else:
@@ -727,6 +816,7 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         
         # No candidate could be allocated (all resources were taken by other threads)
         logging.warning(f"[find_placement_atomic] All {allocation_attempts} candidates exhausted for pod={pod.id} - resources taken by other processes")
+        self._record_budget_progress(None)
         return None, None, float('inf')
 
 
@@ -742,11 +832,46 @@ def _normalize_to_unit_interval(value: float, lower: float, upper: float) -> flo
     return (value - lower) / (upper - lower)
 
 
+def _candidate_environmental_tuple(candidate: CandidatePlacement, water_metric: str) -> Tuple[float, float]:
+    return candidate.footprint.total_carbon_g, _candidate_water_value(candidate.footprint, water_metric)
+
+
+def _dominates(lhs: CandidatePlacement, rhs: CandidatePlacement, water_metric: str, eps: float = 1e-12) -> bool:
+    lhs_carbon, lhs_water = _candidate_environmental_tuple(lhs, water_metric)
+    rhs_carbon, rhs_water = _candidate_environmental_tuple(rhs, water_metric)
+
+    carbon_no_worse = lhs_carbon <= rhs_carbon + eps
+    water_no_worse = lhs_water <= rhs_water + eps
+    strictly_better = lhs_carbon < rhs_carbon - eps or lhs_water < rhs_water - eps
+    return carbon_no_worse and water_no_worse and strictly_better
+
+
+def _assign_pareto_ranks(candidates: List[CandidatePlacement], water_metric: str) -> None:
+    remaining = list(candidates)
+    current_rank = 0
+
+    while remaining:
+        frontier: List[CandidatePlacement] = []
+        for candidate in remaining:
+            if not any(_dominates(other, candidate, water_metric) for other in remaining if other is not candidate):
+                frontier.append(candidate)
+
+        for candidate in frontier:
+            candidate.pareto_rank = current_rank
+            candidate.objective_score = float(current_rank)
+
+        remaining = [candidate for candidate in remaining if candidate not in frontier]
+        current_rank += 1
+
+
 def _rank_candidates(
     candidates: List[CandidatePlacement],
     objective_mode: str,
     carbon_weight: float,
     water_metric: str,
+    water_budget_remaining: Optional[float] = None,
+    remaining_pods: Optional[int] = None,
+    budget_pressure_weight: float = 1.0,
 ) -> List[CandidatePlacement]:
     if not candidates:
         return []
@@ -761,9 +886,81 @@ def _rank_candidates(
             carbon_norm = _normalize_to_unit_interval(candidate.footprint.total_carbon_g, carbon_min, carbon_max)
             water_norm = _normalize_to_unit_interval(_candidate_water_value(candidate.footprint, water_metric), water_min, water_max)
             candidate.objective_score = carbon_weight * carbon_norm + (1.0 - carbon_weight) * water_norm
+            candidate.pareto_rank = 0
+    elif objective_mode == "pareto":
+        _assign_pareto_ranks(candidates, water_metric)
+    elif objective_mode == "epsilon-pareto":
+        _assign_pareto_ranks(candidates, water_metric)
+        carbon_values = [candidate.footprint.total_carbon_g for candidate in candidates]
+        carbon_min, carbon_max = min(carbon_values), max(carbon_values)
+        water_values = [_candidate_water_value(candidate.footprint, water_metric) for candidate in candidates]
+        water_min, water_max = min(water_values), max(water_values)
+
+        allowance: Optional[float] = None
+        if water_budget_remaining is not None:
+            pods_left = max(int(remaining_pods or 1), 1)
+            allowance = max(float(water_budget_remaining), 0.0) / pods_left
+
+        for candidate in candidates:
+            water_value = _candidate_water_value(candidate.footprint, water_metric)
+            carbon_norm = _normalize_to_unit_interval(candidate.footprint.total_carbon_g, carbon_min, carbon_max)
+            water_norm = _normalize_to_unit_interval(water_value, water_min, water_max)
+
+            if water_budget_remaining is None:
+                candidate.budget_violation = 0.0
+                candidate.budget_slack_after = float("inf")
+                candidate.water_pressure = water_norm
+            else:
+                remaining_budget = max(float(water_budget_remaining), 0.0)
+                candidate.budget_slack_after = remaining_budget - water_value
+                candidate.budget_violation = max(water_value - remaining_budget, 0.0)
+                if allowance is not None and allowance > 1e-12:
+                    candidate.water_pressure = max(water_value - allowance, 0.0) / allowance
+                else:
+                    candidate.water_pressure = water_norm
+
+        pressure_values = [candidate.water_pressure for candidate in candidates]
+        violation_values = [candidate.budget_violation for candidate in candidates]
+        pressure_min, pressure_max = min(pressure_values), max(pressure_values)
+        violation_min, violation_max = min(violation_values), max(violation_values)
+
+        for candidate in candidates:
+            carbon_norm = _normalize_to_unit_interval(candidate.footprint.total_carbon_g, carbon_min, carbon_max)
+            pressure_norm = _normalize_to_unit_interval(candidate.water_pressure, pressure_min, pressure_max)
+            violation_norm = _normalize_to_unit_interval(candidate.budget_violation, violation_min, violation_max)
+            candidate.objective_score = carbon_norm + budget_pressure_weight * (pressure_norm + violation_norm)
     else:
         for candidate in candidates:
             candidate.objective_score = candidate.footprint.total_carbon_g
+            candidate.pareto_rank = 0
+
+    if objective_mode == "pareto":
+        return sorted(
+            candidates,
+            key=lambda candidate: (
+                candidate.pareto_rank,
+                candidate.pack_score,
+                candidate.timeslot.id,
+                candidate.footprint.total_carbon_g,
+                _candidate_water_value(candidate.footprint, water_metric),
+                candidate.flavour.id,
+            ),
+        )
+
+    if objective_mode == "epsilon-pareto":
+        return sorted(
+            candidates,
+            key=lambda candidate: (
+                1 if candidate.budget_violation > 1e-12 else 0,
+                candidate.pareto_rank,
+                candidate.objective_score,
+                candidate.footprint.total_carbon_g,
+                _candidate_water_value(candidate.footprint, water_metric),
+                candidate.pack_score,
+                candidate.timeslot.id,
+                candidate.flavour.id,
+            ),
+        )
 
     return sorted(
         candidates,
@@ -776,7 +973,7 @@ def _rank_candidates(
     )
 
 
-def find_best_node_and_timeslot(
+def _build_feasible_candidates(
     pod: CarbonAwarePod,
     flavours: List[EnvironmentalFlavor],
     timeslots: List[CarbonAwareTimeslot],
@@ -785,32 +982,7 @@ def find_best_node_and_timeslot(
     max_time_slots: int = 48,
     operational_only: bool = False,
     embodied_allocation_mode: str = "proportional",
-    objective_mode: str = "carbon",
-    carbon_weight: float = 1.0,
-    water_metric: str = "scarcity",
-) -> Tuple[Optional[EnvironmentalFlavor], Optional[CarbonAwareTimeslot], float]:
-    """
-    Find the best node and timeslot for a pod using the configured heuristic objective.
-    
-    The algorithm iterates through all valid combinations of nodes and timeslots,
-    checking resource constraints and calculating emissions for each.
-    
-    Args:
-        pod: The pod to place
-        flavours: Available node types
-        timeslots: Available scheduling timeslots
-        leftover_cpu: Remaining CPU capacity per node and timeslot
-        leftover_ram: Remaining RAM capacity per node and timeslot
-        max_time_slots: Maximum number of timeslots to consider
-        operational_only: Flag to use operational-only emissions calculation
-        objective_mode: `carbon` or `weighted-sum`
-        carbon_weight: Weighted-sum carbon share in [0, 1]
-        water_metric: `scarcity` or `raw`
-        
-    Returns:
-        Tuple of (best_node, best_timeslot, chosen carbon emissions in gCO2e)
-        or (None, None, inf) if no placement found
-    """
+) -> List[CandidatePlacement]:
     candidates: List[CandidatePlacement] = []
 
     # Prefer lower-carbon hours first across nodes (best-effort)
@@ -835,8 +1007,8 @@ def find_best_node_and_timeslot(
                     duration_feasible = False
                     logging.debug(f"[find_best_node_and_timeslot] Slot {ts.id}+{slot_offset}={current_slot} exceeds tracking window for pod={pod.id}")
                     break
-                
-                if (leftover_cpu[flv.id][current_slot] < pod.cpuRequest or 
+
+                if (leftover_cpu[flv.id][current_slot] < pod.cpuRequest or
                     leftover_ram[flv.id][current_slot] < pod.ramRequest):
                     duration_feasible = False
                     logging.debug(
@@ -883,15 +1055,107 @@ def find_best_node_and_timeslot(
                     )
                 )
 
-    if not candidates:
-        return None, None, float("inf")
+    return candidates
 
-    ranked_candidates = _rank_candidates(
+
+def find_ranked_candidates(
+    pod: CarbonAwarePod,
+    flavours: List[EnvironmentalFlavor],
+    timeslots: List[CarbonAwareTimeslot],
+    leftover_cpu: Dict[str, Dict[int, float]],
+    leftover_ram: Dict[str, Dict[int, float]],
+    max_time_slots: int = 48,
+    operational_only: bool = False,
+    embodied_allocation_mode: str = "proportional",
+    objective_mode: str = "carbon",
+    carbon_weight: float = 1.0,
+    water_metric: str = "scarcity",
+    water_budget_remaining: Optional[float] = None,
+    remaining_pods: Optional[int] = None,
+    budget_pressure_weight: float = 1.0,
+) -> List[CandidatePlacement]:
+    candidates = _build_feasible_candidates(
+        pod=pod,
+        flavours=flavours,
+        timeslots=timeslots,
+        leftover_cpu=leftover_cpu,
+        leftover_ram=leftover_ram,
+        max_time_slots=max_time_slots,
+        operational_only=operational_only,
+        embodied_allocation_mode=embodied_allocation_mode,
+    )
+    return _rank_candidates(
         candidates,
         objective_mode=objective_mode,
         carbon_weight=carbon_weight,
         water_metric=water_metric,
+        water_budget_remaining=water_budget_remaining,
+        remaining_pods=remaining_pods,
+        budget_pressure_weight=budget_pressure_weight,
     )
+
+
+def find_best_node_and_timeslot(
+    pod: CarbonAwarePod,
+    flavours: List[EnvironmentalFlavor],
+    timeslots: List[CarbonAwareTimeslot],
+    leftover_cpu: Dict[str, Dict[int, float]],
+    leftover_ram: Dict[str, Dict[int, float]],
+    max_time_slots: int = 48,
+    operational_only: bool = False,
+    embodied_allocation_mode: str = "proportional",
+    objective_mode: str = "carbon",
+    carbon_weight: float = 1.0,
+    water_metric: str = "scarcity",
+    water_budget_remaining: Optional[float] = None,
+    remaining_pods: Optional[int] = None,
+    budget_pressure_weight: float = 1.0,
+) -> Tuple[Optional[EnvironmentalFlavor], Optional[CarbonAwareTimeslot], float]:
+    """
+    Find the best node and timeslot for a pod using the configured heuristic objective.
+
+    The algorithm iterates through all valid combinations of nodes and timeslots,
+    checking resource constraints and calculating emissions for each.
+
+    Args:
+        pod: The pod to place
+        flavours: Available node types
+        timeslots: Available scheduling timeslots
+        leftover_cpu: Remaining CPU capacity per node and timeslot
+        leftover_ram: Remaining RAM capacity per node and timeslot
+        max_time_slots: Maximum number of timeslots to consider
+        operational_only: Flag to use operational-only emissions calculation
+        objective_mode: `carbon`, `weighted-sum`, `pareto`, or `epsilon-pareto`
+        carbon_weight: Weighted-sum carbon share in [0, 1]
+        water_metric: `scarcity` or `raw`
+        water_budget_remaining: Remaining run-level water budget for epsilon-pareto mode
+        remaining_pods: Estimated number of pods left including the current pod
+        budget_pressure_weight: Strength of per-pod water-budget pressure
+
+    Returns:
+        Tuple of (best_node, best_timeslot, chosen carbon emissions in gCO2e)
+        or (None, None, inf) if no placement found
+    """
+    ranked_candidates = find_ranked_candidates(
+        pod=pod,
+        flavours=flavours,
+        timeslots=timeslots,
+        leftover_cpu=leftover_cpu,
+        leftover_ram=leftover_ram,
+        max_time_slots=max_time_slots,
+        operational_only=operational_only,
+        embodied_allocation_mode=embodied_allocation_mode,
+        objective_mode=objective_mode,
+        carbon_weight=carbon_weight,
+        water_metric=water_metric,
+        water_budget_remaining=water_budget_remaining,
+        remaining_pods=remaining_pods,
+        budget_pressure_weight=budget_pressure_weight,
+    )
+
+    if not ranked_candidates:
+        return None, None, float("inf")
+
     best_candidate = ranked_candidates[0]
     logging.debug(
         "[find_best_node_and_timeslot] Best candidate for pod=%s: node=%s timeslot=%s objective=%.6f carbon=%.3f water=%.3f",

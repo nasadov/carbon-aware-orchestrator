@@ -16,7 +16,9 @@ def run_global_optimal_precomputation(
     perf_logger=None,
     prioritize_efficiency: bool = False,
     operational_only: bool = False,
-    embodied_mode: str = "proportional"
+    embodied_mode: str = "proportional",
+    global_water_budget: float = None,
+    global_water_metric: str = "scarcity",
 ) -> bool:
     """
     Run global-optimal algorithm in precomputation mode
@@ -53,11 +55,22 @@ def run_global_optimal_precomputation(
             logging.info(f"⚙️ Operational-only mode: {operational_only}")
         if hasattr(algorithm, 'set_embodied_allocation_mode'):
             algorithm.set_embodied_allocation_mode(embodied_mode)
-        
+        if hasattr(algorithm, 'set_epsilon_constraint'):
+            algorithm.set_epsilon_constraint(
+                water_budget=global_water_budget,
+                water_metric=global_water_metric,
+            )
+
         logging.info("🔧 STEP 2: Starting comprehensive global optimization")
         logging.info(f"📂 Workloads directory: {workloads_dir}")
         logging.info(f"📋 Nodes file: {nodes_file}")
         logging.info(f"📊 Forecasts file: {forecasts_file}")
+        if global_water_budget is not None:
+            logging.info(
+                "💧 Epsilon-constraint enabled: %s water <= %.6f",
+                global_water_metric,
+                float(global_water_budget),
+            )
         
         # Run the precomputation
         success = algorithm.precompute_all_workloads(

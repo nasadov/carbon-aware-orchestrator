@@ -71,12 +71,16 @@ docs/paper-two/Schemes/**/*.log
 # Generated experiment results
 **/experiment_results/
 **/experiments/*/
+**/experiments/*.csv
+**/experiments/*.png
+**/experiments/*.pdf
+experiments/figures/
 
 # Performance logs
 pkg/carbon-aware/server-python/performance_logs/*.csv
 
 # Precompute timing CSVs
-pkg/carbon-aware/server-python/experiments/precompute_timing_*.csv
+experiments/precompute_timing_*.csv
 
 # Test logs and archived test scripts
 test_logs/

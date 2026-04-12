@@ -42,7 +42,10 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
     def __init__(self, algorithm_name='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None, 
                  workloads_dir=None, nodes_file=None, forecasts_file=None, prioritize_efficiency=False,
                  precomputed_solution=None, precomputation_done=False, operational_only=False,
-                 heuristic_objective="carbon", heuristic_carbon_weight=1.0):
+                 heuristic_objective="carbon", heuristic_carbon_weight=1.0,
+                 heuristic_water_budget=None, heuristic_water_metric="scarcity",
+                 heuristic_budget_pressure_weight=1.0,
+                 global_water_budget=None, global_water_metric="scarcity"):
         self.algo = Algorithm(algorithm_name, True)
         self.command_line_algorithm = algorithm_name 
         self.persistent_state = PersistentStateStorage()
@@ -63,6 +66,11 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         self.precomputation_done = precomputation_done
         self.heuristic_objective = heuristic_objective
         self.heuristic_carbon_weight = heuristic_carbon_weight
+        self.heuristic_water_budget = heuristic_water_budget
+        self.heuristic_water_metric = heuristic_water_metric
+        self.heuristic_budget_pressure_weight = heuristic_budget_pressure_weight
+        self.global_water_budget = global_water_budget
+        self.global_water_metric = global_water_metric
         
         if precomputation_done:
             logging.info(f"🎯 PlacementAlgorithm initialized with precomputed solution containing {len(self.precomputed_solution)} placements")
@@ -217,7 +225,22 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     algorithm_instance.set_environmental_objective(
                         mode=self.heuristic_objective,
                         carbon_weight=self.heuristic_carbon_weight,
-                        water_metric="scarcity",
+                        water_metric=self.heuristic_water_metric,
+                    )
+                if hasattr(algorithm_instance, "set_water_budget"):
+                    algorithm_instance.set_water_budget(
+                        water_budget=self.heuristic_water_budget,
+                        water_metric=self.heuristic_water_metric,
+                        total_pods=None,
+                        budget_pressure_weight=self.heuristic_budget_pressure_weight,
+                    )
+            elif self.algo.name == "global-optimal":
+                if hasattr(algorithm_instance, "set_operational_only"):
+                    algorithm_instance.set_operational_only(self.operational_only)
+                if hasattr(algorithm_instance, "set_epsilon_constraint"):
+                    algorithm_instance.set_epsilon_constraint(
+                        water_budget=self.global_water_budget,
+                        water_metric=self.global_water_metric,
                     )
 
             # Configure algorithm instance with the session directory for placement CSVs
@@ -270,6 +293,14 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 
             # EDF: smallest window first; then CPU desc, RAM desc, duration desc
             schedule_candidates.sort(key=lambda x: (x[2], -x[1].cpuRequest, -x[1].ramRequest, -x[1].duration))
+
+            if self.algo.name == "heuristic" and hasattr(algorithm_instance, "set_water_budget"):
+                algorithm_instance.set_water_budget(
+                    water_budget=self.heuristic_water_budget,
+                    water_metric=self.heuristic_water_metric,
+                    total_pods=len(schedule_candidates),
+                    budget_pressure_weight=self.heuristic_budget_pressure_weight,
+                )
 
             for idx, (ms, pod, scheduling_window, hours_until_deadline) in enumerate(schedule_candidates):
                 ms_start_time = time.time()
@@ -585,7 +616,9 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
 def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logger=None, session_log_dir=None,
          workloads_dir="./workloads", nodes_file="../nodes.yaml", forecasts_file="./all_forecasts.json",
          prioritize_efficiency=False, operational_only=False,
-         heuristic_objective="carbon", heuristic_carbon_weight=1.0):
+         heuristic_objective="carbon", heuristic_carbon_weight=1.0,
+         heuristic_water_budget=None, heuristic_water_metric="scarcity", heuristic_budget_pressure_weight=1.0,
+         global_water_budget=None, global_water_metric="scarcity"):
     """
     Creates and runs the gRPC server on the specified port, registering the PlacementAlgorithm servicer.
     Implements graceful shutdown handling.
@@ -603,6 +636,11 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         operational_only (bool): Whether to use only operational emissions (omit embodied emissions)
         heuristic_objective (str): Heuristic scoring objective
         heuristic_carbon_weight (float): Carbon share for weighted-sum heuristic mode
+        heuristic_water_budget (float): Optional soft water budget for epsilon-pareto heuristic mode
+        heuristic_water_metric (str): Water metric used by water-aware heuristic modes
+        heuristic_budget_pressure_weight (float): Strength of adaptive budget pressure for epsilon-pareto heuristic mode
+        global_water_budget (float): Optional epsilon-constraint water budget for global-optimal mode
+        global_water_metric (str): Water metric used by the epsilon-constraint
     """
     shutdown_in_progress = False
     
@@ -618,6 +656,13 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
             
             # Create algorithm instance for precomputation
             precompute_algorithm = GlobalOptimalAlgorithm()
+            if hasattr(precompute_algorithm, 'set_operational_only'):
+                precompute_algorithm.set_operational_only(operational_only)
+            if hasattr(precompute_algorithm, 'set_epsilon_constraint'):
+                precompute_algorithm.set_epsilon_constraint(
+                    water_budget=global_water_budget,
+                    water_metric=global_water_metric,
+                )
             
             # Register it so the factory can reuse it
             set_precomputed_global_optimal(precompute_algorithm)
@@ -693,6 +738,11 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         operational_only=operational_only,
         heuristic_objective=heuristic_objective,
         heuristic_carbon_weight=heuristic_carbon_weight,
+        heuristic_water_budget=heuristic_water_budget,
+        heuristic_water_metric=heuristic_water_metric,
+        heuristic_budget_pressure_weight=heuristic_budget_pressure_weight,
+        global_water_budget=global_water_budget,
+        global_water_metric=global_water_metric,
     )
     idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(servicer, server)
     server.add_insecure_port('[::]:' + port)

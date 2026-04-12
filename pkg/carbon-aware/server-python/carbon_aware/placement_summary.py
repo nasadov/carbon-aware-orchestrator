@@ -67,7 +67,7 @@ def get_total_pods_from_workloads(workloads_dir=None):
         return 0
 
 
-def generate_placement_summary(csv_path, experiment_type, output_dir=None):
+def generate_placement_summary(csv_path, experiment_type, output_dir=None, workloads_dir=None):
     """
     Generate a placement summary report from a placement CSV file
     
@@ -118,7 +118,7 @@ def generate_placement_summary(csv_path, experiment_type, output_dir=None):
             logging.warning(f"⚠️ Could not read pods.txt marker: {_e}")
 
         if total_workload_pods is None:
-            total_workload_pods = get_total_pods_from_workloads()
+            total_workload_pods = get_total_pods_from_workloads(workloads_dir)
         
         # Calculate success rate
         pods_not_placed = total_workload_pods - unique_pods
@@ -221,7 +221,7 @@ def generate_placement_summary(csv_path, experiment_type, output_dir=None):
         return None
 
 
-def auto_generate_summary_from_session_dir(session_log_dir, experiment_type):
+def auto_generate_summary_from_session_dir(session_log_dir, experiment_type, workloads_dir=None):
     """
     Automatically find and generate placement summary from session directory
     
@@ -260,7 +260,12 @@ def auto_generate_summary_from_session_dir(session_log_dir, experiment_type):
                 break
     
     if csv_path:
-        return generate_placement_summary(csv_path, experiment_type, session_log_dir)
+        return generate_placement_summary(
+            csv_path,
+            experiment_type,
+            session_log_dir,
+            workloads_dir=workloads_dir,
+        )
     else:
         logging.warning(f"📄 No placement CSV file found in {session_log_dir}")
         return None

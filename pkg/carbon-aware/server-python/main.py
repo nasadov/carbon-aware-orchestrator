@@ -147,8 +147,8 @@ def main() -> None:
     )
     parser.add_argument(
         '--experiment-dir',
-        default=os.path.join(os.path.dirname(__file__), 'experiments'),
-        help='Directory to store experiment results (default: server-python/experiments)'
+        default=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'experiments')),
+        help='Directory to store experiment results (default: repo-root/experiments)'
     )
     parser.add_argument(
         '--perf-log',
@@ -180,14 +180,44 @@ def main() -> None:
     parser.add_argument(
         '--heuristic-objective',
         default='carbon',
-        choices=['carbon', 'weighted-sum'],
-        help='Heuristic scoring objective: carbon-only or weighted carbon-water sum'
+        choices=['carbon', 'weighted-sum', 'pareto', 'epsilon-pareto'],
+        help='Heuristic scoring objective: carbon-only, weighted carbon-water sum, Pareto ranking, or epsilon-guided Pareto ranking'
     )
     parser.add_argument(
         '--heuristic-carbon-weight',
         type=float,
         default=1.0,
         help='Carbon weight for weighted-sum heuristic objective in [0, 1] (default: 1.0)'
+    )
+    parser.add_argument(
+        '--heuristic-water-budget',
+        type=float,
+        default=None,
+        help='Optional soft water budget for epsilon-pareto heuristic runs in the selected heuristic water metric units'
+    )
+    parser.add_argument(
+        '--heuristic-water-metric',
+        default='scarcity',
+        choices=['raw', 'scarcity'],
+        help='Water metric used by water-aware heuristic objectives'
+    )
+    parser.add_argument(
+        '--heuristic-budget-pressure-weight',
+        type=float,
+        default=1.0,
+        help='Strength of adaptive per-pod water-budget pressure for epsilon-pareto heuristic mode'
+    )
+    parser.add_argument(
+        '--global-water-budget',
+        type=float,
+        default=None,
+        help='Optional epsilon-constraint budget for global-optimal runs in the selected water metric units'
+    )
+    parser.add_argument(
+        '--global-water-metric',
+        default='scarcity',
+        choices=['raw', 'scarcity'],
+        help='Water metric used by the global-optimal epsilon-constraint'
     )
     parser.add_argument(
         '--precompute',
@@ -197,6 +227,7 @@ def main() -> None:
     
     args = parser.parse_args()
     args.heuristic_carbon_weight = min(max(args.heuristic_carbon_weight, 0.0), 1.0)
+    args.heuristic_budget_pressure_weight = max(args.heuristic_budget_pressure_weight, 0.0)
     
     # Configure logging with specified level
     log_level = getattr(logging, args.loglevel)
@@ -233,8 +264,20 @@ def main() -> None:
         else:
             mode_suffix = args.embodied_mode if args.algorithm in ('heuristic', 'global-optimal') else None
             algo_mode = f"{args.algorithm}_{mode_suffix}" if mode_suffix else args.algorithm
-        if args.algorithm == 'heuristic' and args.heuristic_objective == 'weighted-sum':
-            algo_mode = f"{algo_mode}_wsum{int(round(args.heuristic_carbon_weight * 100)):02d}"
+        if args.algorithm == 'heuristic':
+            if args.heuristic_objective == 'weighted-sum':
+                algo_mode = f"{algo_mode}_wsum{int(round(args.heuristic_carbon_weight * 100)):02d}"
+            elif args.heuristic_objective == 'pareto':
+                algo_mode = f"{algo_mode}_pareto"
+            elif args.heuristic_objective == 'epsilon-pareto':
+                algo_mode = f"{algo_mode}_epspareto{args.heuristic_water_metric}"
+                if args.heuristic_water_budget is not None:
+                    algo_mode = f"{algo_mode}{str(args.heuristic_water_budget).replace('.', 'p')}"
+        elif args.algorithm == 'global-optimal' and args.global_water_budget is not None:
+            algo_mode = (
+                f"{algo_mode}_eps{args.global_water_metric}"
+                f"{str(args.global_water_budget).replace('.', 'p')}"
+            )
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         logging.info(f"🧪 Experiment mode: {session_log_dir}")
@@ -253,8 +296,20 @@ def main() -> None:
         else:
             mode_suffix = args.embodied_mode if args.algorithm in ('heuristic', 'global-optimal') else None
             algo_mode = f"{args.algorithm}_{mode_suffix}" if mode_suffix else args.algorithm
-        if args.algorithm == 'heuristic' and args.heuristic_objective == 'weighted-sum':
-            algo_mode = f"{algo_mode}_wsum{int(round(args.heuristic_carbon_weight * 100)):02d}"
+        if args.algorithm == 'heuristic':
+            if args.heuristic_objective == 'weighted-sum':
+                algo_mode = f"{algo_mode}_wsum{int(round(args.heuristic_carbon_weight * 100)):02d}"
+            elif args.heuristic_objective == 'pareto':
+                algo_mode = f"{algo_mode}_pareto"
+            elif args.heuristic_objective == 'epsilon-pareto':
+                algo_mode = f"{algo_mode}_epspareto{args.heuristic_water_metric}"
+                if args.heuristic_water_budget is not None:
+                    algo_mode = f"{algo_mode}{str(args.heuristic_water_budget).replace('.', 'p')}"
+        elif args.algorithm == 'global-optimal' and args.global_water_budget is not None:
+            algo_mode = (
+                f"{algo_mode}_eps{args.global_water_metric}"
+                f"{str(args.global_water_budget).replace('.', 'p')}"
+            )
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         
@@ -347,6 +402,9 @@ def main() -> None:
                 embodied_mode=args.embodied_mode,
                 heuristic_objective=args.heuristic_objective,
                 heuristic_carbon_weight=args.heuristic_carbon_weight,
+                heuristic_water_budget=args.heuristic_water_budget,
+                heuristic_water_metric=args.heuristic_water_metric,
+                heuristic_budget_pressure_weight=args.heuristic_budget_pressure_weight,
             )
         elif args.algorithm == 'global-optimal':
             from carbon_aware.precompute_global_optimal import run_global_optimal_precomputation
@@ -358,7 +416,9 @@ def main() -> None:
                 perf_logger=perf_logger,
                 prioritize_efficiency=args.prioritize_efficiency,
                 operational_only=args.operational_only,
-                embodied_mode=args.embodied_mode
+                embodied_mode=args.embodied_mode,
+                global_water_budget=args.global_water_budget,
+                global_water_metric=args.global_water_metric,
             )
         elif args.algorithm == 'vanilla':
             from carbon_aware.precompute_vanilla import run_vanilla_precomputation
@@ -400,6 +460,11 @@ def main() -> None:
         operational_only=args.operational_only,
         heuristic_objective=args.heuristic_objective,
         heuristic_carbon_weight=args.heuristic_carbon_weight,
+        heuristic_water_budget=args.heuristic_water_budget,
+        heuristic_water_metric=args.heuristic_water_metric,
+        heuristic_budget_pressure_weight=args.heuristic_budget_pressure_weight,
+        global_water_budget=args.global_water_budget,
+        global_water_metric=args.global_water_metric,
     )
 
 

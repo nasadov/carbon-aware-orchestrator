@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 import pulp
 import csv
 from datetime import datetime
+from pathlib import Path
 
 from carbon_aware.algorithms.base import SchedulingAlgorithm
 from carbon_aware.footprints import FootprintVector, build_used_cpu_before_map, compute_footprint_vector
@@ -93,6 +94,12 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         # and optimize using operational emissions only (idle + dynamic)
         self.operational_only = False
 
+        # Optional epsilon-constraint settings for Phase 2.
+        # When water_budget is set, Phase 2 minimizes carbon subject to
+        # total water <= water_budget for the selected water metric.
+        self.phase2_water_budget: Optional[float] = None
+        self.phase2_water_metric: str = "scarcity"
+
         # Objective weighting knobs (config-driven)
         # - weight_dynamic: scales per-pod dynamic emissions (k_watts * u * intensity)
         # - weight_activation: scales per-(node,slot) activation cost (idle + embodied)
@@ -150,10 +157,188 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         self.operational_only = bool(operational_only)
         logging.info(f"GlobalOptimalAlgorithm: operational_only mode set to {self.operational_only}")
 
+    def set_epsilon_constraint(self, water_budget: Optional[float] = None, water_metric: str = "scarcity"):
+        """Configure an optional epsilon-constraint water budget for Phase 2."""
+        parsed_budget: Optional[float]
+        if water_budget in (None, "", "none", "None"):
+            parsed_budget = None
+        else:
+            try:
+                parsed_budget = float(water_budget)
+            except (TypeError, ValueError):
+                logging.warning("Invalid water budget %r; disabling epsilon-constraint", water_budget)
+                parsed_budget = None
+
+        if parsed_budget is not None and parsed_budget <= 0:
+            logging.warning("Non-positive water budget %.6f; disabling epsilon-constraint", parsed_budget)
+            parsed_budget = None
+
+        if water_metric not in ("scarcity", "raw"):
+            logging.warning("Unknown water metric '%s'; defaulting to 'scarcity'", water_metric)
+            water_metric = "scarcity"
+
+        self.phase2_water_budget = parsed_budget
+        self.phase2_water_metric = water_metric
+        if parsed_budget is None:
+            logging.info("GlobalOptimalAlgorithm: epsilon-constraint disabled")
+        else:
+            logging.info(
+                "GlobalOptimalAlgorithm: epsilon-constraint enabled with %s water budget %.6f",
+                self.phase2_water_metric,
+                self.phase2_water_budget,
+            )
+
+    @staticmethod
+    def _slot_signal_value(values: Dict[int, float], slot: int, default: float = 0.0) -> float:
+        if slot in values:
+            return float(values[slot])
+        if values:
+            return float(next(iter(values.values())))
+        return float(default)
+
+    def _build_water_linear_terms(
+        self,
+        placements,
+        flavours: List[EnvironmentalFlavor],
+        timeslots: List[CarbonAwareTimeslot],
+        placement_vars,
+        activation_vars,
+        max_time_slots: int,
+        use_cpsat: bool = False,
+        excluded_pods: Optional[set] = None,
+    ):
+        """Build dynamic and activation water terms for Phase 2."""
+        excluded_pods = excluded_pods or set()
+        flv_by_id = {f.id: f for f in flavours}
+        dynamic_terms = []
+        activation_terms = []
+
+        for pod_id, pod_placements in placements.items():
+            if pod_id in excluded_pods:
+                continue
+            pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+            if not pod_obj:
+                continue
+            for flv_id, ts_id, _ in pod_placements:
+                flv_obj = flv_by_id.get(flv_id)
+                if not flv_obj:
+                    continue
+                k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+                total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
+                u_pod = pod_obj.cpuRequest / total_cpu
+                for offset in range(int(pod_obj.duration)):
+                    slot = ts_id + offset
+                    if slot >= max_time_slots:
+                        break
+                    wue = self._slot_signal_value(getattr(flv_obj, "wue_by_slot", {}) or {}, slot, 0.0)
+                    ewif = self._slot_signal_value(getattr(flv_obj, "ewif_by_slot", {}) or {}, slot, 0.0)
+                    direct_component = wue
+                    indirect_component = float(getattr(flv_obj, "pue", 1.0) or 1.0) * ewif
+                    if self.phase2_water_metric == "scarcity":
+                        direct_component *= float(getattr(flv_obj, "water_scarcity_direct_cf", 1.0) or 1.0)
+                        indirect_component *= float(getattr(flv_obj, "water_scarcity_indirect_cf", 1.0) or 1.0)
+                    coef = (k_watts * u_pod / 1000.0) * (direct_component + indirect_component)
+                    if use_cpsat:
+                        dynamic_terms.append(int(round(coef * 1000.0)) * placement_vars[(pod_id, flv_id, ts_id)])
+                    else:
+                        dynamic_terms.append(coef * placement_vars[(pod_id, flv_id, ts_id)])
+
+        for flv in flavours:
+            idle_w = flv.power.get("idle", 0.0)
+            embodied_water_per_h = (flv.embodiedWater / flv.lifetime) if flv.lifetime else 0.0
+            if getattr(self, "operational_only", False):
+                embodied_water_per_h = 0.0
+            if self.phase2_water_metric == "scarcity":
+                embodied_water_per_h *= float(getattr(flv, "water_scarcity_embodied_cf", 1.0) or 1.0)
+            for ts in timeslots:
+                wue = self._slot_signal_value(getattr(flv, "wue_by_slot", {}) or {}, ts.id, 0.0)
+                ewif = self._slot_signal_value(getattr(flv, "ewif_by_slot", {}) or {}, ts.id, 0.0)
+                direct_component = wue
+                indirect_component = float(getattr(flv, "pue", 1.0) or 1.0) * ewif
+                if self.phase2_water_metric == "scarcity":
+                    direct_component *= float(getattr(flv, "water_scarcity_direct_cf", 1.0) or 1.0)
+                    indirect_component *= float(getattr(flv, "water_scarcity_indirect_cf", 1.0) or 1.0)
+                coef = (idle_w / 1000.0) * (direct_component + indirect_component) + embodied_water_per_h
+                if use_cpsat:
+                    activation_terms.append(int(round(coef * 1000.0)) * activation_vars[(flv.id, ts.id)])
+                else:
+                    activation_terms.append(coef * activation_vars[(flv.id, ts.id)])
+
+        return dynamic_terms, activation_terms
+
+    def _compute_solution_footprints(
+        self,
+        solution_dict: Dict[str, Tuple[str, int, float]],
+        pending_pods_dict: Dict[str, CarbonAwarePod],
+        flavours: List[EnvironmentalFlavor],
+        max_time_slots: int,
+    ) -> Dict[str, FootprintVector]:
+        """Compute per-pod footprint vectors consistent with the MILP occupancy model."""
+        flv_by_id = {f.id: f for f in flavours}
+        occupancy: Dict[Tuple[str, int], List[Tuple[str, float]]] = {}
+        pod_footprints: Dict[str, FootprintVector] = {}
+
+        for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
+            pod_obj = pending_pods_dict.get(pod_id_sol)
+            flv_obj = flv_by_id.get(flv_id_sol)
+            if not pod_obj or not flv_obj:
+                continue
+            pod_footprints[pod_id_sol] = FootprintVector(
+                _direct_cf=float(getattr(flv_obj, "water_scarcity_direct_cf", 1.0) or 1.0),
+                _indirect_cf=float(getattr(flv_obj, "water_scarcity_indirect_cf", 1.0) or 1.0),
+                _embodied_cf=float(getattr(flv_obj, "water_scarcity_embodied_cf", 1.0) or 1.0),
+                _criticality=float(getattr(flv_obj, "water_criticality", 1.0) or 1.0),
+            )
+            total_cpu = max(flv_obj.totalCpu, 1e-6)
+            u_i = pod_obj.cpuRequest / total_cpu
+            for offset in range(int(pod_obj.duration)):
+                slot = ts_id_sol + offset
+                if slot >= max_time_slots:
+                    break
+                occupancy.setdefault((flv_id_sol, slot), []).append((pod_id_sol, u_i))
+
+        for (flv_id, slot), items in occupancy.items():
+            flv_obj = flv_by_id.get(flv_id)
+            if not flv_obj:
+                continue
+            intensity = get_carbon_intensity(flv_obj, slot)
+            k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+            idle_w = flv_obj.power.get("idle", 0.0)
+            embodied_carbon_per_h = 0.0 if getattr(self, "operational_only", False) else compute_embodied_per_hour_g(flv_obj)
+            embodied_water_per_h = 0.0
+            if not getattr(self, "operational_only", False):
+                embodied_water_per_h = (flv_obj.embodiedWater / flv_obj.lifetime) if flv_obj.lifetime else 0.0
+            wue = self._slot_signal_value(getattr(flv_obj, "wue_by_slot", {}) or {}, slot, 0.0)
+            ewif = self._slot_signal_value(getattr(flv_obj, "ewif_by_slot", {}) or {}, slot, 0.0)
+            pue = float(getattr(flv_obj, "pue", 1.0) or 1.0)
+
+            total_u = sum(u for _, u in items)
+            if total_u <= 0:
+                continue
+
+            for pod_id_sol, u_i in items:
+                footprint = pod_footprints[pod_id_sol]
+                share = u_i / total_u
+                dynamic_energy_kwh = (k_watts * u_i) / 1000.0
+                idle_energy_kwh = (idle_w / 1000.0) * share
+                operational_energy_kwh = dynamic_energy_kwh + idle_energy_kwh
+
+                footprint.operational_energy_kwh += operational_energy_kwh
+                footprint.operational_carbon_g += intensity * operational_energy_kwh
+                footprint.embodied_carbon_g += embodied_carbon_per_h * share
+                footprint.direct_water_l += operational_energy_kwh * wue
+                footprint.indirect_water_l += operational_energy_kwh * pue * ewif
+                footprint.embodied_water_l += embodied_water_per_h * share
+
+        for pod_id_sol, footprint in pod_footprints.items():
+            pod_footprints[pod_id_sol] = footprint.finalize()
+
+        return pod_footprints
+
     def _load_config(self) -> Dict:
         """Load configuration from infra-workload-config.yaml, honoring an env override."""
         env_path = os.environ.get("CARBON_AWARE_CONFIG_PATH")
-        config_path = env_path or "/root/carbon-aware-orchestrator/pkg/carbon-aware/infra-workload-config.yaml"
+        config_path = env_path or str(Path(__file__).resolve().parents[3] / "infra-workload-config.yaml")
         try:
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
@@ -206,7 +391,9 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         import re
         
         # Look in the workloads directory for timeslot_*.yaml files
-        workloads_dir = getattr(self, "_workloads_dir", None) or "/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads"
+        workloads_dir = getattr(self, "_workloads_dir", None) or str(
+            Path(__file__).resolve().parents[3] / "workloads"
+        )
         
         try:
             for filename in os.listdir(workloads_dir):
@@ -361,7 +548,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 # Keep RAM in MB; assume requests already MB
                 model.Add(sum(int(coeff) * var for coeff, var in terms) <= int(ram_limit))
 
-        # Objective: dynamic + idle+embodied with weights
+        # Objective: dynamic + idle+embodied carbon
         obj_terms = []
         for pod_id, pod_placements in placements.items():
             if pod_id in unplaced_phase1:
@@ -394,6 +581,20 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     activation_g += emb_per_h
                 coef_milli = int(round(self.weight_activation * activation_g * 1000))
                 obj_terms.append(coef_milli * Y[(flv.id, ts.id)])
+
+        if self.phase2_water_budget is not None:
+            water_dynamic_terms, water_activation_terms = self._build_water_linear_terms(
+                placements=placements,
+                flavours=flavours,
+                timeslots=timeslots,
+                placement_vars=X,
+                activation_vars=Y,
+                max_time_slots=max_time_slots,
+                use_cpsat=True,
+                excluded_pods=set(unplaced_phase1),
+            )
+            water_budget_scaled = int(round(float(self.phase2_water_budget) * 1000.0))
+            model.Add(sum(water_dynamic_terms) + sum(water_activation_terms) <= water_budget_scaled)
 
         model.Minimize(sum(obj_terms))
 
@@ -1132,6 +1333,25 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 emissions_objective = pulp.lpSum(dynamic_terms) + pulp.lpSum(idle_embodied_terms)
                 prob2 += emissions_objective
 
+                if self.phase2_water_budget is not None:
+                    water_dynamic_terms, water_activation_terms = self._build_water_linear_terms(
+                        placements=placements,
+                        flavours=flavours,
+                        timeslots=timeslots,
+                        placement_vars=x,
+                        activation_vars=y,
+                        max_time_slots=max_time_slots,
+                        use_cpsat=False,
+                        excluded_pods=set(unplaced_phase1),
+                    )
+                    water_expression = pulp.lpSum(water_dynamic_terms) + pulp.lpSum(water_activation_terms)
+                    prob2 += water_expression <= float(self.phase2_water_budget), "PHASE2_WATER_BUDGET"
+                    logging.info(
+                        "  - [Phase 2] Applying epsilon-constraint: %s water <= %.6f",
+                        self.phase2_water_metric,
+                        float(self.phase2_water_budget),
+                    )
+
                 # Optional warm start from Phase 1 values (best-effort; supported by some solvers)
                 try:
                     for pod_id in s:
@@ -1212,48 +1432,20 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                 pod_id, flv_id, ts_id = var_name
                                 solution_dict_local[pod_id] = (flv_id, ts_id, 0.0)
 
-                    # Compute per-pod emissions using allocation
-                    occupancy = {}
-                    for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict_local.items():
-                        pod_obj = pending_pods_dict.get(pod_id_sol)
-                        if not pod_obj:
-                            continue
-                        flv_obj = next((f for f in flavours if f.id == flv_id_sol), None)
-                        if not flv_obj:
-                            continue
-                        total_cpu = max(flv_obj.totalCpu, 1e-6)
-                        u_i = pod_obj.cpuRequest / total_cpu
-                        for offset in range(int(pod_obj.duration)):
-                            slot = ts_id_sol + offset
-                            if slot >= max_time_slots:
-                                break
-                            occupancy.setdefault((flv_id_sol, slot), []).append((pod_id_sol, u_i))
-
-                    pod_total_g = {pid: 0.0 for pid in solution_dict_local.keys()}
-                    for (flv_id, slot), items in occupancy.items():
-                        flv_obj = next((f for f in flavours if f.id == flv_id), None)
-                        if not flv_obj:
-                            continue
-                        intensity = get_carbon_intensity(flv_obj, slot)
-                        k_watts = compute_node_dynamic_coeff_watts(flv_obj)
-                        idle_w = flv_obj.power.get('idle', 0.0)
-                        embodied_per_h = 0.0 if getattr(self, 'operational_only', False) else compute_embodied_per_hour_g(flv_obj)
-                        U = sum(u for _, u in items)
-                        if U <= 0:
-                            continue
-                        for pid, u in items:
-                            pod_total_g[pid] += intensity * (k_watts * u / 1000.0)
-                        idle_embodied_g = intensity * (idle_w / 1000.0) + embodied_per_h
-                        for pid, u in items:
-                            share = u / U
-                            pod_total_g[pid] += idle_embodied_g * share
+                    pod_footprints = self._compute_solution_footprints(
+                        solution_dict=solution_dict_local,
+                        pending_pods_dict=pending_pods_dict,
+                        flavours=flavours,
+                        max_time_slots=max_time_slots,
+                    )
 
                     for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict_local.items():
                         current_pod = pending_pods_dict.get(pod_id_sol)
                         if not current_pod:
                             continue
                         current_flavour = next((flv for flv in flavours if flv.id == flv_id_sol), None)
-                        emissions_sol_g = pod_total_g.get(pod_id_sol, 0.0)
+                        footprint = pod_footprints.get(pod_id_sol, FootprintVector().finalize())
+                        emissions_sol_g = footprint.total_carbon_g
                         if self.is_precomputation_mode:
                             try:
                                 self._write_placement_to_csv(
@@ -1269,7 +1461,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                     solution_time_seconds=solution_time,
                                     embodied_mode="proportional",
                                     flavour=current_flavour,
-                                    footprint=self._build_logging_footprint(current_pod, current_flavour, ts_id_sol) if current_flavour else None,
+                                    footprint=footprint,
                                 )
                                 placements_saved_to_csv += 1
                             except Exception:
@@ -1288,6 +1480,12 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     self.has_solved = True
                 else:
                     logging.warning(f"❌ Lexicographic Phase 2 failed, status: {self.status}")
+                    if self.phase2_water_budget is not None:
+                        logging.warning("🚫 Skipping dynamic-only fallback because epsilon-constraint is active")
+                        self.last_solve_time = time.time()
+                        logging.info(f"====== GLOBAL OPTIMIZATION (LEXICOGRAPHIC) END ======")
+                        logging.critical(f"💡 GLOBAL OPTIMIZATION FAILED! No epsilon-feasible Phase 2 solution found.")
+                        return
                     # Fallback: try dynamic-only emissions (drop activation variables and idle/embodied terms)
                     logging.info("🔁 Attempting Phase 2 fallback: dynamic-only objective without activation variables")
                     prob2_dyn = pulp.LpProblem("CarbonAwareScheduling_Phase2_DynamicOnly", pulp.LpMinimize)
@@ -1382,48 +1580,20 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                 if pod_id in placed_phase1:
                                     solution_dict[pod_id] = (flv_id, ts_id, 0.0)
 
-                        # Compute per-pod emissions using allocation (still count idle/embodied for reporting)
-                        occupancy = {}
-                        for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
-                            pod_obj = pending_pods_dict.get(pod_id_sol)
-                            if not pod_obj:
-                                continue
-                            flv_obj = next((f for f in flavours if f.id == flv_id_sol), None)
-                            if not flv_obj:
-                                continue
-                            total_cpu = max(flv_obj.totalCpu, 1e-6)
-                            u_i = pod_obj.cpuRequest / total_cpu
-                            for offset in range(int(pod_obj.duration)):
-                                slot = ts_id_sol + offset
-                                if slot >= max_time_slots:
-                                    break
-                                occupancy.setdefault((flv_id_sol, slot), []).append((pod_id_sol, u_i))
-
-                        pod_total_g = {pid: 0.0 for pid in solution_dict.keys()}
-                        for (flv_id, slot), items in occupancy.items():
-                            flv_obj = next((f for f in flavours if f.id == flv_id), None)
-                            if not flv_obj:
-                                continue
-                            intensity = get_carbon_intensity(flv_obj, slot)
-                            k_watts = compute_node_dynamic_coeff_watts(flv_obj)
-                            idle_w = flv_obj.power.get('idle', 0.0)
-                            embodied_per_h = 0.0 if getattr(self, 'operational_only', False) else compute_embodied_per_hour_g(flv_obj)
-                            U = sum(u for _, u in items)
-                            if U <= 0:
-                                continue
-                            for pid, u in items:
-                                pod_total_g[pid] += intensity * (k_watts * u / 1000.0)
-                            idle_embodied_g = intensity * (idle_w / 1000.0) + embodied_per_h
-                            for pid, u in items:
-                                share = u / U
-                                pod_total_g[pid] += idle_embodied_g * share
+                        pod_footprints = self._compute_solution_footprints(
+                            solution_dict=solution_dict,
+                            pending_pods_dict=pending_pods_dict,
+                            flavours=flavours,
+                            max_time_slots=max_time_slots,
+                        )
 
                         for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
                             current_pod = pending_pods_dict.get(pod_id_sol)
                             if not current_pod:
                                 continue
                             current_flavour = next((flv for flv in flavours if flv.id == flv_id_sol), None)
-                            emissions_sol_g = pod_total_g.get(pod_id_sol, 0.0)
+                            footprint = pod_footprints.get(pod_id_sol, FootprintVector().finalize())
+                            emissions_sol_g = footprint.total_carbon_g
                             if self.is_precomputation_mode:
                                 try:
                                     self._write_placement_to_csv(
@@ -1439,7 +1609,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                         solution_time_seconds=solution_time,
                                         embodied_mode="proportional",
                                         flavour=current_flavour,
-                                        footprint=self._build_logging_footprint(current_pod, current_flavour, ts_id_sol) if current_flavour else None,
+                                        footprint=footprint,
                                     )
                                     placements_saved_to_csv += 1
                                 except Exception:
@@ -1517,6 +1687,24 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 objective_terms.append(pulp.lpSum(idle_embodied_terms))
 
             prob += pulp.lpSum(objective_terms)
+
+            if self.phase2_water_budget is not None:
+                water_dynamic_terms, water_activation_terms = self._build_water_linear_terms(
+                    placements=placements,
+                    flavours=flavours,
+                    timeslots=timeslots,
+                    placement_vars=x,
+                    activation_vars=y,
+                    max_time_slots=max_time_slots,
+                    use_cpsat=False,
+                )
+                water_expression = pulp.lpSum(water_dynamic_terms) + pulp.lpSum(water_activation_terms)
+                prob += water_expression <= float(self.phase2_water_budget), "WATER_BUDGET"
+                logging.info(
+                    "  - Applying epsilon-constraint: %s water <= %.6f",
+                    self.phase2_water_metric,
+                    float(self.phase2_water_budget),
+                )
 
             logging.info(f"  - Setting up resource capacity constraints and activation linking")
             # Build per-(node,timeslot) resource usage expressions for constraints and activation linking
@@ -1700,45 +1888,12 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 
 
                 
-                # Compute per-pod emissions using node-aware allocation (dynamic + allocated idle/embodied)
-                # 1) Build occupancy per (node,slot)
-                occupancy = {}  # (flv_id, slot) -> list[(pod_id, u_i, duration)]
-                for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
-                    pod_obj = pending_pods_dict.get(pod_id_sol)
-                    if not pod_obj:
-                        continue
-                    flv_obj = next((f for f in flavours if f.id == flv_id_sol), None)
-                    if not flv_obj:
-                        continue
-                    total_cpu = max(flv_obj.totalCpu, 1e-6)
-                    u_i = pod_obj.cpuRequest / total_cpu
-                    for offset in range(int(pod_obj.duration)):
-                        slot = ts_id_sol + offset
-                        if slot >= max_time_slots:
-                            break
-                        occupancy.setdefault((flv_id_sol, slot), []).append((pod_id_sol, u_i))
-
-                # 2) Aggregate per-pod emissions
-                pod_total_g = {pid: 0.0 for pid in solution_dict.keys()}
-                for (flv_id, slot), items in occupancy.items():
-                    flv_obj = next((f for f in flavours if f.id == flv_id), None)
-                    if not flv_obj:
-                        continue
-                    intensity = get_carbon_intensity(flv_obj, slot)
-                    k_watts = compute_node_dynamic_coeff_watts(flv_obj)
-                    idle_w = flv_obj.power.get('idle', 0.0)
-                    embodied_per_h = 0.0 if getattr(self, 'operational_only', False) else compute_embodied_per_hour_g(flv_obj)
-                    U = sum(u for _, u in items)
-                    if U <= 0:
-                        continue
-                    # Dynamic part per pod
-                    for pid, u in items:
-                        pod_total_g[pid] += intensity * (k_watts * u / 1000.0)
-                    # Allocate idle + embodied proportionally to CPU share
-                    idle_embodied_g = intensity * (idle_w / 1000.0) + embodied_per_h
-                    for pid, u in items:
-                        share = u / U
-                        pod_total_g[pid] += idle_embodied_g * share
+                pod_footprints = self._compute_solution_footprints(
+                    solution_dict=solution_dict,
+                    pending_pods_dict=pending_pods_dict,
+                    flavours=flavours,
+                    max_time_slots=max_time_slots,
+                )
 
                 # 3) Write CSV and construct solution
                 for pod_id_sol, (flv_id_sol, ts_id_sol, _) in solution_dict.items():
@@ -1746,7 +1901,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     if not current_pod:
                         logging.error(f"  - ERROR: Pod {pod_id_sol} not found in pending_pods_dict. Skipping CSV write for this placement.")
                         continue
-                    emissions_sol_g = pod_total_g.get(pod_id_sol, 0.0)
+                    footprint = pod_footprints.get(pod_id_sol, FootprintVector().finalize())
+                    emissions_sol_g = footprint.total_carbon_g
                     logging.info(f"  - Selected placement: Pod {pod_id_sol} -> Node {flv_id_sol}, Timeslot {ts_id_sol}, Emissions {emissions_sol_g/1000.0:.6f}kgCO2e ({emissions_sol_g:.2f}gCO2e)")
 
                     # Skip duplicate CSV row if exists in global solution
@@ -1772,7 +1928,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                                 solution_time_seconds=solution_time,
                                 embodied_mode="proportional",
                                 flavour=current_flavour,
-                                footprint=self._build_logging_footprint(current_pod, current_flavour, ts_id_sol) if current_flavour else None,
+                                footprint=footprint,
                             )
                             placements_saved_to_csv += 1
                             logging.debug(f"  - Wrote placement for pod {current_pod.id} to CSV (precomputation mode)")
@@ -3301,7 +3457,8 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                         summary_path = generate_placement_summary(
                             self._session_csv_path, 
                             "global-optimal", 
-                            os.path.dirname(self._session_csv_path)
+                            os.path.dirname(self._session_csv_path),
+                            workloads_dir=workloads_dir,
                         )
                         if summary_path:
                             logging.info(f"📋 Placement summary generated: {summary_path}")

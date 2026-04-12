@@ -1,6 +1,6 @@
 # TotEm: Carbon-Aware Kubernetes Scheduling with Embodied Emissions
 
-TotEm (Total Emissions) is a Kubernetes scheduler and experiment harness for lifecycle-aware placement under time-varying regional signals. The repository packages the original carbon-aware heuristic, an Oracle MILP benchmark, a carbon-agnostic baseline, reproducible workloads, and a newer water-aware extension that adds direct water, indirect water, embodied water, and scarcity-characterized water accounting. The current heuristic supports both carbon-only scoring and a weighted carbon-water baseline.
+TotEm (Total Emissions) is a Kubernetes scheduler and experiment harness for lifecycle-aware placement under time-varying regional signals. The repository packages the original carbon-aware heuristic, an Oracle MILP benchmark, a carbon-agnostic baseline, reproducible workloads, and a newer water-aware extension that adds direct water, indirect water, embodied water, and scarcity-characterized water accounting. The current heuristic supports carbon-only, weighted carbon-water, Pareto-aware, and epsilon-guided Pareto modes.
 
 ![TotEm overview](docs/visTotEm.png)
 
@@ -8,7 +8,7 @@ TotEm (Total Emissions) is a Kubernetes scheduler and experiment harness for lif
 - **TotEm (heuristic, `--algorithm heuristic`)**: fast carbon-aware scheduler for multi-timeslot workloads.
 - **Oracle (MILP benchmark, `--algorithm global-optimal`)**: lexicographic two-phase optimizer for lower-bound comparisons.
 - **Carbon-agnostic baseline (`--algorithm vanilla`)**: Kubernetes-like LeastAllocated scoring with node sampling and early stopping.
-- **Water-aware extension**: dataset-backed water metadata loader, placement-level footprint vectors, and weighted carbon-water heuristic scoring.
+- **Water-aware extension**: dataset-backed water metadata loader, placement-level footprint vectors, water-aware heuristic scoring, and epsilon-guided heuristic repair for precompute studies.
 - **Reproducible data**: infrastructure/workload generator, carbon-intensity traces, and experiment harnesses.
 - **Interfaces**: gRPC IDL plus a Go client prototype for Kubernetes integration.
 - **Analysis**: figure generators for emissions, runtime, success rate, utilization, sensitivity studies, and current water trade-off checkpoint plots.
@@ -29,10 +29,10 @@ TotEm (Total Emissions) is a Kubernetes scheduler and experiment harness for lif
 - `pkg/idl/idl.proto` — gRPC interface for the placement service.
 - `pkg/carbon-aware/` — scheduler implementation and data (infra/workload generator, `nodes.yaml`, `workloads*/`, Python server, Go client).
 - `pkg/carbon-aware/data/water/` — water reference tables, preprocessing scripts, and source notes for the current water-aware implementation.
-- `analysis/` — figure generators: `carbon_emissions_comparison.py`, `emissions_vs_pods*_plot_generator.py`, `success_rate_plot_generator.py`, `time_complexity_*`, `utilization_plot_generator.py`, `schedule_visualization.py`, `forecast_error_sensitivity.py`, `embodied_sensitivity.py`, `simple_carbon_heatmap.py`, and utilities.
-- `scripts/` — sweeps/time-complexity helpers (`sweep_podcounts_and_precompute.sh`, `time_complexity_sweep.py`, `update_config.py`).
+- `analysis/` — figure generators: `carbon_emissions_comparison.py`, `emissions_vs_pods*_plot_generator.py`, `success_rate_plot_generator.py`, `time_complexity_*`, `utilization_plot_generator.py`, `schedule_visualization.py`, `forecast_error_sensitivity.py`, `embodied_sensitivity.py`, `simple_carbon_heatmap.py`, water-frontier plots, and utilities.
+- `scripts/` — sweeps/time-complexity helpers (`water_paper_sweep.py`, `time_complexity_sweep.py`, `sweep_podcounts_and_precompute.sh`, `update_config.py`).
 - `tests/` — constraint validators and batch experiment checks.
-- `experiments/` & `figures/` — generated results (gitignored).
+- `experiments/` — generated run outputs (gitignored); figures go under `experiments/figures/`.
 - `docs/paper-two/` — paper source.
 - `media/`, `external/`, `workloads*` — supporting data and generated workloads.
 
@@ -86,6 +86,21 @@ python3 pkg/carbon-aware/server-python/main.py \
   --loglevel INFO
 ```
 
+**Epsilon-guided Pareto heuristic:**
+```bash
+python3 pkg/carbon-aware/server-python/main.py \
+  --algorithm heuristic --precompute \
+  --workloads-dir pkg/carbon-aware/workloads \
+  --nodes-file pkg/carbon-aware/nodes.yaml \
+  --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
+  --experiment-dir experiments/totem_water_eps_demo \
+  --embodied-mode proportional \
+  --heuristic-objective epsilon-pareto \
+  --heuristic-water-budget 500 \
+  --heuristic-water-metric scarcity \
+  --loglevel INFO
+```
+
 **Carbon-agnostic baseline:**
 ```bash
 python3 pkg/carbon-aware/server-python/main.py \
@@ -107,11 +122,29 @@ python3 pkg/carbon-aware/server-python/main.py \
   --embodied-mode proportional --loglevel INFO
 ```
 
+**Oracle with scarcity epsilon-constraint:**
+```bash
+python3 pkg/carbon-aware/server-python/main.py \
+  --algorithm global-optimal --precompute \
+  --workloads-dir pkg/carbon-aware/workloads \
+  --nodes-file pkg/carbon-aware/nodes.yaml \
+  --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
+  --experiment-dir experiments/oracle_eps_demo \
+  --embodied-mode proportional \
+  --global-water-budget 500 \
+  --global-water-metric scarcity \
+  --loglevel INFO
+```
+
 Flags of note:
 - `--operational-only` to ignore embodied emissions (TotEm/Oracle).
 - `--prioritize-efficiency` to optimize emissions-per-CPU instead of totals (TotEm).
-- `--heuristic-objective carbon|weighted-sum` to switch between carbon-only and weighted carbon-water heuristic scoring.
+- `--heuristic-objective carbon|weighted-sum|pareto|epsilon-pareto` to switch between carbon-only, weighted carbon-water, Pareto-aware, and epsilon-guided Pareto heuristic scoring.
 - `--heuristic-carbon-weight <0..1>` to set the carbon share in weighted-sum mode.
+- `--heuristic-water-budget <float>` to set the soft epsilon budget for `epsilon-pareto` heuristic mode.
+- `--heuristic-water-metric raw|scarcity` to choose the heuristic water metric.
+- `--global-water-budget <float>` to activate the oracle epsilon-constraint.
+- `--global-water-metric raw|scarcity` to choose the oracle epsilon metric.
 - Solver/time-limit/gap settings live under `optimization` in `pkg/carbon-aware/infra-workload-config.yaml` (cp_sat/highs/gurobi/cplex/cbc).
 
 Outputs:
@@ -119,9 +152,39 @@ Outputs:
 - Performance logs under `pkg/carbon-aware/server-python/performance_logs/`.
 - Timestamped subfolders within `experiments/…`.
 
+### Run the water-aware paper matrix
+For the current carbon-water study, prefer the reusable Python runner over the older shell sweep. It reuses the existing generator and precompute entry points without mutating `infra-workload-config.yaml`, computes MILP epsilon budgets from the carbon-MILP baseline, writes summaries under `experiments/water_paper/`, and writes figures under `experiments/figures/`.
+
+Small checkpoint matrix:
+```bash
+python3 scripts/water_paper_sweep.py --preset checkpoint
+```
+
+Fuller paper matrix:
+```bash
+python3 scripts/water_paper_sweep.py --preset paper
+```
+
+Fast heuristic-only smoke run:
+```bash
+python3 scripts/water_paper_sweep.py \
+  --pod-counts 4 \
+  --seeds 44 \
+  --methods heuristic-carbon \
+  --run-name smoke_water_runner \
+  --no-plots \
+  --overwrite
+```
+
+Useful options:
+- `--methods heuristic-carbon,heuristic-weighted,heuristic-pareto,heuristic-epsilon-pareto,milp-carbon,milp-epsilon` controls the method matrix.
+- `--epsilon-fractions 0.95,0.90,0.85` generates epsilon budgets relative to the carbon-MILP result for the selected water metric in each case.
+- `--skip-milp` keeps the runner fast when only heuristic development is needed.
+- `--dry-run` prints the planned matrix without creating outputs.
+
 ## Algorithm details
-- **TotEm (heuristic)**: Greedy scheduler that scores feasible pod–node–timeslot pairs on operational+embodied environmental cost, orders pods by tightest window then size, scans low-carbon windows first, and uses a packing-aware tie-breaker. Implemented scoring modes are `carbon` and `weighted-sum` (carbon + water). Placement outputs include carbon and water breakdown columns when water metadata is available.
-- **Oracle (MILP benchmark)**: Two-phase lexicographic objective (maximize placed pods, then minimize emissions) with warm-starts and a dynamic-only fallback when activation binaries time out. Backends: cp_sat, highs, gurobi, cplex, cbc (set in the YAML). Current optimization objective remains carbon-focused.
+- **TotEm (heuristic)**: Greedy scheduler that scores feasible pod–node–timeslot pairs on operational+embodied environmental cost, orders pods by tightest window then size, scans low-carbon windows first, and uses a packing-aware tie-breaker. Implemented scoring modes are `carbon`, `weighted-sum`, `pareto`, and `epsilon-pareto`. The Pareto mode ranks candidates by carbon-water non-dominance and breaks ties operationally. In precompute mode, `epsilon-pareto` first builds a carbon-greedy schedule and then applies local water-repair moves selected by carbon penalty per unit water reduction until the requested water budget is reached or no improving move remains. Placement outputs include carbon and water breakdown columns when water metadata is available.
+- **Oracle (MILP benchmark)**: Two-phase lexicographic objective (maximize placed pods, then minimize emissions) with warm-starts and a dynamic-only fallback when activation binaries time out. Backends: cp_sat, highs, gurobi, cplex, cbc (set in the YAML). The current implementation supports optional raw-water or scarcity-water epsilon constraints during the emissions-minimization phase.
 - **Carbon-agnostic baseline**: K8s-like Filter → Score → Select with LeastAllocated-style scoring, node sampling, and early stop; respects earliest timeslot and CPU/RAM/duration constraints but ignores carbon signals and embodied costs.
 
 ## Analysis & visualization
@@ -134,11 +197,13 @@ Run from repo root unless noted:
 - `analysis/schedule_visualization.py`: per-timeslot placement heatmaps from `*_placements_session.csv`.
 - Sensitivity: `analysis/forecast_error_sensitivity.py`, `analysis/embodied_sensitivity.py`; quick visuals: `analysis/simple_carbon_heatmap.py`.
 - Water-aware checkpoint: `analysis/water_tradeoff_checkpoint_plot.py`.
+- Water-aware frontier comparison: `analysis/water_frontier_comparison_plot.py` plots carbon vs scarcity-characterized water and encodes raw water as marker size.
+- Water frontier diagnostics: `analysis/water_frontier_gap_diagnostics.py` reports heuristic-vs-MILP gaps and domination checks from `water_paper_sweep_summary.csv`.
 
-Figures are written to `figures/` (timestamped folders). Sweep artifacts and logs stay under `experiments/`.
+Figures are written to `experiments/figures/`. Sweep artifacts and logs stay under `experiments/`.
 
 ## Validation & reporting
-- `tests/check_timeslot_constraints.py <placements_csv>` validates earliest-timeslot, deadline, CPU, and memory constraints for a single run.
+- `tests/placement_constraint_validator.py <placements_csv>` validates earliest-timeslot, deadline, CPU, and memory constraints for a single run.
 - `tests/validate_experiments_and_report.py --experiments-dir experiments --nodes-file pkg/carbon-aware/nodes.yaml --workloads-dir pkg/carbon-aware/workloads --workloads-vanilla-dir pkg/carbon-aware/workloads-vanilla` performs batch validation and writes CSV/TXT reports to `tests/reports/`.
 - `analysis/fix_start_slots.py` can normalize vanilla placements when needed.
 
@@ -155,7 +220,9 @@ Figures are written to `figures/` (timestamped folders). Sweep artifacts and log
   - placement-level footprint vectors
   - enriched placement CSVs and summaries
   - weighted carbon-water heuristic baseline
+  - Pareto-aware heuristic ranking
+  - epsilon-guided Pareto heuristic repair for precompute runs
+  - epsilon-constraint MILP runs for raw or scarcity-characterized water
+  - reusable water-paper sweep runner
 - Not implemented yet:
-  - Pareto-aware heuristic
-  - epsilon-constraint MILP frontier
   - literature-grade embodied-water inventory

@@ -12,6 +12,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
+DEFAULT_FIGURE_DIR = Path(__file__).resolve().parents[1] / "experiments" / "figures"
+
+
 def build_node_summary(df: pd.DataFrame) -> pd.DataFrame:
     grouped = (
         df.groupby(["node_id", "region"], dropna=False)
@@ -63,7 +66,7 @@ def main() -> None:
     parser.add_argument("placement_csv", help="Path to an enriched placement CSV")
     parser.add_argument(
         "--output",
-        help="Output PNG path. Defaults next to the CSV.",
+        help="Output PNG path. Defaults under repo-root/experiments/figures/.",
     )
     args = parser.parse_args()
 
@@ -86,7 +89,11 @@ def main() -> None:
 
     summary_df = build_node_summary(df)
 
-    output_path = Path(args.output).resolve() if args.output else csv_path.with_name("checkpoint_carbon_vs_water_by_node.png")
+    if args.output:
+        output_path = Path(args.output).resolve()
+    else:
+        output_path = DEFAULT_FIGURE_DIR / f"{csv_path.parent.name}_checkpoint_carbon_vs_water_by_node.png"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     summary_csv = output_path.with_suffix(".csv")
     summary_df.to_csv(summary_csv, index=False)
 

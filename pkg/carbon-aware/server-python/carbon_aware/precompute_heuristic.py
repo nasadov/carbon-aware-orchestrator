@@ -8,8 +8,9 @@ import logging
 import yaml
 import time
 import re
+from dataclasses import dataclass
 from datetime import datetime as dt
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 
 # Import carbon aware data types and utilities
 from carbon_aware.utils import (
@@ -19,8 +20,19 @@ from carbon_aware.utils import (
 )
 from carbon_aware.models import EnvironmentalFlavor
 from carbon_aware.water_signals import attach_water_metadata
-from carbon_aware.algorithms.heuristic import HeuristicAlgorithm
+from carbon_aware.algorithms.heuristic import (
+    CandidatePlacement,
+    HeuristicAlgorithm,
+    _candidate_water_value,
+    find_ranked_candidates,
+)
 import idl_pb2
+
+
+@dataclass
+class _GreedyPlacement:
+    pod: CarbonAwarePod
+    candidate: CandidatePlacement
 
 
 def run_heuristic_precomputation(
@@ -34,6 +46,9 @@ def run_heuristic_precomputation(
     embodied_mode: str = "proportional",
     heuristic_objective: str = "carbon",
     heuristic_carbon_weight: float = 1.0,
+    heuristic_water_budget: Optional[float] = None,
+    heuristic_water_metric: str = "scarcity",
+    heuristic_budget_pressure_weight: float = 1.0,
 ) -> bool:
     """
     Run heuristic algorithm precomputation on all timeslot files.
@@ -46,8 +61,11 @@ def run_heuristic_precomputation(
         perf_logger: Performance logger instance
         prioritize_efficiency: Whether to prioritize carbon efficiency
         operational_only: Whether to use operational emissions only
-        heuristic_objective: Heuristic objective mode (`carbon` or `weighted-sum`)
+        heuristic_objective: Heuristic objective mode (`carbon`, `weighted-sum`, `pareto`, or `epsilon-pareto`)
         heuristic_carbon_weight: Weighted-sum carbon share in [0, 1]
+        heuristic_water_budget: Soft run-level water budget for `epsilon-pareto`
+        heuristic_water_metric: Water metric used by water-aware heuristic modes
+        heuristic_budget_pressure_weight: Strength of adaptive per-pod budget pressure
         
     Returns:
         True if successful, False otherwise
@@ -94,7 +112,14 @@ def run_heuristic_precomputation(
             algorithm.set_environmental_objective(
                 mode=heuristic_objective,
                 carbon_weight=heuristic_carbon_weight,
-                water_metric="scarcity",
+                water_metric=heuristic_water_metric,
+            )
+        if hasattr(algorithm, 'set_water_budget'):
+            algorithm.set_water_budget(
+                water_budget=heuristic_water_budget,
+                water_metric=heuristic_water_metric,
+                total_pods=None,
+                budget_pressure_weight=heuristic_budget_pressure_weight,
             )
         
         # Use provided session_log_dir as-is; main.py now includes the mode suffix
@@ -128,6 +153,18 @@ def run_heuristic_precomputation(
             return False
             
         logging.info(f"✅ Found {len(yaml_files)} timeslot files")
+
+        total_pods_estimate = 0
+        for yaml_file in yaml_files:
+            total_pods_estimate += len(_extract_pods_from_yaml(os.path.join(workloads_dir, yaml_file)))
+        logging.info(f"📦 Estimated total pods for heuristic budget guidance: {total_pods_estimate}")
+        if hasattr(algorithm, 'set_water_budget'):
+            algorithm.set_water_budget(
+                water_budget=heuristic_water_budget,
+                water_metric=heuristic_water_metric,
+                total_pods=total_pods_estimate,
+                budget_pressure_weight=heuristic_budget_pressure_weight,
+            )
         
         # 5. Process each timeslot file sequentially
         logging.info("🔄 STEP 5: Processing timeslot files sequentially")
@@ -146,6 +183,22 @@ def run_heuristic_precomputation(
             for ts_id in range(max_timeslots):
                 leftover_cpu[flv.id][ts_id] = flv.totalCpu
                 leftover_ram[flv.id][ts_id] = flv.totalRam
+
+        if heuristic_objective == "epsilon-pareto" and heuristic_water_budget is not None:
+            return _run_epsilon_pareto_repair_precomputation(
+                algorithm=algorithm,
+                yaml_files=yaml_files,
+                workloads_dir=workloads_dir,
+                flavours=flavours,
+                leftover_cpu=leftover_cpu,
+                leftover_ram=leftover_ram,
+                max_timeslots=max_timeslots,
+                session_log_dir=session_log_dir,
+                embodied_mode=embodied_mode,
+                operational_only=operational_only,
+                heuristic_water_budget=heuristic_water_budget,
+                heuristic_water_metric=heuristic_water_metric,
+            )
         
         # Process each file
         for file_idx, yaml_file in enumerate(yaml_files):
@@ -239,13 +292,18 @@ def run_heuristic_precomputation(
         logging.info(f"❌ Failed to place: {total_pods_failed} ({total_pods_failed/max(1,total_pods_processed)*100:.1f}%)")
         
         if session_log_dir:
-            csv_path = os.path.join(session_log_dir, "heuristic_placements_session.csv")
-            logging.info(f"💾 Placements saved to: {csv_path}")
+            csv_path = getattr(algorithm, "_placement_csv_path", None)
+            if csv_path:
+                logging.info(f"💾 Placements saved to: {csv_path}")
             
             # Generate placement summary automatically
             try:
                 from carbon_aware.placement_summary import auto_generate_summary_from_session_dir
-                summary_path = auto_generate_summary_from_session_dir(session_log_dir, "heuristic")
+                summary_path = auto_generate_summary_from_session_dir(
+                    session_log_dir,
+                    "heuristic",
+                    workloads_dir=workloads_dir,
+                )
                 if summary_path:
                     logging.info(f"📋 Placement summary generated: {summary_path}")
                 else:
@@ -260,6 +318,243 @@ def run_heuristic_precomputation(
         import traceback
         logging.error(traceback.format_exc())
         return False
+
+
+def _apply_candidate_resources(
+    pod: CarbonAwarePod,
+    candidate: CandidatePlacement,
+    leftover_cpu: Dict[str, Dict[int, float]],
+    leftover_ram: Dict[str, Dict[int, float]],
+    *,
+    release: bool = False,
+) -> None:
+    sign = 1.0 if release else -1.0
+    for ts_offset in range(int(pod.duration)):
+        ts_id = candidate.timeslot.id + ts_offset
+        leftover_cpu[candidate.flavour.id][ts_id] += sign * pod.cpuRequest
+        leftover_ram[candidate.flavour.id][ts_id] += sign * pod.ramRequest
+
+
+def _placement_totals(placements: List[_GreedyPlacement], water_metric: str) -> Tuple[float, float, float]:
+    carbon_kg = sum(placement.candidate.footprint.total_carbon_g for placement in placements) / 1000.0
+    raw_water_l = sum(placement.candidate.footprint.total_raw_water_l for placement in placements)
+    water_value = sum(_candidate_water_value(placement.candidate.footprint, water_metric) for placement in placements)
+    return carbon_kg, raw_water_l, water_value
+
+
+def _order_pods_for_heuristic(pods: List[CarbonAwarePod]) -> List[Tuple[CarbonAwarePod, float, float]]:
+    now_dt = dt.fromtimestamp(time.time())
+    ordered_pods = []
+    for pod in pods:
+        try:
+            hours_until_deadline = (pod.deadline - now_dt).total_seconds() / 3600
+        except Exception:
+            hours_until_deadline = getattr(pod, 'deadline_hours', 24.0)
+        scheduling_window = max(0.0, hours_until_deadline - pod.duration)
+        ordered_pods.append((pod, scheduling_window, hours_until_deadline))
+    ordered_pods.sort(key=lambda x: (x[1], -x[0].cpuRequest, -x[0].ramRequest, -x[0].duration))
+    return ordered_pods
+
+
+def _run_epsilon_pareto_repair_precomputation(
+    *,
+    algorithm: HeuristicAlgorithm,
+    yaml_files: List[str],
+    workloads_dir: str,
+    flavours: List[EnvironmentalFlavor],
+    leftover_cpu: Dict[str, Dict[int, float]],
+    leftover_ram: Dict[str, Dict[int, float]],
+    max_timeslots: int,
+    session_log_dir: Optional[str],
+    embodied_mode: str,
+    operational_only: bool,
+    heuristic_water_budget: float,
+    heuristic_water_metric: str,
+) -> bool:
+    logging.info("🔧 Running epsilon-pareto heuristic as carbon-greedy schedule plus local water repair")
+
+    all_pods: List[CarbonAwarePod] = []
+    for yaml_file in yaml_files:
+        all_pods.extend(_extract_pods_from_yaml(os.path.join(workloads_dir, yaml_file)))
+    ordered_pods = _order_pods_for_heuristic(all_pods)
+
+    placements: List[_GreedyPlacement] = []
+    total_pods_failed = 0
+
+    for pod_idx, (pod, scheduling_window, hours_until_deadline) in enumerate(ordered_pods):
+        algorithm._set_pod_earliest_timeslot(pod)
+        timeslots = build_timeslots(max_timeslots)
+        ranked_candidates = find_ranked_candidates(
+            pod=pod,
+            flavours=flavours,
+            timeslots=timeslots,
+            leftover_cpu=leftover_cpu,
+            leftover_ram=leftover_ram,
+            max_time_slots=max_timeslots,
+            operational_only=operational_only,
+            embodied_allocation_mode=embodied_mode,
+            objective_mode="carbon",
+            carbon_weight=1.0,
+            water_metric=heuristic_water_metric,
+        )
+        if not ranked_candidates:
+            logging.warning("     ❌ Failed to place pod %s in initial carbon-greedy pass", pod.id)
+            total_pods_failed += 1
+            continue
+
+        candidate = ranked_candidates[0]
+        _apply_candidate_resources(pod, candidate, leftover_cpu, leftover_ram)
+        placements.append(_GreedyPlacement(pod=pod, candidate=candidate))
+        logging.debug(
+            "Initial epsilon-pareto placement %s/%s: pod=%s node=%s slot=%s carbon=%.3f water=%.3f",
+            pod_idx + 1,
+            len(ordered_pods),
+            pod.id,
+            candidate.flavour.id,
+            candidate.timeslot.id,
+            candidate.footprint.total_carbon_g,
+            _candidate_water_value(candidate.footprint, heuristic_water_metric),
+        )
+
+    initial_carbon_kg, initial_raw_water_l, current_water = _placement_totals(placements, heuristic_water_metric)
+    logging.info(
+        "Initial carbon-greedy epsilon-pareto pass: placed=%s/%s carbon=%.6fkg raw=%.6f water(%s)=%.6f budget=%.6f",
+        len(placements),
+        len(ordered_pods),
+        initial_carbon_kg,
+        initial_raw_water_l,
+        heuristic_water_metric,
+        current_water,
+        heuristic_water_budget,
+    )
+
+    repair_iterations = 0
+    max_repairs = max(len(placements) * 4, 1)
+    while current_water > heuristic_water_budget + 1e-9 and repair_iterations < max_repairs:
+        best_move = None
+        best_score = None
+
+        for placement_idx, placement in enumerate(placements):
+            old_candidate = placement.candidate
+            old_water = _candidate_water_value(old_candidate.footprint, heuristic_water_metric)
+            old_carbon = old_candidate.footprint.total_carbon_g
+
+            _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram, release=True)
+            try:
+                ranked_candidates = find_ranked_candidates(
+                    pod=placement.pod,
+                    flavours=flavours,
+                    timeslots=build_timeslots(max_timeslots),
+                    leftover_cpu=leftover_cpu,
+                    leftover_ram=leftover_ram,
+                    max_time_slots=max_timeslots,
+                    operational_only=operational_only,
+                    embodied_allocation_mode=embodied_mode,
+                    objective_mode="pareto",
+                    carbon_weight=1.0,
+                    water_metric=heuristic_water_metric,
+                )
+                for candidate in ranked_candidates:
+                    if candidate.flavour.id == old_candidate.flavour.id and candidate.timeslot.id == old_candidate.timeslot.id:
+                        continue
+
+                    new_water = _candidate_water_value(candidate.footprint, heuristic_water_metric)
+                    water_reduction = old_water - new_water
+                    if water_reduction <= 1e-12:
+                        continue
+
+                    carbon_delta = candidate.footprint.total_carbon_g - old_carbon
+                    new_total_water = current_water - water_reduction
+                    remaining_gap = max(new_total_water - heuristic_water_budget, 0.0)
+                    overshoot = abs(new_total_water - heuristic_water_budget)
+                    carbon_per_water_saved = carbon_delta / water_reduction
+                    score = (
+                        carbon_per_water_saved,
+                        remaining_gap,
+                        overshoot,
+                        candidate.footprint.total_carbon_g,
+                        new_water,
+                    )
+                    if best_score is None or score < best_score:
+                        best_score = score
+                        best_move = (placement_idx, candidate, water_reduction, carbon_delta)
+            finally:
+                _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram)
+
+        if best_move is None:
+            logging.warning(
+                "Epsilon-pareto repair stopped above budget: water(%s)=%.6f budget=%.6f",
+                heuristic_water_metric,
+                current_water,
+                heuristic_water_budget,
+            )
+            break
+
+        placement_idx, new_candidate, water_reduction, carbon_delta = best_move
+        placement = placements[placement_idx]
+        _apply_candidate_resources(placement.pod, placement.candidate, leftover_cpu, leftover_ram, release=True)
+        _apply_candidate_resources(placement.pod, new_candidate, leftover_cpu, leftover_ram)
+        placement.candidate = new_candidate
+        current_water -= water_reduction
+        repair_iterations += 1
+        logging.info(
+            "Epsilon-pareto repair %s: pod=%s node=%s slot=%s water_reduction=%.6f carbon_delta=%.6fg remaining_water=%.6f",
+            repair_iterations,
+            placement.pod.id,
+            new_candidate.flavour.id,
+            new_candidate.timeslot.id,
+            water_reduction,
+            carbon_delta,
+            current_water,
+        )
+
+    for placement in placements:
+        algorithm._write_placement_to_csv(
+            pod_id=placement.pod.id,
+            node_id=placement.candidate.flavour.id,
+            start_slot=placement.candidate.timeslot.id,
+            duration=placement.pod.duration,
+            cpu_request=placement.pod.cpuRequest,
+            ram_request=placement.pod.ramRequest,
+            flavour=placement.candidate.flavour,
+            footprint=placement.candidate.footprint,
+        )
+
+    final_carbon_kg, final_raw_water_l, final_water = _placement_totals(placements, heuristic_water_metric)
+    logging.info("\n" + "="*60)
+    logging.info("🏁 EPSILON-PARETO HEURISTIC PRECOMPUTATION COMPLETE")
+    logging.info(f"📊 Total pods processed: {len(ordered_pods)}")
+    logging.info(f"✅ Successfully placed: {len(placements)} ({len(placements)/max(1,len(ordered_pods))*100:.1f}%)")
+    logging.info(f"❌ Failed to place: {total_pods_failed} ({total_pods_failed/max(1,len(ordered_pods))*100:.1f}%)")
+    logging.info(
+        "📊 Final totals: carbon=%.6fkg raw=%.6fL water(%s)=%.6f budget=%.6f repairs=%s",
+        final_carbon_kg,
+        final_raw_water_l,
+        heuristic_water_metric,
+        final_water,
+        heuristic_water_budget,
+        repair_iterations,
+    )
+
+    if session_log_dir:
+        csv_path = getattr(algorithm, "_placement_csv_path", None)
+        if csv_path:
+            logging.info(f"💾 Placements saved to: {csv_path}")
+        try:
+            from carbon_aware.placement_summary import auto_generate_summary_from_session_dir
+            summary_path = auto_generate_summary_from_session_dir(
+                session_log_dir,
+                "heuristic",
+                workloads_dir=workloads_dir,
+            )
+            if summary_path:
+                logging.info(f"📋 Placement summary generated: {summary_path}")
+            else:
+                logging.warning("⚠️ Could not generate placement summary")
+        except Exception as e:
+            logging.warning(f"⚠️ Failed to generate placement summary: {e}")
+
+    return True
 
 
 def _extract_pods_from_yaml(yaml_file: str) -> List[CarbonAwarePod]:
