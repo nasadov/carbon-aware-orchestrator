@@ -13,7 +13,7 @@ Default: proportional-only (plus vanilla). Use flags to change selection:
   --uniform  Plot only uniform (plus vanilla)
   --both     Plot both proportional and uniform (plus vanilla)
 
-Outputs three figures under figures/Utilization:
+Outputs three figures under experiments/figures/Utilization:
   - CPU-only plot
   - Memory-only plot
   - Combined two-panel (CPU, Memory)

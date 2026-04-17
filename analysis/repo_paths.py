@@ -11,7 +11,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPERIMENTS_ROOT = REPO_ROOT / "experiments"
-FIGURES_ROOT = REPO_ROOT / "figures"
+FIGURES_ROOT = EXPERIMENTS_ROOT / "figures"
 PKG_ROOT = REPO_ROOT / "pkg" / "carbon-aware"
 SERVER_PYTHON_DIR = PKG_ROOT / "server-python"
 WORKLOAD_GENERATOR = PKG_ROOT / "infra_workload_gen.py"

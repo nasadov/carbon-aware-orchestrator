@@ -10,9 +10,9 @@ This driver:
      parameter setting using the same workloads and carbon-intensity forecasts.
   4. Re-scores placements with the corresponding hardware metadata to compute
      total emissions.
-  5. Produces a CSV summary and a compact plot for inclusion in the paper.
+  5. Produces a CSV summary and a compact plot for reporting.
 
-Sensitivity ranges (Boavizta-informed, see docs/paper-two/Notes/boavizta_sku_spread_notes.md):
+Sensitivity ranges are Boavizta-informed:
   - Embodied emissions scaling factors: [0.60, 0.80, 1.00, 1.20, 1.60]
       → span the 10th–90th percentile band of SKU variability across Server,
         Laptop, Smartphone, IoT classes (≈0.56–1.73× mean), with midpoints to

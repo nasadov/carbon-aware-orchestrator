@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Archived helper for generating vanilla placement sessions."""
 import argparse
 import os
 import sys

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Archived Kubernetes cluster-state watcher."""
 import argparse
 import json
 import os
@@ -120,6 +121,5 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 

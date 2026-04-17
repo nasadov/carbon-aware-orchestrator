@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Archived Kubernetes bind-event watcher."""
 import argparse
 import json
 import os
@@ -169,7 +170,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 
 

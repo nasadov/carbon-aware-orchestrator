@@ -28,6 +28,33 @@ def test_no_machine_specific_root_paths_in_active_code() -> None:
     assert offenders == []
 
 
+def test_no_legacy_water_study_names_in_active_code() -> None:
+    active_roots = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "analysis",
+        REPO_ROOT / "scripts",
+        REPO_ROOT / "tests",
+        REPO_ROOT / "pkg" / "carbon-aware" / "server-python",
+    ]
+    legacy_token = "water" + "_paper"
+    offenders: list[str] = []
+    for root in active_roots:
+        paths = [root] if root.is_file() else list(root.rglob("*"))
+        for path in paths:
+            if not path.is_file() or path.suffix not in {".md", ".py", ".sh"}:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if legacy_token in text:
+                offenders.append(path.relative_to(REPO_ROOT).as_posix())
+    assert offenders == []
+
+
+def test_analysis_figures_default_to_experiments_figures() -> None:
+    from repo_paths import EXPERIMENTS_ROOT, FIGURES_ROOT
+
+    assert FIGURES_ROOT == EXPERIMENTS_ROOT / "figures"
+
+
 def test_water_sweep_dry_run_writes_provenance() -> None:
     proc = subprocess.run(
         [

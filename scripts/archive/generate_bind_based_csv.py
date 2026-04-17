@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Archived converter for bind-event placement traces."""
 import argparse
 import csv
 import json
@@ -119,7 +120,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 
 

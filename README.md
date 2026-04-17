@@ -31,12 +31,12 @@ analysis utilities for scheduler evaluation.
 - `pkg/idl/idl.proto` — gRPC interface for the placement service.
 - `pkg/carbon-aware/` — scheduler implementation and data, including the generator, `nodes.yaml`, generated workloads, Python server, and Go client.
 - `pkg/carbon-aware/data/water/` — optional water reference tables and preprocessing utilities.
-- `analysis/` — figure generators for emissions, pod-count scaling, success rate, runtime, utilization, schedule visualization, forecast-error sensitivity, embodied-emissions sensitivity, and utility scripts.
-- `scripts/` — sweep and experiment helpers such as `water_sweep.py`, `time_complexity_sweep.py`, `sweep_podcounts_and_precompute.sh`, and `update_config.py`.
-- `tests/` — constraint validators and batch experiment checks.
+- `analysis/` — plotting, diagnostics, and sensitivity utilities; shared defaults live in `analysis/repo_paths.py`.
+- `scripts/` — runnable sweep and maintenance entry points such as `water_sweep.py`, `time_complexity_sweep.py`, `sweep_podcounts_and_precompute.sh`, and `update_config.py`.
+- `scripts/archive/` — retained legacy helpers that are not part of the normal workflow.
+- `tests/` — smoke tests, repository hygiene checks, placement validators, and batch experiment checks.
 - `experiments/` — generated run outputs (gitignored); figures go under `experiments/figures/`.
-- `docs/paper-two/` — manuscript assets for the associated study.
-- `media/`, `external/`, `workloads*` — supporting data and generated workloads.
+- `docs/`, `media/`, `external/`, `workloads*` — supporting documentation, data, and generated workloads.
 
 ## Quickstart
 

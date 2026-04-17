@@ -25,6 +25,8 @@ ENV/
 .env/
 .venv/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
 # PyInstaller build files
 build/
@@ -91,7 +93,7 @@ tests/archive/
 # MILP optimizer test results
 tests/experiments/*/
 
-# Generated visualizations and figure outputs
+# Legacy generated visualizations and figure outputs
 figures/*.png
 figures/*.pdf
 figures/*/
