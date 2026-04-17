@@ -33,10 +33,11 @@ import numpy as np
 import argparse
 import yaml
 
+from repo_paths import EXPERIMENTS_ROOT as DEFAULT_EXPERIMENTS_ROOT, FIGURES_ROOT, NODES_FILE, WORKLOAD_CONFIG
 
-EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
-NODES_YAML_PATH = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
-WORKLOAD_CONFIG_PATH = "/root/carbon-aware-orchestrator/pkg/carbon-aware/infra-workload-config.yaml"
+EXPERIMENTS_ROOT = str(DEFAULT_EXPERIMENTS_ROOT)
+NODES_YAML_PATH = str(NODES_FILE)
+WORKLOAD_CONFIG_PATH = str(WORKLOAD_CONFIG)
 
 
 def parse_cpu_to_cores(cpu_str: str) -> float:
@@ -622,7 +623,7 @@ def create_utilization_plots(selection: str = 'proportional', include_all: bool 
     cpu_algos_order, cpu_pods_sorted, cpu_means, cpu_errs = _aggregate_results(cpu_results)
     mem_algos_order, mem_pods_sorted, mem_means, mem_errs = _aggregate_results(mem_results)
 
-    output_dir = "/root/carbon-aware-orchestrator/figures/Utilization"
+    output_dir = str(FIGURES_ROOT / "Utilization")
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 

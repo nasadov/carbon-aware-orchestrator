@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Reusable carbon-water experiment runner for paper-scale study matrices.
+"""Reusable carbon-water experiment runner implementation for study-scale matrices.
 
 The runner reuses the existing workload generator and precompute entry points,
-then adds the water-aware method matrix needed for the new experiments:
-carbon-only heuristic, weighted carbon-water heuristic, Pareto heuristic,
-epsilon-guided Pareto heuristic points, carbon MILP, and epsilon-constrained
-MILP points.
+then adds the water-aware method matrix needed for the main experiments:
+carbon-only heuristic, epsilon-guided Pareto heuristic points, carbon MILP,
+WaterWise-style scalarized MILP, and epsilon-constrained MILP points.
+Naive weighted-sum and basic Pareto heuristic variants remain available as
+explicit ablations.
 """
 
 from __future__ import annotations
@@ -13,9 +14,11 @@ from __future__ import annotations
 import argparse
 import contextlib
 import copy
+import hashlib
 import json
 import logging
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -31,6 +34,15 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from time_complexity_sweep import ProgressTracker, parse_int_series  # noqa: E402
+
+MAIN_METHODS = (
+    "heuristic-carbon,"
+    "heuristic-epsilon-pareto,"
+    "milp-carbon,"
+    "milp-waterwise,"
+    "milp-epsilon"
+)
+ABLATION_METHODS = ("heuristic-weighted", "heuristic-pareto")
 
 try:
     from tqdm.auto import tqdm  # type: ignore
@@ -61,6 +73,9 @@ class MethodSpec:
     algorithm: str
     heuristic_objective: str = "carbon"
     heuristic_carbon_weight: float = 1.0
+    global_objective: str = "carbon"
+    global_scalarized_carbon_weight: float = 0.5
+    global_scalarized_ref_weight: float = 0.1
     water_metric: str = "scarcity"
     water_budget: Optional[float] = None
 
@@ -124,6 +139,7 @@ def parse_method_series(series: str) -> List[str]:
         "heuristic-epsilon-pareto",
         "milp-carbon",
         "milp-epsilon",
+        "milp-waterwise",
         "vanilla",
     }
     unknown = sorted(set(values) - allowed)
@@ -134,8 +150,126 @@ def parse_method_series(series: str) -> List[str]:
     return values
 
 
+def with_ablation_methods(methods: Sequence[str]) -> List[str]:
+    """Add opt-in ablation methods without changing the main default matrix."""
+    values = list(methods)
+
+    if "heuristic-weighted" not in values:
+        insert_at = values.index("heuristic-carbon") + 1 if "heuristic-carbon" in values else 0
+        values.insert(insert_at, "heuristic-weighted")
+
+    if "heuristic-pareto" not in values:
+        insert_at = values.index("heuristic-epsilon-pareto") if "heuristic-epsilon-pareto" in values else len(values)
+        values.insert(insert_at, "heuristic-pareto")
+
+    return values
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def sha256_file(path: Path) -> Optional[str]:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_directory(path: Path) -> Optional[str]:
+    if not path.is_dir():
+        return None
+    digest = hashlib.sha256()
+    for child in sorted(p for p in path.rglob("*") if p.is_file()):
+        relative = child.relative_to(path).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        with child.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def file_metadata(path: Path, root: Path) -> Dict[str, Any]:
+    return {
+        "path": path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path),
+        "sha256": sha256_file(path),
+        "bytes": path.stat().st_size if path.is_file() else None,
+    }
+
+
+def git_output(root: Path, args: Sequence[str]) -> Optional[str]:
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip()
+
+
+def git_provenance(root: Path) -> Dict[str, Any]:
+    status_short = git_output(root, ["status", "--short"]) or ""
+    diff_summary = git_output(root, ["diff", "--stat"]) or ""
+    return {
+        "branch": git_output(root, ["branch", "--show-current"]),
+        "commit": git_output(root, ["rev-parse", "HEAD"]),
+        "dirty": bool(status_short),
+        "status_short": status_short.splitlines(),
+        "diff_stat_sha256": sha256_text(diff_summary) if diff_summary else None,
+    }
+
+
+def water_reference_metadata(root: Path) -> Dict[str, Any]:
+    water_dir = root / "pkg" / "carbon-aware" / "data" / "water"
+    if not water_dir.is_dir():
+        return {"directory": str(water_dir), "files": []}
+    files = [
+        file_metadata(path, root)
+        for path in sorted(water_dir.rglob("*"))
+        if path.is_file()
+    ]
+    return {
+        "directory": water_dir.relative_to(root).as_posix(),
+        "directory_sha256": sha256_directory(water_dir),
+        "files": files,
+    }
+
+
+def case_input_metadata(root: Path, case: StudyCase) -> Dict[str, Any]:
+    return {
+        "nodes_file": file_metadata(case.nodes_file, root),
+        "workloads_dir": {
+            "path": case.workloads_dir.relative_to(root).as_posix(),
+            "sha256": sha256_directory(case.workloads_dir),
+            "file_count": sum(1 for p in case.workloads_dir.rglob("*") if p.is_file())
+            if case.workloads_dir.is_dir()
+            else 0,
+        },
+        "vanilla_workloads_dir": {
+            "path": case.vanilla_workloads_dir.relative_to(root).as_posix(),
+            "sha256": sha256_directory(case.vanilla_workloads_dir),
+            "file_count": sum(1 for p in case.vanilla_workloads_dir.rglob("*") if p.is_file())
+            if case.vanilla_workloads_dir.is_dir()
+            else 0,
+        },
+        "input_dir_sha256": sha256_directory(case.input_dir),
+    }
 
 
 def add_repo_modules_to_path(root: Path) -> Path:
@@ -263,6 +397,18 @@ def base_methods(method_names: Sequence[str], weighted_carbon_weight: float) -> 
                     algorithm="global-optimal",
                 )
             )
+        elif name == "milp-waterwise":
+            specs.append(
+                MethodSpec(
+                    key=f"milp_waterwise{int(round(weighted_carbon_weight * 100)):02d}",
+                    label=f"MILP WaterWise-style {weighted_carbon_weight:.2f}",
+                    group="milp",
+                    algorithm="global-optimal",
+                    global_objective="waterwise-scalarized",
+                    global_scalarized_carbon_weight=weighted_carbon_weight,
+                    water_metric="scarcity",
+                )
+            )
         elif name == "vanilla":
             specs.append(
                 MethodSpec(
@@ -314,6 +460,54 @@ def epsilon_methods(
                 )
             )
     return specs
+
+
+def target_budget_methods(
+    budget: Optional[float],
+    water_metric: str,
+    target_name: str,
+    *,
+    include_milp: bool = True,
+    include_heuristic: bool = False,
+) -> List[MethodSpec]:
+    """Build epsilon methods at an explicit target budget."""
+    if budget is None or budget <= 0:
+        return []
+
+    safe_target = "".join(ch if ch.isalnum() else "_" for ch in target_name.lower()).strip("_")
+    specs: List[MethodSpec] = []
+    if include_milp:
+        specs.append(
+            MethodSpec(
+                key=f"milp_eps_{water_metric}_target_{safe_target}",
+                label=f"MILP eps target {target_name}",
+                group="milp",
+                algorithm="global-optimal",
+                water_metric=water_metric,
+                water_budget=budget,
+            )
+        )
+    if include_heuristic:
+        specs.append(
+            MethodSpec(
+                key=f"heuristic_epspareto_{water_metric}_target_{safe_target}",
+                label=f"Heuristic eps Pareto target {target_name}",
+                group="heuristic",
+                algorithm="heuristic",
+                heuristic_objective="epsilon-pareto",
+                water_metric=water_metric,
+                water_budget=budget,
+            )
+        )
+    return specs
+
+
+def water_value_for_metric(result: RunResult, water_metric: str) -> Optional[float]:
+    if result.status != "success":
+        return None
+    if water_metric == "raw":
+        return result.raw_water_l
+    return result.scarcity_water
 
 
 def placement_csv_for(session_dir: Path, method: MethodSpec) -> Optional[Path]:
@@ -421,6 +615,10 @@ def run_method(
                     embodied_mode=embodied_mode,
                     global_water_budget=method.water_budget,
                     global_water_metric=method.water_metric,
+                    global_objective=method.global_objective,
+                    global_scalarized_carbon_weight=method.global_scalarized_carbon_weight,
+                    global_scalarized_water_metric=method.water_metric,
+                    global_scalarized_ref_weight=method.global_scalarized_ref_weight,
                 )
             elif method.algorithm == "vanilla":
                 success = run_vanilla_precomputation(
@@ -566,7 +764,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--preset",
         choices=["checkpoint", "paper"],
         default="checkpoint",
-        help="Default matrix size. checkpoint is intentionally small; paper expands pod counts and seeds.",
+        help="Default matrix size. checkpoint is intentionally small; paper is the larger study matrix.",
     )
     parser.add_argument("--pod-counts", type=parse_int_series, default=None)
     parser.add_argument("--seeds", type=parse_int_series, default=None)
@@ -574,12 +772,22 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--methods",
         type=parse_method_series,
-        default="heuristic-carbon,heuristic-weighted,heuristic-pareto,heuristic-epsilon-pareto,milp-carbon,milp-epsilon",
+        default=parse_method_series(MAIN_METHODS),
         help="Comma-separated method list.",
+    )
+    parser.add_argument(
+        "--include-ablations",
+        action="store_true",
+        help="Add naive weighted-sum and basic Pareto heuristic ablations to the selected method list.",
     )
     parser.add_argument("--weighted-carbon-weight", type=float, default=0.50)
     parser.add_argument("--epsilon-fractions", type=parse_float_series, default="0.95,0.90,0.85")
     parser.add_argument("--epsilon-water-metric", choices=["scarcity", "raw"], default="scarcity")
+    parser.add_argument(
+        "--target-waterwise-budget",
+        action="store_true",
+        help="Add epsilon runs at the WaterWise-style MILP water value for each case.",
+    )
     parser.add_argument("--skip-milp", action="store_true", help="Skip MILP carbon and epsilon runs.")
     parser.add_argument("--operational-only", action="store_true")
     parser.add_argument("--embodied-mode", choices=["proportional", "uniform"], default="proportional")
@@ -593,7 +801,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=Path,
         default=repo_root() / "pkg" / "carbon-aware" / "server-python" / "all_forecasts.json",
     )
-    parser.add_argument("--output-dir", type=Path, default=Path("experiments/water_paper"))
+    parser.add_argument("--output-dir", type=Path, default=Path("experiments/water"))
     parser.add_argument("--figures-dir", type=Path, default=Path("experiments/figures"))
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--overwrite", action="store_true")
@@ -610,7 +818,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     pod_counts = args.pod_counts or default_pod_counts_for_preset(args.preset)
     seeds = args.seeds or default_seeds_for_preset(args.preset)
-    methods = list(args.methods)
+    methods = with_ablation_methods(args.methods) if args.include_ablations else list(args.methods)
     needs_budgeted_methods = "milp-epsilon" in methods or "heuristic-epsilon-pareto" in methods
     if args.skip_milp:
         methods = [method for method in methods if not method.startswith("milp-")]
@@ -622,7 +830,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     output_dir = args.output_dir if args.output_dir.is_absolute() else root / args.output_dir
     figures_dir = args.figures_dir if args.figures_dir.is_absolute() else root / args.figures_dir
 
-    run_name = args.run_name or datetime.now(timezone.utc).strftime("water_paper_%Y%m%d_%H%M%S")
+    run_name = args.run_name or datetime.now(timezone.utc).strftime("water_%Y%m%d_%H%M%S")
     run_root = output_dir / run_name
 
     log_level = logging.WARNING if args.quiet else logging.INFO
@@ -647,11 +855,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         planned_methods.extend([f"milp-epsilon@{fraction:.2f}" for fraction in args.epsilon_fractions])
     if "heuristic-epsilon-pareto" in methods:
         planned_methods.extend([f"heuristic-epsilon-pareto@{fraction:.2f}" for fraction in args.epsilon_fractions])
+    if args.target_waterwise_budget:
+        if "milp-epsilon" in methods and not args.skip_milp:
+            planned_methods.append("milp-epsilon@waterwise-target")
+        if "heuristic-epsilon-pareto" in methods:
+            planned_methods.append("heuristic-epsilon-pareto@waterwise-target")
 
     metadata = {
         "run_name": run_name,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "script": "scripts/water_paper_sweep.py",
+        "script": "scripts/water_sweep.py",
+        "environment": {
+            "python": sys.version,
+            "python_executable": sys.executable,
+            "platform": platform.platform(),
+        },
+        "git": git_provenance(root),
         "preset": args.preset,
         "pod_counts": pod_counts,
         "seeds": seeds,
@@ -660,13 +879,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "planned_methods": planned_methods,
         "epsilon_fractions": list(args.epsilon_fractions),
         "epsilon_water_metric": args.epsilon_water_metric,
+        "target_waterwise_budget": bool(args.target_waterwise_budget),
         "weighted_carbon_weight": float(args.weighted_carbon_weight),
         "operational_only": bool(args.operational_only),
         "embodied_mode": args.embodied_mode,
         "config_file": str(config_file),
+        "config_sha256": sha256_file(config_file),
         "forecasts_file": str(forecasts_file),
+        "forecasts_sha256": sha256_file(forecasts_file),
+        "water_references": water_reference_metadata(root),
         "output_dir": str(run_root),
         "figures_dir": str(figures_dir),
+        "case_inputs": {},
     }
 
     if args.dry_run:
@@ -688,9 +912,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         total_steps += len(cases) * len(args.epsilon_fractions)
     if "heuristic-epsilon-pareto" in methods:
         total_steps += len(cases) * len(args.epsilon_fractions)
+    if args.target_waterwise_budget:
+        target_steps_per_case = 0
+        if "milp-epsilon" in methods and not args.skip_milp:
+            target_steps_per_case += 1
+        if "heuristic-epsilon-pareto" in methods:
+            target_steps_per_case += 1
+        total_steps += len(cases) * target_steps_per_case
 
     if tqdm is not None:
-        progress = tqdm(total=total_steps, desc="water-paper sweep", unit="run")
+        progress = tqdm(total=total_steps, desc="water sweep", unit="run")
     else:
         progress = ProgressTracker(total_steps)
 
@@ -705,9 +936,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             config_file=config_file,
             timeslots=args.timeslots,
         )
+        metadata["case_inputs"][case.label] = case_input_metadata(root, case)
+        (run_root / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
 
         baseline_water: Optional[float] = None
         heuristic_carbon_baseline_water: Optional[float] = None
+        waterwise_target_water: Optional[float] = None
         for method in non_epsilon_methods:
             logging.info("Running %s on %s", method.key, case.label)
             result = run_method(
@@ -733,6 +967,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if args.epsilon_water_metric == "raw"
                     else result.scarcity_water
                 )
+            if method.key.startswith("milp_waterwise"):
+                waterwise_target_water = water_value_for_metric(result, args.epsilon_water_metric)
 
             if tqdm is not None:
                 progress.update(1)
@@ -775,9 +1011,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 else:
                     progress.update(status=f"{case.label}:{method.key}:{result.status}")
 
+        if args.target_waterwise_budget:
+            for method in target_budget_methods(
+                waterwise_target_water,
+                args.epsilon_water_metric,
+                "waterwise",
+                include_milp="milp-epsilon" in methods and not args.skip_milp,
+                include_heuristic="heuristic-epsilon-pareto" in methods,
+            ):
+                logging.info(
+                    "Running %s on %s with %s target budget %.6f",
+                    method.key,
+                    case.label,
+                    method.water_metric,
+                    method.water_budget or 0.0,
+                )
+                result = run_method(
+                    case,
+                    method,
+                    run_name=run_name,
+                    run_root=run_root,
+                    forecasts_file=forecasts_file,
+                    config_file=config_file,
+                    embodied_mode=args.embodied_mode,
+                    operational_only=args.operational_only,
+                )
+                results.append(result)
+                if tqdm is not None:
+                    progress.update(1)
+                    progress.set_postfix_str(f"{case.label}:{method.key}:{result.status}")
+                else:
+                    progress.update(status=f"{case.label}:{method.key}:{result.status}")
+
     progress.close()
 
-    summary_csv = run_root / "water_paper_sweep_summary.csv"
+    summary_csv = run_root / "water_sweep_summary.csv"
     results_df = write_summary_csv(results, summary_csv)
     write_breakdown_csv(results_df, run_root / "water_component_breakdown.csv")
     diagnostics_csv = create_frontier_gap_diagnostics(root, summary_csv, args.epsilon_water_metric)
@@ -795,7 +1063,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     metadata["diagnostics_csv"] = str(diagnostics_csv)
     (run_root / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
 
-    logging.info("Water-paper sweep complete: %s", summary_csv)
+    logging.info("Water sweep complete: %s", summary_csv)
     for figure in generated_figures:
         logging.info("Figure: %s", figure)
 

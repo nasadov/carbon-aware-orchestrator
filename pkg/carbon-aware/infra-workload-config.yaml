@@ -16,6 +16,7 @@ optimization:
     time_limit: 900
     gap_tolerance: 0.05
     threads: 8
+    msg: false
 nodes:
   filename: nodes.yaml
   regions:

@@ -34,19 +34,31 @@ import pandas as pd
 import yaml
 import sys
 
-# Absolute paths (per instructions)
-REPO_ROOT = "/root/carbon-aware-orchestrator"
-PKG_ROOT = os.path.join(REPO_ROOT, "pkg", "carbon-aware")
-SERVER_PYTHON_DIR = os.path.join(PKG_ROOT, "server-python")
-SERVER_MAIN = os.path.join(SERVER_PYTHON_DIR, "main.py")
-WORKLOAD_GENERATOR = os.path.join(PKG_ROOT, "infra_workload_gen.py")
-WORKLOAD_CONFIG = os.path.join(PKG_ROOT, "infra-workload-config.yaml")
-WORKLOADS_DIR = os.path.join(PKG_ROOT, "workloads")
-NODES_FILE = os.path.join(PKG_ROOT, "nodes.yaml")
-GROUND_TRUTH_FORECAST = os.path.join(SERVER_PYTHON_DIR, "all_forecasts.json")
+from repo_paths import (
+    EXPERIMENTS_ROOT,
+    FIGURES_ROOT,
+    FORECASTS_FILE,
+    NODES_FILE as DEFAULT_NODES_FILE,
+    PKG_ROOT as DEFAULT_PKG_ROOT,
+    REPO_ROOT as DEFAULT_REPO_ROOT,
+    SERVER_PYTHON_DIR as DEFAULT_SERVER_PYTHON_DIR,
+    WORKLOAD_CONFIG as DEFAULT_WORKLOAD_CONFIG,
+    WORKLOAD_GENERATOR as DEFAULT_WORKLOAD_GENERATOR,
+    WORKLOADS_DIR as DEFAULT_WORKLOADS_DIR,
+)
 
-DEFAULT_EXPERIMENT_ROOT = os.path.join(REPO_ROOT, "experiments", "forecast_error_sensitivity")
-DEFAULT_FIGURE_DIR = os.path.join(REPO_ROOT, "figures", "ForecastErrorSensitivity")
+REPO_ROOT = str(DEFAULT_REPO_ROOT)
+PKG_ROOT = str(DEFAULT_PKG_ROOT)
+SERVER_PYTHON_DIR = str(DEFAULT_SERVER_PYTHON_DIR)
+SERVER_MAIN = os.path.join(SERVER_PYTHON_DIR, "main.py")
+WORKLOAD_GENERATOR = str(DEFAULT_WORKLOAD_GENERATOR)
+WORKLOAD_CONFIG = str(DEFAULT_WORKLOAD_CONFIG)
+WORKLOADS_DIR = str(DEFAULT_WORKLOADS_DIR)
+NODES_FILE = str(DEFAULT_NODES_FILE)
+GROUND_TRUTH_FORECAST = str(FORECASTS_FILE)
+
+DEFAULT_EXPERIMENT_ROOT = str(EXPERIMENTS_ROOT / "forecast_error_sensitivity")
+DEFAULT_FIGURE_DIR = str(FIGURES_ROOT / "ForecastErrorSensitivity")
 
 CARBON_AWARE_SERVER_PY_PATH = os.path.join(PKG_ROOT, "server-python")
 if CARBON_AWARE_SERVER_PY_PATH not in sys.path:

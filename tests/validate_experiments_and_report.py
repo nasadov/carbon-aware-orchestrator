@@ -12,9 +12,15 @@ import datetime as dt
 import os
 import re
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_EXPERIMENTS_DIR = REPO_ROOT / "experiments"
+DEFAULT_PKG_ROOT = REPO_ROOT / "pkg" / "carbon-aware"
+DEFAULT_REPORTS_DIR = REPO_ROOT / "tests" / "reports"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -122,11 +128,11 @@ def validate_one(csv_path: str, nodes_file: str, workloads_dir: str) -> Tuple[Di
 
 def main():
     ap = argparse.ArgumentParser(description="Validate all experiments and write timestamped report")
-    ap.add_argument("--experiments-dir", default="/root/carbon-aware-orchestrator/experiments")
-    ap.add_argument("--nodes-file", default="/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml")
-    ap.add_argument("--workloads-dir", default="/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads")
-    ap.add_argument("--workloads-vanilla-dir", default="/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads-vanilla")
-    ap.add_argument("--output-dir", default="/root/carbon-aware-orchestrator/tests/reports")
+    ap.add_argument("--experiments-dir", default=str(DEFAULT_EXPERIMENTS_DIR))
+    ap.add_argument("--nodes-file", default=str(DEFAULT_PKG_ROOT / "nodes.yaml"))
+    ap.add_argument("--workloads-dir", default=str(DEFAULT_PKG_ROOT / "workloads"))
+    ap.add_argument("--workloads-vanilla-dir", default=str(DEFAULT_PKG_ROOT / "workloads-vanilla"))
+    ap.add_argument("--output-dir", default=str(DEFAULT_REPORTS_DIR))
     args = ap.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -222,4 +228,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

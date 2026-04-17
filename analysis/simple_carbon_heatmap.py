@@ -10,6 +10,7 @@ import os
 import yaml
 import json
 import argparse
+from repo_paths import BIN_FORECASTS_FILE, FIGURES_ROOT, NODES_FILE
 import logging
 
 # Setup logging
@@ -305,9 +306,9 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Generate carbon footprint heatmap')
     parser.add_argument('placements_csv', help='Path to placements CSV file')
-    parser.add_argument('--nodes-yaml', default='/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml', 
+    parser.add_argument('--nodes-yaml', default=str(NODES_FILE),
                         help='Path to nodes.yaml file')
-    parser.add_argument('--carbon-data', default='/root/carbon-aware-orchestrator/bin/all_forecasts.json', 
+    parser.add_argument('--carbon-data', default=str(BIN_FORECASTS_FILE),
                         help='Path to carbon intensity data')
     parser.add_argument('--timeslots', type=int, default=24, help='Number of timeslots')
     args = parser.parse_args()
@@ -335,7 +336,7 @@ def main():
     # Determine output directory and filename
     csv_dir = os.path.dirname(args.placements_csv)
     csv_basename = os.path.basename(csv_dir)
-    output_dir = os.path.join('/root/carbon-aware-orchestrator/figures', csv_basename)
+    output_dir = os.path.join(str(FIGURES_ROOT), csv_basename)
     filename_prefix = os.path.splitext(os.path.basename(args.placements_csv))[0]
     
     # Calculate carbon footprint

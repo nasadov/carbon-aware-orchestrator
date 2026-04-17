@@ -19,6 +19,11 @@ def run_global_optimal_precomputation(
     embodied_mode: str = "proportional",
     global_water_budget: float = None,
     global_water_metric: str = "scarcity",
+    global_objective: str = "carbon",
+    global_scalarized_carbon_weight: float = 0.5,
+    global_scalarized_water_metric: str = "scarcity",
+    global_scalarized_ref_weight: float = 0.1,
+    global_scalarized_history_window: int = 10,
 ) -> bool:
     """
     Run global-optimal algorithm in precomputation mode
@@ -60,6 +65,14 @@ def run_global_optimal_precomputation(
                 water_budget=global_water_budget,
                 water_metric=global_water_metric,
             )
+        if hasattr(algorithm, 'set_phase2_objective'):
+            algorithm.set_phase2_objective(
+                mode=global_objective,
+                carbon_weight=global_scalarized_carbon_weight,
+                water_metric=global_scalarized_water_metric,
+                reference_weight=global_scalarized_ref_weight,
+                history_window=global_scalarized_history_window,
+            )
 
         logging.info("🔧 STEP 2: Starting comprehensive global optimization")
         logging.info(f"📂 Workloads directory: {workloads_dir}")
@@ -70,6 +83,15 @@ def run_global_optimal_precomputation(
                 "💧 Epsilon-constraint enabled: %s water <= %.6f",
                 global_water_metric,
                 float(global_water_budget),
+            )
+        if global_objective != "carbon":
+            logging.info(
+                "🌊 Global objective: %s lambda_C=%.2f water_metric=%s lambda_ref=%.3f history_window=%s",
+                global_objective,
+                float(global_scalarized_carbon_weight),
+                global_scalarized_water_metric,
+                float(global_scalarized_ref_weight),
+                int(global_scalarized_history_window),
             )
         
         # Run the precomputation

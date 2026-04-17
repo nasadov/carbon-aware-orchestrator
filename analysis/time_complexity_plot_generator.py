@@ -30,8 +30,10 @@ import glob
 from collections import defaultdict
 import argparse
 
-EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
-OUTPUT_DIR = "/root/carbon-aware-orchestrator/figures/TimeComplexity"
+from repo_paths import EXPERIMENTS_ROOT as DEFAULT_EXPERIMENTS_ROOT, FIGURES_ROOT
+
+EXPERIMENTS_ROOT = str(DEFAULT_EXPERIMENTS_ROOT)
+OUTPUT_DIR = str(FIGURES_ROOT / "TimeComplexity")
 
 
 def _iter_timing_csv_paths(experiments_root: str, latest_only: bool = True, algorithm_filter: str | None = None):
@@ -305,4 +307,3 @@ if __name__ == "__main__":
     # Combined overlay plot across all algorithms
     alg_to_by_pods = _collect_all_algorithms_time_data(latest_only=latest_only)
     _plot_combined_time_vs_pods(alg_to_by_pods, cap_seconds=args.cap_seconds)
-

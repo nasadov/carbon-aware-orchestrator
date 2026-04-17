@@ -22,9 +22,10 @@ import argparse
 from collections import defaultdict
 
 import utilization_plot_generator as util_mod
+from repo_paths import EXPERIMENTS_ROOT, FIGURES_ROOT
 
 
-DEFAULT_EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
+DEFAULT_EXPERIMENTS_ROOT = str(EXPERIMENTS_ROOT)
 
 
 def _prepare_roots(experiments_root: str | None, experiments_roots: list[str] | None):
@@ -416,7 +417,7 @@ def create_success_rate_plot(
     plt.tight_layout()
 
     # Save PDF only
-    output_dir_base = "/root/carbon-aware-orchestrator/figures/SuccessRate"
+    output_dir_base = str(FIGURES_ROOT / "SuccessRate")
     suffix = output_suffix or _build_output_suffix(valid_roots)
     output_dir = os.path.join(output_dir_base, suffix)
     os.makedirs(output_dir, exist_ok=True)

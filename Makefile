@@ -64,3 +64,23 @@ build-carbon-aware:
 	@echo "✅ Executable created at $(CURDIR)/bin/carbon-aware"
 	@echo "📄 Copying carbon intensity data file to bin directory for convenience..."
 	@cp $(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json $(CURDIR)/bin/
+
+PYTHON ?= python3
+
+.PHONY: test lint lint-full syntax-check clean-python-artifacts
+
+test:
+	$(PYTHON) -m pytest
+
+lint:
+	$(PYTHON) -m ruff check .
+
+lint-full:
+	$(PYTHON) -m ruff check --select E,F,I,UP,B .
+
+syntax-check:
+	$(PYTHON) scripts/check_python_syntax.py
+
+clean-python-artifacts:
+	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+	find . -type f -name '*.py[co]' -delete

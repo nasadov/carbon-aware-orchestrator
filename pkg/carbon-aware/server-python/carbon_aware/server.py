@@ -45,7 +45,10 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                  heuristic_objective="carbon", heuristic_carbon_weight=1.0,
                  heuristic_water_budget=None, heuristic_water_metric="scarcity",
                  heuristic_budget_pressure_weight=1.0,
-                 global_water_budget=None, global_water_metric="scarcity"):
+                 global_water_budget=None, global_water_metric="scarcity",
+                 global_objective="carbon", global_scalarized_carbon_weight=0.5,
+                 global_scalarized_water_metric="scarcity", global_scalarized_ref_weight=0.1,
+                 global_scalarized_history_window=10):
         self.algo = Algorithm(algorithm_name, True)
         self.command_line_algorithm = algorithm_name 
         self.persistent_state = PersistentStateStorage()
@@ -71,6 +74,11 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
         self.heuristic_budget_pressure_weight = heuristic_budget_pressure_weight
         self.global_water_budget = global_water_budget
         self.global_water_metric = global_water_metric
+        self.global_objective = global_objective
+        self.global_scalarized_carbon_weight = global_scalarized_carbon_weight
+        self.global_scalarized_water_metric = global_scalarized_water_metric
+        self.global_scalarized_ref_weight = global_scalarized_ref_weight
+        self.global_scalarized_history_window = global_scalarized_history_window
         
         if precomputation_done:
             logging.info(f"🎯 PlacementAlgorithm initialized with precomputed solution containing {len(self.precomputed_solution)} placements")
@@ -241,6 +249,14 @@ class PlacementAlgorithm(idl_pb2_grpc.PlacementAlgorithmServicer):
                     algorithm_instance.set_epsilon_constraint(
                         water_budget=self.global_water_budget,
                         water_metric=self.global_water_metric,
+                    )
+                if hasattr(algorithm_instance, "set_phase2_objective"):
+                    algorithm_instance.set_phase2_objective(
+                        mode=self.global_objective,
+                        carbon_weight=self.global_scalarized_carbon_weight,
+                        water_metric=self.global_scalarized_water_metric,
+                        reference_weight=self.global_scalarized_ref_weight,
+                        history_window=self.global_scalarized_history_window,
                     )
 
             # Configure algorithm instance with the session directory for placement CSVs
@@ -618,7 +634,10 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
          prioritize_efficiency=False, operational_only=False,
          heuristic_objective="carbon", heuristic_carbon_weight=1.0,
          heuristic_water_budget=None, heuristic_water_metric="scarcity", heuristic_budget_pressure_weight=1.0,
-         global_water_budget=None, global_water_metric="scarcity"):
+         global_water_budget=None, global_water_metric="scarcity",
+         global_objective="carbon", global_scalarized_carbon_weight=0.5,
+         global_scalarized_water_metric="scarcity", global_scalarized_ref_weight=0.1,
+         global_scalarized_history_window=10):
     """
     Creates and runs the gRPC server on the specified port, registering the PlacementAlgorithm servicer.
     Implements graceful shutdown handling.
@@ -641,6 +660,11 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         heuristic_budget_pressure_weight (float): Strength of adaptive budget pressure for epsilon-pareto heuristic mode
         global_water_budget (float): Optional epsilon-constraint water budget for global-optimal mode
         global_water_metric (str): Water metric used by the epsilon-constraint
+        global_objective (str): Phase-2 objective for global-optimal mode
+        global_scalarized_carbon_weight (float): Carbon weight for WaterWise-style scalarized global objective
+        global_scalarized_water_metric (str): Water metric for WaterWise-style scalarized global objective
+        global_scalarized_ref_weight (float): Reference/history weight for WaterWise-style scalarized global objective
+        global_scalarized_history_window (int): Rolling reference window in slots
     """
     shutdown_in_progress = False
     
@@ -662,6 +686,14 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
                 precompute_algorithm.set_epsilon_constraint(
                     water_budget=global_water_budget,
                     water_metric=global_water_metric,
+                )
+            if hasattr(precompute_algorithm, 'set_phase2_objective'):
+                precompute_algorithm.set_phase2_objective(
+                    mode=global_objective,
+                    carbon_weight=global_scalarized_carbon_weight,
+                    water_metric=global_scalarized_water_metric,
+                    reference_weight=global_scalarized_ref_weight,
+                    history_window=global_scalarized_history_window,
                 )
             
             # Register it so the factory can reuse it
@@ -743,6 +775,11 @@ def serve(port='50051', algorithm='heuristic', experiment_logger=None, perf_logg
         heuristic_budget_pressure_weight=heuristic_budget_pressure_weight,
         global_water_budget=global_water_budget,
         global_water_metric=global_water_metric,
+        global_objective=global_objective,
+        global_scalarized_carbon_weight=global_scalarized_carbon_weight,
+        global_scalarized_water_metric=global_scalarized_water_metric,
+        global_scalarized_ref_weight=global_scalarized_ref_weight,
+        global_scalarized_history_window=global_scalarized_history_window,
     )
     idl_pb2_grpc.add_PlacementAlgorithmServicer_to_server(servicer, server)
     server.add_insecure_port('[::]:' + port)

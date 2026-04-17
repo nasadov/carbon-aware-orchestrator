@@ -1,0 +1,28 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [
+  "analysis",
+  "scripts",
+  "pkg/carbon-aware",
+  "pkg/carbon-aware/server-python",
+]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = [
+  "docs/",
+  "experiments/",
+  "external/",
+  "media/",
+  "pkg/generated-go/",
+  "pkg/carbon-aware/server-python/idl_pb2.py",
+  "pkg/carbon-aware/server-python/idl_pb2_grpc.py",
+]
+
+[tool.ruff.lint]
+# Keep the default lint gate focused on correctness-level issues for now.
+# The repository still contains legacy scripts with broad style debt; use
+# `make lint-full` when intentionally working on style modernization.
+select = ["E9", "F63", "F7", "F82"]

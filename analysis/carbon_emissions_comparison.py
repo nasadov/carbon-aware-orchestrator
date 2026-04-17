@@ -20,6 +20,16 @@ import re
 from collections import defaultdict
 from datetime import datetime
 
+from repo_paths import (
+    EXPERIMENTS_ROOT,
+    FIGURES_ROOT,
+    FORECASTS_FILE as DEFAULT_FORECASTS_FILE,
+    NODES_FILE as DEFAULT_NODES_FILE,
+)
+
+DEFAULT_EXPERIMENTS_DIR = str(EXPERIMENTS_ROOT)
+DEFAULT_COMPARISON_FIGURES_DIR = FIGURES_ROOT / "Comparison"
+
 # Add carbon-aware modules to path
 carbon_aware_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
                               "pkg/carbon-aware/server-python")
@@ -40,7 +50,7 @@ logging.basicConfig(level=logging.INFO,
                   datefmt='%Y-%m-%d %H:%M:%S')
 
 def find_latest_experiment(algorithm_name,
-                           experiments_dir="/root/carbon-aware-orchestrator/experiments",
+                           experiments_dir=DEFAULT_EXPERIMENTS_DIR,
                            pod_count=None):
     """Find the latest experiment directory for a given algorithm"""
     algorithm = algorithm_name.lower()
@@ -84,7 +94,7 @@ def find_latest_experiment(algorithm_name,
 
 def get_experiment_files(algorithm_name,
                          experiment_dir=None,
-                         experiments_dir="/root/carbon-aware-orchestrator/experiments",
+                         experiments_dir=DEFAULT_EXPERIMENTS_DIR,
                          pod_count=None):
     """Get the performance and placement file paths for an algorithm"""
     if experiment_dir is None:
@@ -264,8 +274,8 @@ def analyze_placement_carbon_emissions(placement_csv_path, algorithm_name="Vanil
         logging.info(f"Loaded {algorithm_name} placement data: {len(placement_df)} pods")
         
         # Load real node specifications and carbon intensity data (same as other algorithms)
-        nodes_file = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
-        forecasts_file = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/all_forecasts.json"
+        nodes_file = str(DEFAULT_NODES_FILE)
+        forecasts_file = str(DEFAULT_FORECASTS_FILE)
         
         # Load nodes data
         nodes_data = load_nodes_from_yaml(nodes_file)
@@ -852,7 +862,7 @@ def main():
     parser.add_argument("--vanilla-placement", help="Specific vanilla placement CSV file")
     parser.add_argument("--output-dir", help="Output directory for results (default: auto-generated)")
     parser.add_argument("--experiments-dir", 
-                       default="/root/carbon-aware-orchestrator/experiments",
+                       default=DEFAULT_EXPERIMENTS_DIR,
                        help="Base experiments directory")
     parser.add_argument("--pod-count", type=int, help="Filter experiments to a specific pod count (e.g., 80)")
     
@@ -865,7 +875,7 @@ def main():
     if args.output_dir:
         output_dir = args.output_dir
     else:
-        output_dir = f"/root/carbon-aware-orchestrator/figures/Comparison/Carbon_Emissions_Analysis_{timestamp}"
+        output_dir = str(DEFAULT_COMPARISON_FIGURES_DIR / f"Carbon_Emissions_Analysis_{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
     
     logging.info("Starting Carbon Emissions Analysis (Three Algorithms)")

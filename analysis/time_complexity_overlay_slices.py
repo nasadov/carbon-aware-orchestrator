@@ -34,10 +34,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from repo_paths import EXPERIMENTS_ROOT as DEFAULT_EXPERIMENTS_ROOT, FIGURES_ROOT, REPO_ROOT as DEFAULT_REPO_ROOT
 
-REPO_ROOT = "/root/carbon-aware-orchestrator"
-EXPERIMENTS_ROOT = f"{REPO_ROOT}/experiments/time_complexity"
-OUTPUT_DIR = f"{REPO_ROOT}/figures/TimeComplexity"
+REPO_ROOT = str(DEFAULT_REPO_ROOT)
+EXPERIMENTS_ROOT = str(DEFAULT_EXPERIMENTS_ROOT / "time_complexity")
+OUTPUT_DIR = str(FIGURES_ROOT / "TimeComplexity")
 
 # Algorithm config: label, color, marker, linestyle, file key
 ALGOS = {

@@ -50,19 +50,31 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import yaml  # noqa: E402
 
-# Absolute paths (per project conventions)
-REPO_ROOT = "/root/carbon-aware-orchestrator"
-PKG_ROOT = os.path.join(REPO_ROOT, "pkg", "carbon-aware")
-SERVER_PYTHON_DIR = os.path.join(PKG_ROOT, "server-python")
-SERVER_MAIN = os.path.join(SERVER_PYTHON_DIR, "main.py")
-WORKLOAD_GENERATOR = os.path.join(PKG_ROOT, "infra_workload_gen.py")
-WORKLOAD_CONFIG = os.path.join(PKG_ROOT, "infra-workload-config.yaml")
-WORKLOADS_DIR = os.path.join(PKG_ROOT, "workloads")
-NODES_FILE = os.path.join(PKG_ROOT, "nodes.yaml")
-GROUND_TRUTH_FORECAST = os.path.join(SERVER_PYTHON_DIR, "all_forecasts.json")
+from repo_paths import (
+    EXPERIMENTS_ROOT,
+    FIGURES_ROOT,
+    FORECASTS_FILE,
+    NODES_FILE as DEFAULT_NODES_FILE,
+    PKG_ROOT as DEFAULT_PKG_ROOT,
+    REPO_ROOT as DEFAULT_REPO_ROOT,
+    SERVER_PYTHON_DIR as DEFAULT_SERVER_PYTHON_DIR,
+    WORKLOAD_CONFIG as DEFAULT_WORKLOAD_CONFIG,
+    WORKLOAD_GENERATOR as DEFAULT_WORKLOAD_GENERATOR,
+    WORKLOADS_DIR as DEFAULT_WORKLOADS_DIR,
+)
 
-DEFAULT_EXPERIMENT_ROOT = os.path.join(REPO_ROOT, "experiments", "embodied_sensitivity")
-DEFAULT_FIGURE_DIR = os.path.join(REPO_ROOT, "figures", "EmbodiedSensitivity")
+REPO_ROOT = str(DEFAULT_REPO_ROOT)
+PKG_ROOT = str(DEFAULT_PKG_ROOT)
+SERVER_PYTHON_DIR = str(DEFAULT_SERVER_PYTHON_DIR)
+SERVER_MAIN = os.path.join(SERVER_PYTHON_DIR, "main.py")
+WORKLOAD_GENERATOR = str(DEFAULT_WORKLOAD_GENERATOR)
+WORKLOAD_CONFIG = str(DEFAULT_WORKLOAD_CONFIG)
+WORKLOADS_DIR = str(DEFAULT_WORKLOADS_DIR)
+NODES_FILE = str(DEFAULT_NODES_FILE)
+GROUND_TRUTH_FORECAST = str(FORECASTS_FILE)
+
+DEFAULT_EXPERIMENT_ROOT = str(EXPERIMENTS_ROOT / "embodied_sensitivity")
+DEFAULT_FIGURE_DIR = str(FIGURES_ROOT / "EmbodiedSensitivity")
 
 # Add carbon-aware modules to path
 if SERVER_PYTHON_DIR not in os.sys.path:

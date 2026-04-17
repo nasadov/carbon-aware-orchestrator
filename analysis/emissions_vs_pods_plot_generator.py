@@ -4,8 +4,8 @@ Carbon Emissions vs Pod Count Plot Generator
 
 Generates a plot with three curves (Carbon-Agnostic, Heuristic, Oracle),
 with x-axis as number of pods in the experiment and y-axis as total carbon
-emissions (kg CO2e) per experiment. Data is parsed dynamically from
-/root/carbon-aware-orchestrator/experiments and its subdirectories.
+emissions (kg CO2e) per experiment. Data is parsed dynamically from the
+repository experiments directory and its subdirectories.
 
 Default behavior is to plot proportional embodied allocation only. Idle power is
 included by default in operational emissions; pass --exclude-idle to drop it.
@@ -35,6 +35,12 @@ import sys
 
 import utilization_plot_generator as util_mod
 import success_rate_plot_generator as sr_plot
+from repo_paths import (
+    EXPERIMENTS_ROOT,
+    FIGURES_ROOT,
+    FORECASTS_FILE as DEFAULT_FORECASTS_FILE,
+    NODES_FILE as DEFAULT_NODES_FILE,
+)
 
 # Ensure carbon_aware modules are importable
 CARBON_AWARE_SERVER_PY_PATH = os.path.join(
@@ -52,9 +58,9 @@ except Exception as e:
     CarbonAwarePod = None
     compute_emissions = None
 
-DEFAULT_EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
-NODES_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
-FORECASTS_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/all_forecasts.json"
+DEFAULT_EXPERIMENTS_ROOT = str(EXPERIMENTS_ROOT)
+NODES_FILE = str(DEFAULT_NODES_FILE)
+FORECASTS_FILE = str(DEFAULT_FORECASTS_FILE)
 
 
 def _load_nodes_from_yaml(nodes_file: str):
@@ -639,7 +645,7 @@ def create_emissions_plot(
     plt.legend(fontsize=8, loc='best', framealpha=0.9, shadow=False, fancybox=False)
     plt.tight_layout()
 
-    output_dir_base = "/root/carbon-aware-orchestrator/figures/EmissionsVsPods"
+    output_dir_base = str(FIGURES_ROOT / "EmissionsVsPods")
     
     # Derive an output subdirectory based on the provided experiment roots
     ts_suffix = _build_output_suffix(valid_roots)

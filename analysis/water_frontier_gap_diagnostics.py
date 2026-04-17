@@ -47,7 +47,15 @@ def _metric_column(metric: str) -> str:
 
 def build_diagnostics(summary_df: pd.DataFrame, water_metric: str) -> pd.DataFrame:
     water_column = _metric_column(water_metric)
-    required = {"method_key", "method_group", "carbon_kg", "raw_water_l", "scarcity_water", water_column}
+    required = {
+        "case_label",
+        "method_key",
+        "method_group",
+        "carbon_kg",
+        "raw_water_l",
+        "scarcity_water",
+        water_column,
+    }
     missing = sorted(required - set(summary_df.columns))
     if missing:
         raise ValueError(f"Summary CSV is missing required columns: {', '.join(missing)}")
@@ -61,6 +69,11 @@ def build_diagnostics(summary_df: pd.DataFrame, water_metric: str) -> pd.DataFra
 
     rows = []
     for _, heuristic in heuristics.iterrows():
+        case_label = heuristic.get("case_label", "")
+        case_refs = refs[refs["case_label"] == case_label].copy()
+        if case_refs.empty:
+            continue
+
         h_carbon = _as_float(heuristic.get("carbon_kg"))
         h_water = _as_float(heuristic.get(water_column))
         h_raw = _as_float(heuristic.get("raw_water_l"))
@@ -68,13 +81,13 @@ def build_diagnostics(summary_df: pd.DataFrame, water_metric: str) -> pd.DataFra
         if h_carbon is None or h_water is None:
             continue
 
-        refs = refs.assign(
-            _water_distance=(refs[water_column].astype(float) - h_water).abs(),
-            _carbon_gap=refs["carbon_kg"].astype(float) - h_carbon,
+        case_refs = case_refs.assign(
+            _water_distance=(case_refs[water_column].astype(float) - h_water).abs(),
+            _carbon_gap=case_refs["carbon_kg"].astype(float) - h_carbon,
         )
-        nearest = refs.sort_values(["_water_distance", "carbon_kg"]).iloc[0]
+        nearest = case_refs.sort_values(["_water_distance", "carbon_kg"]).iloc[0]
 
-        same_or_lower_water = refs[refs[water_column].astype(float) <= h_water + 1e-12]
+        same_or_lower_water = case_refs[case_refs[water_column].astype(float) <= h_water + 1e-12]
         if not same_or_lower_water.empty:
             best_same_or_lower = same_or_lower_water.sort_values("carbon_kg").iloc[0]
             best_same_or_lower_key = best_same_or_lower.get("method_key")
@@ -89,9 +102,12 @@ def build_diagnostics(summary_df: pd.DataFrame, water_metric: str) -> pd.DataFra
 
         dominated_by_any_milp = bool(
             (
-                (refs["carbon_kg"].astype(float) <= h_carbon + 1e-12)
-                & (refs["scarcity_water"].astype(float) <= (h_scarcity if h_scarcity is not None else float("inf")) + 1e-12)
-                & (refs["raw_water_l"].astype(float) <= (h_raw if h_raw is not None else float("inf")) + 1e-12)
+                (case_refs["carbon_kg"].astype(float) <= h_carbon + 1e-12)
+                & (
+                    case_refs["scarcity_water"].astype(float)
+                    <= (h_scarcity if h_scarcity is not None else float("inf")) + 1e-12
+                )
+                & (case_refs["raw_water_l"].astype(float) <= (h_raw if h_raw is not None else float("inf")) + 1e-12)
             ).any()
         )
 
@@ -121,7 +137,7 @@ def build_diagnostics(summary_df: pd.DataFrame, water_metric: str) -> pd.DataFra
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("summary_csv", type=Path, help="Path to water_paper_sweep_summary.csv")
+    parser.add_argument("summary_csv", type=Path, help="Path to a water sweep summary CSV")
     parser.add_argument("--water-metric", choices=["scarcity", "raw"], default="scarcity")
     parser.add_argument("--output", type=Path, default=None, help="Output CSV path")
     args = parser.parse_args()

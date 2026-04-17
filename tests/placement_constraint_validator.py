@@ -18,7 +18,11 @@ import os
 import sys
 import glob
 from collections import defaultdict
+from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_PKG_ROOT = REPO_ROOT / "pkg" / "carbon-aware"
 
 def parse_memory_str(mem_val) -> float:
     """Convert memory value to MB.
@@ -131,6 +135,7 @@ def validate_capacity_constraints(df: pd.DataFrame, node_capacities: Dict[str, D
         Tuple of (is_valid, violations_list)
     """
     violations = []
+    tolerance = 1e-9
     node_timeslot_usage = defaultdict(lambda: defaultdict(lambda: {'cpu': 0, 'memory': 0, 'pods': []}))
     
     # Calculate resource usage by node and timeslot
@@ -168,7 +173,7 @@ def validate_capacity_constraints(df: pd.DataFrame, node_capacities: Dict[str, D
         
         for slot, usage in timeslots.items():
             # Check CPU violation
-            if usage['cpu'] > node_caps['cpu']:
+            if usage['cpu'] > node_caps['cpu'] + tolerance:
                 violations.append({
                     'type': 'cpu_violation',
                     'node_id': node_id,
@@ -181,7 +186,7 @@ def validate_capacity_constraints(df: pd.DataFrame, node_capacities: Dict[str, D
                 })
             
             # Check memory violation
-            if usage['memory'] > node_caps['memory']:
+            if usage['memory'] > node_caps['memory'] + tolerance:
                 violations.append({
                     'type': 'memory_violation',
                     'node_id': node_id,
@@ -411,9 +416,8 @@ Examples:
     # Set defaults if not provided
     if not args.nodes_file and not args.workloads_dir:
         # Default paths
-        base_dir = "/root/carbon-aware-orchestrator/pkg/carbon-aware"
-        args.nodes_file = f"{base_dir}/nodes.yaml"
-        args.workloads_dir = f"{base_dir}/workloads"
+        args.nodes_file = str(DEFAULT_PKG_ROOT / "nodes.yaml")
+        args.workloads_dir = str(DEFAULT_PKG_ROOT / "workloads")
         print(f"🔧 Using default paths:")
         print(f"   Nodes file: {args.nodes_file}")
         print(f"   Workloads dir: {args.workloads_dir}")

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# filepath: /root/carbon-aware-orchestrator/analysis/visualization.py
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 from matplotlib.ticker import FuncFormatter
 import os
+from repo_paths import FIGURES_ROOT
 
 # Set the style for publication-quality plots
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -27,7 +27,7 @@ parser.add_argument('--log-file', required=True, help='Path to the performance l
 args = parser.parse_args()
 
 # Create base output directory
-base_output_dir = "/root/carbon-aware-orchestrator/figures"
+base_output_dir = str(FIGURES_ROOT)
 os.makedirs(base_output_dir, exist_ok=True)
 
 # Process each provided log file

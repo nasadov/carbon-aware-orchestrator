@@ -220,6 +220,36 @@ def main() -> None:
         help='Water metric used by the global-optimal epsilon-constraint'
     )
     parser.add_argument(
+        '--global-objective',
+        default='carbon',
+        choices=['carbon', 'waterwise-scalarized'],
+        help='Phase-2 objective for global-optimal runs: carbon or WaterWise-style normalized scalarized carbon-water objective'
+    )
+    parser.add_argument(
+        '--global-scalarized-carbon-weight',
+        type=float,
+        default=0.5,
+        help='Carbon weight for the WaterWise-style global scalarized objective in [0, 1]'
+    )
+    parser.add_argument(
+        '--global-scalarized-water-metric',
+        default='scarcity',
+        choices=['raw', 'scarcity'],
+        help='Water metric used by the WaterWise-style global scalarized objective'
+    )
+    parser.add_argument(
+        '--global-scalarized-ref-weight',
+        type=float,
+        default=0.1,
+        help='Reference/history weight for the WaterWise-style global scalarized objective'
+    )
+    parser.add_argument(
+        '--global-scalarized-history-window',
+        type=int,
+        default=10,
+        help='Rolling history window, in slots, for WaterWise-style reference signals'
+    )
+    parser.add_argument(
         '--precompute',
         action='store_true',
         help='Run precomputation mode: process all timeslot files sequentially and save placements to CSV without starting server (heuristic algorithm only)'
@@ -228,6 +258,9 @@ def main() -> None:
     args = parser.parse_args()
     args.heuristic_carbon_weight = min(max(args.heuristic_carbon_weight, 0.0), 1.0)
     args.heuristic_budget_pressure_weight = max(args.heuristic_budget_pressure_weight, 0.0)
+    args.global_scalarized_carbon_weight = min(max(args.global_scalarized_carbon_weight, 0.0), 1.0)
+    args.global_scalarized_ref_weight = max(args.global_scalarized_ref_weight, 0.0)
+    args.global_scalarized_history_window = max(args.global_scalarized_history_window, 1)
     
     # Configure logging with specified level
     log_level = getattr(logging, args.loglevel)
@@ -278,6 +311,12 @@ def main() -> None:
                 f"{algo_mode}_eps{args.global_water_metric}"
                 f"{str(args.global_water_budget).replace('.', 'p')}"
             )
+        elif args.algorithm == 'global-optimal' and args.global_objective == 'waterwise-scalarized':
+            algo_mode = (
+                f"{algo_mode}_waterwise"
+                f"{int(round(args.global_scalarized_carbon_weight * 100)):02d}"
+                f"{args.global_scalarized_water_metric}"
+            )
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         logging.info(f"🧪 Experiment mode: {session_log_dir}")
@@ -309,6 +348,12 @@ def main() -> None:
             algo_mode = (
                 f"{algo_mode}_eps{args.global_water_metric}"
                 f"{str(args.global_water_budget).replace('.', 'p')}"
+            )
+        elif args.algorithm == 'global-optimal' and args.global_objective == 'waterwise-scalarized':
+            algo_mode = (
+                f"{algo_mode}_waterwise"
+                f"{int(round(args.global_scalarized_carbon_weight * 100)):02d}"
+                f"{args.global_scalarized_water_metric}"
             )
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
@@ -419,6 +464,11 @@ def main() -> None:
                 embodied_mode=args.embodied_mode,
                 global_water_budget=args.global_water_budget,
                 global_water_metric=args.global_water_metric,
+                global_objective=args.global_objective,
+                global_scalarized_carbon_weight=args.global_scalarized_carbon_weight,
+                global_scalarized_water_metric=args.global_scalarized_water_metric,
+                global_scalarized_ref_weight=args.global_scalarized_ref_weight,
+                global_scalarized_history_window=args.global_scalarized_history_window,
             )
         elif args.algorithm == 'vanilla':
             from carbon_aware.precompute_vanilla import run_vanilla_precomputation
@@ -465,6 +515,11 @@ def main() -> None:
         heuristic_budget_pressure_weight=args.heuristic_budget_pressure_weight,
         global_water_budget=args.global_water_budget,
         global_water_metric=args.global_water_metric,
+        global_objective=args.global_objective,
+        global_scalarized_carbon_weight=args.global_scalarized_carbon_weight,
+        global_scalarized_water_metric=args.global_scalarized_water_metric,
+        global_scalarized_ref_weight=args.global_scalarized_ref_weight,
+        global_scalarized_history_window=args.global_scalarized_history_window,
     )
 
 

@@ -24,6 +24,7 @@ import yaml
 import sys
 
 import utilization_plot_generator as util_mod
+from repo_paths import EXPERIMENTS_ROOT as DEFAULT_EXPERIMENTS_ROOT, FIGURES_ROOT, FORECASTS_FILE as DEFAULT_FORECASTS_FILE, NODES_FILE as DEFAULT_NODES_FILE
 
 # Ensure carbon_aware modules are importable
 CARBON_AWARE_SERVER_PY_PATH = os.path.join(
@@ -38,9 +39,9 @@ except Exception as e:
     print(f"⚠️ Warning: could not import carbon_aware modules: {e}")
     CarbonAwareFlavour = None
 
-EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments"
-NODES_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
-FORECASTS_FILE = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/all_forecasts.json"
+EXPERIMENTS_ROOT = str(DEFAULT_EXPERIMENTS_ROOT)
+NODES_FILE = str(DEFAULT_NODES_FILE)
+FORECASTS_FILE = str(DEFAULT_FORECASTS_FILE)
 
 
 def _load_nodes_from_yaml(nodes_file: str):
@@ -479,7 +480,7 @@ def create_common_pods_emissions_plot(x_axis: str = 'utilization'):
     plt.legend(fontsize=12, loc='best', framealpha=0.9, shadow=True, fancybox=True)
     plt.tight_layout()
 
-    output_dir = "/root/carbon-aware-orchestrator/figures/EmissionsVsPods"
+    output_dir = str(FIGURES_ROOT / "EmissionsVsPods")
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base = f"emissions_vs_pods_common_pods_{timestamp}"

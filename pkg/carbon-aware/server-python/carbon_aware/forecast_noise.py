@@ -14,9 +14,10 @@ import math
 import os
 import random
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Tuple
 
-DEFAULT_FORECAST_PATH = "/root/carbon-aware-orchestrator/pkg/carbon-aware/server-python/all_forecasts.json"
+DEFAULT_FORECAST_PATH = str(Path(__file__).resolve().parents[1] / "all_forecasts.json")
 
 
 def load_forecasts(path: str = DEFAULT_FORECAST_PATH) -> Dict[str, dict]:
@@ -184,4 +185,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

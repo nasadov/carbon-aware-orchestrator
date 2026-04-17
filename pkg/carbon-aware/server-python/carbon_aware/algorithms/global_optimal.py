@@ -100,6 +100,15 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         self.phase2_water_budget: Optional[float] = None
         self.phase2_water_metric: str = "scarcity"
 
+        # Phase-2 objective mode. The default is the original carbon objective.
+        # The WaterWise-style mode is a scalarized MILP baseline adapted from
+        # Jiang et al.'s normalized carbon-water objective.
+        self.phase2_objective_mode: str = "carbon"
+        self.waterwise_carbon_weight: float = 0.5
+        self.waterwise_water_metric: str = "scarcity"
+        self.waterwise_reference_weight: float = 0.1
+        self.waterwise_history_window: int = 10
+
         # Objective weighting knobs (config-driven)
         # - weight_dynamic: scales per-pod dynamic emissions (k_watts * u * intensity)
         # - weight_activation: scales per-(node,slot) activation cost (idle + embodied)
@@ -188,6 +197,57 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 self.phase2_water_budget,
             )
 
+    def set_phase2_objective(
+        self,
+        mode: str = "carbon",
+        carbon_weight: float = 0.5,
+        water_metric: str = "scarcity",
+        reference_weight: float = 0.1,
+        history_window: int = 10,
+    ):
+        """Configure the Phase-2 objective used after placement maximization.
+
+        `carbon` is the original MILP objective. `waterwise-scalarized` is a
+        WaterWise-style scalarized baseline:
+
+            lambda_C * C/C_max + lambda_W * W/W_max
+            + lambda_ref * (lambda_C * C_ref + lambda_W * W_ref)
+
+        adapted from region assignment to our pod-node-time candidate space.
+        """
+        if mode not in ("carbon", "waterwise-scalarized"):
+            logging.warning("Unknown global objective '%s'; defaulting to carbon", mode)
+            mode = "carbon"
+        try:
+            carbon_weight = float(carbon_weight)
+        except (TypeError, ValueError):
+            carbon_weight = 0.5
+        try:
+            reference_weight = float(reference_weight)
+        except (TypeError, ValueError):
+            reference_weight = 0.1
+        try:
+            history_window = int(history_window)
+        except (TypeError, ValueError):
+            history_window = 10
+        if water_metric not in ("scarcity", "raw"):
+            logging.warning("Unknown WaterWise water metric '%s'; defaulting to scarcity", water_metric)
+            water_metric = "scarcity"
+
+        self.phase2_objective_mode = mode
+        self.waterwise_carbon_weight = min(max(carbon_weight, 0.0), 1.0)
+        self.waterwise_water_metric = water_metric
+        self.waterwise_reference_weight = max(reference_weight, 0.0)
+        self.waterwise_history_window = max(history_window, 1)
+        logging.info(
+            "GlobalOptimalAlgorithm: phase2 objective=%s carbon_weight=%.2f water_metric=%s ref_weight=%.3f history_window=%s",
+            self.phase2_objective_mode,
+            self.waterwise_carbon_weight,
+            self.waterwise_water_metric,
+            self.waterwise_reference_weight,
+            self.waterwise_history_window,
+        )
+
     @staticmethod
     def _slot_signal_value(values: Dict[int, float], slot: int, default: float = 0.0) -> float:
         if slot in values:
@@ -195,6 +255,151 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         if values:
             return float(next(iter(values.values())))
         return float(default)
+
+    @staticmethod
+    def _footprint_water_value(footprint: FootprintVector, water_metric: str) -> float:
+        if water_metric == "raw":
+            return float(footprint.total_raw_water_l)
+        return float(footprint.scarcity_characterized_water)
+
+    def _water_intensity_signal(self, flavour: EnvironmentalFlavor, slot: int, water_metric: str) -> float:
+        """Return direct+indirect water intensity per kWh for a node slot."""
+        wue = self._slot_signal_value(getattr(flavour, "wue_by_slot", {}) or {}, slot, 0.0)
+        ewif = self._slot_signal_value(getattr(flavour, "ewif_by_slot", {}) or {}, slot, 0.0)
+        direct = wue
+        indirect = float(getattr(flavour, "pue", 1.0) or 1.0) * ewif
+        if water_metric == "scarcity":
+            direct *= float(getattr(flavour, "water_scarcity_direct_cf", 1.0) or 1.0)
+            indirect *= float(getattr(flavour, "water_scarcity_indirect_cf", 1.0) or 1.0)
+        return direct + indirect
+
+    def _build_waterwise_reference_maps(
+        self,
+        flavours: List[EnvironmentalFlavor],
+        timeslots: List[CarbonAwareTimeslot],
+        water_metric: str,
+    ) -> Tuple[Dict[Tuple[str, int], float], Dict[Tuple[str, int], float]]:
+        """Build normalized WaterWise-style reference signals.
+
+        WaterWise uses region-level historical normalized carbon/water terms.
+        In our offline node-time setting, the closest analogue is a rolling
+        reference over recent node-slot carbon and water-intensity signals.
+        """
+        slot_ids = sorted(ts.id for ts in timeslots)
+        slot_set = set(slot_ids)
+        window = max(int(getattr(self, "waterwise_history_window", 10)), 1)
+        raw_carbon: Dict[Tuple[str, int], float] = {}
+        raw_water: Dict[Tuple[str, int], float] = {}
+
+        for flavour in flavours:
+            for ts in timeslots:
+                current_slot = ts.id
+                history_slots = [
+                    slot
+                    for slot in range(current_slot - window + 1, current_slot + 1)
+                    if slot in slot_set
+                ]
+                if not history_slots:
+                    history_slots = [current_slot]
+                carbon_avg = sum(get_carbon_intensity(flavour, slot) for slot in history_slots) / len(history_slots)
+                water_avg = sum(self._water_intensity_signal(flavour, slot, water_metric) for slot in history_slots) / len(history_slots)
+                key = (flavour.id, current_slot)
+                raw_carbon[key] = float(carbon_avg)
+                raw_water[key] = float(water_avg)
+
+        carbon_max = max(raw_carbon.values(), default=0.0)
+        water_max = max(raw_water.values(), default=0.0)
+        carbon_denom = carbon_max if carbon_max > 1e-12 else 1.0
+        water_denom = water_max if water_max > 1e-12 else 1.0
+        carbon_ref = {key: value / carbon_denom for key, value in raw_carbon.items()}
+        water_ref = {key: value / water_denom for key, value in raw_water.items()}
+        return carbon_ref, water_ref
+
+    def _build_waterwise_scalarized_terms(
+        self,
+        placements,
+        flavours: List[EnvironmentalFlavor],
+        timeslots: List[CarbonAwareTimeslot],
+        placement_vars,
+        use_cpsat: bool = False,
+        excluded_pods: Optional[set] = None,
+    ):
+        """Build WaterWise-style normalized scalarized objective terms."""
+        excluded_pods = excluded_pods or set()
+        flv_by_id = {flavour.id: flavour for flavour in flavours}
+        pod_by_id = {pod.id: pod for pod in self.pending_pods}
+        carbon_weight = float(getattr(self, "waterwise_carbon_weight", 0.5))
+        water_weight = 1.0 - carbon_weight
+        reference_weight = float(getattr(self, "waterwise_reference_weight", 0.1))
+        water_metric = getattr(self, "waterwise_water_metric", "scarcity")
+        carbon_ref, water_ref = self._build_waterwise_reference_maps(flavours, timeslots, water_metric)
+
+        candidate_rows: Dict[str, List[Tuple[str, int, float, float, float, float]]] = {}
+        for pod_id, pod_placements in placements.items():
+            if pod_id in excluded_pods:
+                continue
+            pod_obj = pod_by_id.get(pod_id)
+            if not pod_obj:
+                continue
+            for flv_id, ts_id, _ in pod_placements:
+                flv_obj = flv_by_id.get(flv_id)
+                if not flv_obj:
+                    continue
+                footprint = compute_footprint_vector(
+                    flavour=flv_obj,
+                    start_slot=ts_id,
+                    pod=pod_obj,
+                    used_cpu_before_by_slot=None,
+                    embodied_allocation_mode=getattr(self, "embodied_allocation_mode", "proportional"),
+                    operational_only=getattr(self, "operational_only", False),
+                    use_pod_power_only=True,
+                )
+                carbon_value = float(footprint.total_carbon_g)
+                water_value = self._footprint_water_value(footprint, water_metric)
+                candidate_rows.setdefault(pod_id, []).append(
+                    (
+                        flv_id,
+                        ts_id,
+                        carbon_value,
+                        water_value,
+                        carbon_ref.get((flv_id, ts_id), 0.0),
+                        water_ref.get((flv_id, ts_id), 0.0),
+                    )
+                )
+
+        terms = []
+        scale = 1_000_000
+        for pod_id, rows in candidate_rows.items():
+            carbon_max = max((row[2] for row in rows), default=0.0)
+            water_max = max((row[3] for row in rows), default=0.0)
+            carbon_denom = carbon_max if carbon_max > 1e-12 else 1.0
+            water_denom = water_max if water_max > 1e-12 else 1.0
+
+            for flv_id, ts_id, carbon_value, water_value, carbon_ref_value, water_ref_value in rows:
+                normalized_score = (
+                    carbon_weight * (carbon_value / carbon_denom)
+                    + water_weight * (water_value / water_denom)
+                    + reference_weight * (
+                        carbon_weight * carbon_ref_value
+                        + water_weight * water_ref_value
+                    )
+                )
+                var = placement_vars[(pod_id, flv_id, ts_id)]
+                if use_cpsat:
+                    terms.append(int(round(normalized_score * scale)) * var)
+                else:
+                    terms.append(normalized_score * var)
+
+        logging.info(
+            "Built WaterWise-style scalarized objective terms: pods=%s terms=%s lambda_C=%.2f lambda_W=%.2f lambda_ref=%.3f metric=%s",
+            len(candidate_rows),
+            len(terms),
+            carbon_weight,
+            water_weight,
+            reference_weight,
+            water_metric,
+        )
+        return terms
 
     def _build_water_linear_terms(
         self,
@@ -441,7 +646,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         """
         import pulp
         name = (solver_cfg.get('name') or self.solver_name or 'cbc').lower()
-        msg = True
+        msg = bool(solver_cfg.get('msg', False))
         # Try explicit name first
         if name == 'highs':
             try:
@@ -548,39 +753,49 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 # Keep RAM in MB; assume requests already MB
                 model.Add(sum(int(coeff) * var for coeff, var in terms) <= int(ram_limit))
 
-        # Objective: dynamic + idle+embodied carbon
-        obj_terms = []
-        for pod_id, pod_placements in placements.items():
-            if pod_id in unplaced_phase1:
-                continue
-            pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
-            if not pod_obj:
-                continue
-            for flv_id, ts_id, _ in pod_placements:
-                flv_obj = flv_by_id.get(flv_id)
-                if not flv_obj:
+        # Objective: original carbon objective or WaterWise-style scalarized objective.
+        if getattr(self, "phase2_objective_mode", "carbon") == "waterwise-scalarized":
+            obj_terms = self._build_waterwise_scalarized_terms(
+                placements=placements,
+                flavours=flavours,
+                timeslots=timeslots,
+                placement_vars=X,
+                use_cpsat=True,
+                excluded_pods=set(unplaced_phase1),
+            )
+        else:
+            obj_terms = []
+            for pod_id, pod_placements in placements.items():
+                if pod_id in unplaced_phase1:
                     continue
-                k_watts = (flv_obj.power.get('max', 0.0) - flv_obj.power.get('active', 0.0))
-                total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
-                u = pod_obj.cpuRequest / total_cpu
-                for offset in range(int(pod_obj.duration)):
-                    slot = ts_id + offset
-                    if slot >= max_time_slots:
-                        break
-                    intensity = flv_obj.forecast.get(slot, 200.0)
-                    coef_milli = int(round(self.weight_dynamic * intensity * (k_watts * u) / 1000.0 * 1000))  # milli-grams
-                    obj_terms.append(coef_milli * X[(pod_id, flv_id, ts_id)])
+                pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                if not pod_obj:
+                    continue
+                for flv_id, ts_id, _ in pod_placements:
+                    flv_obj = flv_by_id.get(flv_id)
+                    if not flv_obj:
+                        continue
+                    k_watts = (flv_obj.power.get('max', 0.0) - flv_obj.power.get('active', 0.0))
+                    total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
+                    u = pod_obj.cpuRequest / total_cpu
+                    for offset in range(int(pod_obj.duration)):
+                        slot = ts_id + offset
+                        if slot >= max_time_slots:
+                            break
+                        intensity = flv_obj.forecast.get(slot, 200.0)
+                        coef_milli = int(round(self.weight_dynamic * intensity * (k_watts * u) / 1000.0 * 1000))  # milli-grams
+                        obj_terms.append(coef_milli * X[(pod_id, flv_id, ts_id)])
 
-        for flv in flavours:
-            idle_w = flv.power.get('idle', 0.0)
-            emb_per_h = (flv.embodiedCarbon / flv.lifetime) if flv.lifetime else 0.0
-            for ts in timeslots:
-                intensity = flv.forecast.get(ts.id, 200.0)
-                activation_g = intensity * (idle_w / 1000.0)
-                if not getattr(self, 'operational_only', False):
-                    activation_g += emb_per_h
-                coef_milli = int(round(self.weight_activation * activation_g * 1000))
-                obj_terms.append(coef_milli * Y[(flv.id, ts.id)])
+            for flv in flavours:
+                idle_w = flv.power.get('idle', 0.0)
+                emb_per_h = (flv.embodiedCarbon / flv.lifetime) if flv.lifetime else 0.0
+                for ts in timeslots:
+                    intensity = flv.forecast.get(ts.id, 200.0)
+                    activation_g = intensity * (idle_w / 1000.0)
+                    if not getattr(self, 'operational_only', False):
+                        activation_g += emb_per_h
+                    coef_milli = int(round(self.weight_activation * activation_g * 1000))
+                    obj_terms.append(coef_milli * Y[(flv.id, ts.id)])
 
         if self.phase2_water_budget is not None:
             water_dynamic_terms, water_activation_terms = self._build_water_linear_terms(
@@ -1299,39 +1514,52 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 for pod_id in placed_phase1:
                     prob2 += (s[pod_id] == 0), f"FIX_S_PLACED_{pod_id}"
 
-                # Objective Phase 2: minimize total emissions (dynamic + idle + embodied)
-                dynamic_terms = []
-                for pod_id, pod_placements in placements.items():
-                    pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
-                    if not pod_obj:
-                        continue
-                    for flv_id, ts_id, _ in pod_placements:
-                        flv_obj = next((f for f in flavours if f.id == flv_id), None)
-                        if not flv_obj:
+                # Objective Phase 2: original carbon objective or WaterWise-style scalarized baseline.
+                if getattr(self, "phase2_objective_mode", "carbon") == "waterwise-scalarized":
+                    waterwise_terms = self._build_waterwise_scalarized_terms(
+                        placements=placements,
+                        flavours=flavours,
+                        timeslots=timeslots,
+                        placement_vars=x,
+                        use_cpsat=False,
+                        excluded_pods=set(unplaced_phase1),
+                    )
+                    prob2 += pulp.lpSum(waterwise_terms)
+                    logging.info("  - [Phase 2] Objective: WaterWise-style normalized scalarized carbon-water objective")
+                else:
+                    dynamic_terms = []
+                    for pod_id, pod_placements in placements.items():
+                        pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                        if not pod_obj:
                             continue
-                        k_watts = compute_node_dynamic_coeff_watts(flv_obj)
-                        total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
-                        u_pod = pod_obj.cpuRequest / total_cpu
-                        for offset in range(int(pod_obj.duration)):
-                            slot = ts_id + offset
-                            if slot >= max_time_slots:
-                                break
-                            intensity = get_carbon_intensity(flv_obj, slot)
-                            coef_g = intensity * (k_watts * u_pod / 1000.0)
-                            dynamic_terms.append(self.weight_dynamic * coef_g * x[(pod_id, flv_id, ts_id)])
+                        for flv_id, ts_id, _ in pod_placements:
+                            flv_obj = next((f for f in flavours if f.id == flv_id), None)
+                            if not flv_obj:
+                                continue
+                            k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+                            total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
+                            u_pod = pod_obj.cpuRequest / total_cpu
+                            for offset in range(int(pod_obj.duration)):
+                                slot = ts_id + offset
+                                if slot >= max_time_slots:
+                                    break
+                                intensity = get_carbon_intensity(flv_obj, slot)
+                                coef_g = intensity * (k_watts * u_pod / 1000.0)
+                                dynamic_terms.append(self.weight_dynamic * coef_g * x[(pod_id, flv_id, ts_id)])
 
-                idle_embodied_terms = []
-                for flv in flavours:
-                    idle_w = flv.power.get('idle', 0.0)
-                    embodied_per_h = compute_embodied_per_hour_g(flv)
-                    for ts in timeslots:
-                        intensity = get_carbon_intensity(flv, ts.id)
-                        idle_oper_g = intensity * (idle_w / 1000.0)
-                        add_emb = 0.0 if getattr(self, 'operational_only', False) else embodied_per_h
-                        idle_embodied_terms.append(self.weight_activation * (idle_oper_g + add_emb) * y[(flv.id, ts.id)])
+                    idle_embodied_terms = []
+                    for flv in flavours:
+                        idle_w = flv.power.get('idle', 0.0)
+                        embodied_per_h = compute_embodied_per_hour_g(flv)
+                        for ts in timeslots:
+                            intensity = get_carbon_intensity(flv, ts.id)
+                            idle_oper_g = intensity * (idle_w / 1000.0)
+                            add_emb = 0.0 if getattr(self, 'operational_only', False) else embodied_per_h
+                            idle_embodied_terms.append(self.weight_activation * (idle_oper_g + add_emb) * y[(flv.id, ts.id)])
 
-                emissions_objective = pulp.lpSum(dynamic_terms) + pulp.lpSum(idle_embodied_terms)
-                prob2 += emissions_objective
+                    emissions_objective = pulp.lpSum(dynamic_terms) + pulp.lpSum(idle_embodied_terms)
+                    prob2 += emissions_objective
+                    logging.info("  - [Phase 2] Objective: carbon emissions")
 
                 if self.phase2_water_budget is not None:
                     water_dynamic_terms, water_activation_terms = self._build_water_linear_terms(
@@ -1650,41 +1878,52 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             # Penalty term
             objective_terms.append(pulp.lpSum([penalty_for_unplaced * s[pod_id] for pod_id in s]))
 
-            # Dynamic emissions terms (gCO2)
-            dynamic_terms = []
-            for pod_id, pod_placements in placements.items():
-                pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
-                if not pod_obj:
-                    continue
-                for flv_id, ts_id, _ in pod_placements:
-                    flv_obj = next((f for f in flavours if f.id == flv_id), None)
-                    if not flv_obj:
+            if getattr(self, "phase2_objective_mode", "carbon") == "waterwise-scalarized":
+                waterwise_terms = self._build_waterwise_scalarized_terms(
+                    placements=placements,
+                    flavours=flavours,
+                    timeslots=timeslots,
+                    placement_vars=x,
+                    use_cpsat=False,
+                )
+                if waterwise_terms:
+                    objective_terms.append(pulp.lpSum(waterwise_terms))
+            else:
+                # Dynamic emissions terms (gCO2)
+                dynamic_terms = []
+                for pod_id, pod_placements in placements.items():
+                    pod_obj = next((p for p in self.pending_pods if p.id == pod_id), None)
+                    if not pod_obj:
                         continue
-                    k_watts = compute_node_dynamic_coeff_watts(flv_obj)
-                    total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
-                    u_pod = pod_obj.cpuRequest / total_cpu
-                    for offset in range(int(pod_obj.duration)):
-                        slot = ts_id + offset
-                        if slot >= max_time_slots:
-                            break
-                        intensity = get_carbon_intensity(flv_obj, slot)
-                        coef_g = intensity * (k_watts * u_pod / 1000.0)
-                        dynamic_terms.append(self.weight_dynamic * coef_g * x[(pod_id, flv_id, ts_id)])
-            if dynamic_terms:
-                objective_terms.append(pulp.lpSum(dynamic_terms))
+                    for flv_id, ts_id, _ in pod_placements:
+                        flv_obj = next((f for f in flavours if f.id == flv_id), None)
+                        if not flv_obj:
+                            continue
+                        k_watts = compute_node_dynamic_coeff_watts(flv_obj)
+                        total_cpu = flv_obj.totalCpu if flv_obj.totalCpu else 1e-6
+                        u_pod = pod_obj.cpuRequest / total_cpu
+                        for offset in range(int(pod_obj.duration)):
+                            slot = ts_id + offset
+                            if slot >= max_time_slots:
+                                break
+                            intensity = get_carbon_intensity(flv_obj, slot)
+                            coef_g = intensity * (k_watts * u_pod / 1000.0)
+                            dynamic_terms.append(self.weight_dynamic * coef_g * x[(pod_id, flv_id, ts_id)])
+                if dynamic_terms:
+                    objective_terms.append(pulp.lpSum(dynamic_terms))
 
-            # Idle + embodied terms per (node,slot)
-            idle_embodied_terms = []
-            for flv in flavours:
-                idle_w = flv.power.get('idle', 0.0)
-                embodied_per_h = compute_embodied_per_hour_g(flv)
-                for ts in timeslots:
-                    intensity = get_carbon_intensity(flv, ts.id)
-                    idle_oper_g = intensity * (idle_w / 1000.0)
-                    add_emb = 0.0 if getattr(self, 'operational_only', False) else embodied_per_h
-                    idle_embodied_terms.append(self.weight_activation * (idle_oper_g + add_emb) * y[(flv.id, ts.id)])
-            if idle_embodied_terms:
-                objective_terms.append(pulp.lpSum(idle_embodied_terms))
+                # Idle + embodied terms per (node,slot)
+                idle_embodied_terms = []
+                for flv in flavours:
+                    idle_w = flv.power.get('idle', 0.0)
+                    embodied_per_h = compute_embodied_per_hour_g(flv)
+                    for ts in timeslots:
+                        intensity = get_carbon_intensity(flv, ts.id)
+                        idle_oper_g = intensity * (idle_w / 1000.0)
+                        add_emb = 0.0 if getattr(self, 'operational_only', False) else embodied_per_h
+                        idle_embodied_terms.append(self.weight_activation * (idle_oper_g + add_emb) * y[(flv.id, ts.id)])
+                if idle_embodied_terms:
+                    objective_terms.append(pulp.lpSum(idle_embodied_terms))
 
             prob += pulp.lpSum(objective_terms)
 
@@ -1810,7 +2049,7 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     retry_time_limit = max(int(time_limit_cfg * 2), 180)
                     retry_gap = max(float(gap_tolerance_cfg), 0.2)
                     retry_solver = pulp.PULP_CBC_CMD(
-                        msg=True,
+                        msg=bool(solver_cfg.get('msg', False)),
                         timeLimit=retry_time_limit,
                         gapRel=retry_gap,
                         threads=threads_cfg

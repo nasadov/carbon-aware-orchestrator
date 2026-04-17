@@ -1,5 +1,6 @@
 # OS generated files
 .DS_Store
+**/.DS_Store
 
 # Editor directories
 .idea/
@@ -12,6 +13,7 @@ costminimization_heu/
 
 # Python artifacts
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyc
 *$py.class
@@ -112,6 +114,10 @@ analysis/*.cache
 
 # Local water-data implementation note
 pkg/carbon-aware/data/water/README.md
+
+# Local backup files
+*.backup
+*.bak
 
 # Generated workloads
 workloads/

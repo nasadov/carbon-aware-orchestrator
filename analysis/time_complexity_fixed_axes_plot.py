@@ -33,8 +33,10 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
-DEFAULT_EXPERIMENTS_ROOT = "/root/carbon-aware-orchestrator/experiments/time_complexity"
-DEFAULT_OUTPUT_DIR = "/root/carbon-aware-orchestrator/figures/TimeComplexity"
+from repo_paths import EXPERIMENTS_ROOT, FIGURES_ROOT
+
+DEFAULT_EXPERIMENTS_ROOT = str(EXPERIMENTS_ROOT / "time_complexity")
+DEFAULT_OUTPUT_DIR = str(FIGURES_ROOT / "TimeComplexity")
 
 
 ALG_STYLES: Dict[str, Dict[str, str]] = {
@@ -232,7 +234,6 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 
 
 

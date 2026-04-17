@@ -17,7 +17,8 @@ SEEDS=(42 43 44)
 # Preserve original invocation (for metadata)
 ORIG_CMDLINE="$0 $*"
 
-REPO_ROOT=/root/carbon-aware-orchestrator
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="$REPO_ROOT/pkg/carbon-aware/infra-workload-config.yaml"
 GENERATOR="$REPO_ROOT/pkg/carbon-aware/infra_workload_gen.py"
 SERVER_MAIN="$REPO_ROOT/pkg/carbon-aware/server-python/main.py"
@@ -148,9 +149,9 @@ PY
 
 # Function to count pods in workloads directory
 count_pods() {
-  python3 - <<'PY'
+  REPO_ROOT_FOR_PY="$REPO_ROOT" python3 - <<'PY'
 import os, re, glob, yaml
-wd="/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads"
+wd=os.path.join(os.environ["REPO_ROOT_FOR_PY"], "pkg", "carbon-aware", "workloads")
 files=glob.glob(os.path.join(wd, "timeslot_*.yaml"))
 if not files:
     print(0)
@@ -172,9 +173,9 @@ PY
 
 # Function to count nodes in nodes.yaml (multi-document YAML)
 count_nodes() {
-  python3 - <<'PY'
-import yaml
-p="/root/carbon-aware-orchestrator/pkg/carbon-aware/nodes.yaml"
+  REPO_ROOT_FOR_PY="$REPO_ROOT" python3 - <<'PY'
+import os, yaml
+p=os.path.join(os.environ["REPO_ROOT_FOR_PY"], "pkg", "carbon-aware", "nodes.yaml")
 try:
     with open(p,'r') as f:
         docs=list(yaml.safe_load_all(f))

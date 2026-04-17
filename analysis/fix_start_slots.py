@@ -130,8 +130,10 @@ def main():
     print("Starting fix_start_slots.py script...")
     
     # Paths
-    workloads_dir = '/root/carbon-aware-orchestrator/pkg/carbon-aware/workloads-vanilla'
-    experiments_root = Path('/root/carbon-aware-orchestrator/experiments')
+    from repo_paths import EXPERIMENTS_ROOT, WORKLOADS_VANILLA_DIR
+
+    workloads_dir = str(WORKLOADS_VANILLA_DIR)
+    experiments_root = EXPERIMENTS_ROOT
 
     csv_path = experiments_root / 'vanilla_placement_session.csv'
     output_path = experiments_root / 'vanilla_placement_session_fixed.csv'
