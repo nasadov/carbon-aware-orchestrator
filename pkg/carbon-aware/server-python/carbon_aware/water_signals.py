@@ -197,6 +197,7 @@ def _hydrate_dataset_backed_defaults(water_config: Dict[str, Any], base_dir: Pat
     for subcategory, row in hardware_rows.items():
         hardware_entry = water_config.setdefault("by_hardware_subcategory", {}).setdefault(subcategory, {})
         hardware_entry.setdefault("embodied_water", _as_float(row.get("embodied_water_l"), 0.0))
+        hardware_entry.setdefault("embodied_scarcity_cf", _as_float(row.get("embodied_scarcity_cf"), 1.0))
         manufacturing_country = (row.get("manufacturing_country") or "").strip().upper()
         if manufacturing_country:
             hardware_entry.setdefault("manufacturing_country", manufacturing_country)

@@ -1,0 +1,17 @@
+component_id,description,unit_basis,raw_water_l_low,raw_water_l_base,raw_water_l_high,manufacturing_country,source_id,source_note
+processor_iot,IoT-class system-on-chip package,per_unit,4.0,7.0,12.0,TW,jiang2025thirstyflops;bardon2020ppace,Bounded processor proxy using process-based semiconductor-water modeling rationale.
+processor_phone,Mobile application processor package,per_unit,8.0,12.0,20.0,TW,jiang2025thirstyflops;bardon2020ppace,Bounded processor proxy using process-based semiconductor-water modeling rationale.
+processor_laptop,Laptop-class CPU package,per_unit,20.0,35.0,55.0,TW,jiang2025thirstyflops;bardon2020ppace,Bounded processor proxy using process-based semiconductor-water modeling rationale.
+processor_server,Server-class CPU package,per_unit,70.0,120.0,180.0,TW,jiang2025thirstyflops;bardon2020ppace,Bounded processor proxy using process-based semiconductor-water modeling rationale.
+dram_mobile_gb,Mobile DRAM package,per_gb,0.8,1.2,1.8,KR,jiang2025thirstyflops;skhynix2020water;skhynix2021productenvironment,Capacity-based bounded DRAM factor anchored by certified semiconductor product-water evidence.
+dram_compute_gb,Compute DRAM package,per_gb,1.0,1.4,2.0,KR,jiang2025thirstyflops;skhynix2020water;skhynix2021productenvironment,Capacity-based bounded DRAM factor anchored by certified semiconductor product-water evidence.
+flash_mobile_gb,Mobile NAND flash package,per_gb,0.08,0.12,0.18,KR,jiang2025thirstyflops;skhynix2020water;skhynix2021productenvironment,Capacity-based bounded NAND factor anchored by certified semiconductor product-water evidence.
+ssd_tb,Enterprise SSD storage,per_tb,70.0,100.0,140.0,KR,seagate2020nytro3331;jiang2025thirstyflops,Embodied-only storage factor derived from product water reports and bounded for technology variance.
+board_assembly_iot,IoT board and packaging assembly,per_unit,12.0,18.0,28.0,CN,kuo2020packaging;dell2019r740lca,Residual electronics-and-assembly term anchored by packaging studies and server LCA hotspot structure.
+peripheral_iot,IoT enclosure radio and miscellaneous assembly,per_unit,6.0,10.0,14.0,CN,kuo2020packaging;dell2019r740lca,Residual device-level term for non-silicon hardware not modeled separately.
+board_assembly_phone,Phone mainboard and packaging assembly,per_unit,10.0,15.0,24.0,CN,kuo2020packaging;dell2019r740lca,Residual electronics-and-assembly term anchored by packaging studies and server LCA hotspot structure.
+peripheral_phone,Phone display battery radio and enclosure block,per_unit,25.0,40.0,60.0,CN,kuo2020packaging;dell2019r740lca,Bounded residual mobile-device term for non-processor hardware.
+board_assembly_laptop,Laptop mainboard and packaging assembly,per_unit,60.0,90.0,140.0,CN,kuo2020packaging;dell2019r740lca;dell2025r760lca,Residual electronics-and-assembly term anchored by packaging studies and server LCA hotspot structure.
+peripheral_laptop,Laptop display battery chassis and miscellaneous assembly,per_unit,80.0,140.0,220.0,CN,kuo2020packaging;dell2019r740lca;dell2025r760lca,Bounded residual laptop term for non-processor hardware.
+board_assembly_server,Server motherboard backplane and packaging assembly,per_unit,220.0,320.0,480.0,CN,kuo2020packaging;dell2019r740lca;dell2025r760lca,Residual server electronics-and-assembly term anchored by public server LCAs.
+peripheral_server,Server chassis PSU NIC fans and miscellaneous assembly,per_unit,160.0,260.0,400.0,CN,kuo2020packaging;dell2019r740lca;dell2025r760lca,Bounded residual server-support term for non-silicon hardware.
