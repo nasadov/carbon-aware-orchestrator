@@ -21,7 +21,10 @@ def _default_water_config() -> Dict[str, Any]:
             "aware_country_factors_csv": "",
             "grid_water_factors_csv": "",
             "wue_region_slot_csv": "",
+            "ewif_region_slot_csv": "",
             "embodied_water_reference_csv": "",
+            "region_weather_sites_csv": "",
+            "region_cooling_profiles_csv": "",
         },
         "defaults": {
             "pue": 1.2,
@@ -192,6 +195,14 @@ def _hydrate_dataset_backed_defaults(water_config: Dict[str, Any], base_dir: Pat
         for slot, row in rows_by_slot.items():
             if slot not in slot_map:
                 slot_map[slot] = _as_float(row.get("direct_wue_l_per_kwh"), 0.0)
+
+    region_ewif_rows = _load_region_slot_rows(_resolve_data_path(data_sources.get("ewif_region_slot_csv"), base_dir))
+    for region, rows_by_slot in region_ewif_rows.items():
+        region_entry = water_config.setdefault("by_region", {}).setdefault(region, {})
+        slot_map = region_entry.setdefault("ewif_by_slot", {})
+        for slot, row in rows_by_slot.items():
+            if slot not in slot_map:
+                slot_map[slot] = _as_float(row.get("ewif_l_per_kwh"), 0.0)
 
     hardware_rows = _load_hardware_rows(_resolve_data_path(data_sources.get("embodied_water_reference_csv"), base_dir))
     for subcategory, row in hardware_rows.items():

@@ -1,0 +1,5 @@
+region,site_proxy_name,latitude,longitude,source_note,confidence
+DE,Frankfurt am Main metro proxy,50.1109,8.6821,Metro-scale proxy for the dominant DE cloud/data-center hub,metro
+FR,Paris metro proxy,48.8566,2.3522,Metro-scale proxy for the dominant FR cloud/data-center hub,metro
+ES,Madrid metro proxy,40.4168,-3.7038,Metro-scale proxy for the dominant ES cloud/data-center hub,metro
+IT-NO,Milan metro proxy,45.4642,9.1900,Metro-scale proxy for the dominant North Italy cloud/data-center hub,metro

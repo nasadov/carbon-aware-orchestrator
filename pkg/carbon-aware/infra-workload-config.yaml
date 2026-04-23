@@ -90,8 +90,11 @@ water:
   data_sources:
     aware_country_factors_csv: data/water/aware20_country_nonagri_factors.csv
     grid_water_factors_csv: data/water/wri_country_grid_water_factors.csv
-    wue_region_slot_csv: data/water/open_meteo_region_wue_by_slot.csv
+    wue_region_slot_csv: data/water/wue_region_slot_base.csv
+    ewif_region_slot_csv: ""
     embodied_water_reference_csv: data/water/embodied_water_reference.csv
+    region_weather_sites_csv: data/water/region_weather_sites.csv
+    region_cooling_profiles_csv: data/water/region_cooling_profiles.csv
   defaults:
     pue: 1.2
     embodied_water: 0.0
@@ -112,7 +115,7 @@ water:
       wue: 0.18
       criticality: 1.05
       weather_reference:
-        name: Paris
+        name: Paris metro proxy
         latitude: 48.8566
         longitude: 2.3522
     ES:
@@ -120,7 +123,7 @@ water:
       wue: 0.32
       criticality: 1.35
       weather_reference:
-        name: Madrid
+        name: Madrid metro proxy
         latitude: 40.4168
         longitude: -3.7038
     IT-NO:
@@ -128,7 +131,7 @@ water:
       wue: 0.24
       criticality: 1.18
       weather_reference:
-        name: Milan
+        name: Milan metro proxy
         latitude: 45.4642
         longitude: 9.1900
     DE:
@@ -136,7 +139,7 @@ water:
       wue: 0.12
       criticality: 1.02
       weather_reference:
-        name: Frankfurt
+        name: Frankfurt am Main metro proxy
         latitude: 50.1109
         longitude: 8.6821
   by_country:
