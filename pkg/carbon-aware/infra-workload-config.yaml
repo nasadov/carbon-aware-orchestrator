@@ -87,11 +87,12 @@ nodes:
   random_seed: 44
 water:
   enabled: true
+  operational_scarcity_temporal_resolution: monthly
   data_sources:
     aware_country_factors_csv: data/water/aware20_country_nonagri_factors.csv
     grid_water_factors_csv: data/water/wri_country_grid_water_factors.csv
     wue_region_slot_csv: data/water/wue_region_slot_base.csv
-    ewif_region_slot_csv: ""
+    ewif_region_slot_csv: data/water/ewif_region_slot.csv
     embodied_water_reference_csv: data/water/embodied_water_reference.csv
     region_weather_sites_csv: data/water/region_weather_sites.csv
     region_cooling_profiles_csv: data/water/region_cooling_profiles.csv

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -12,6 +13,20 @@ import yaml
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "infra-workload-config.yaml"
+MONTH_CF_COLUMNS = {
+    1: "jan_cf",
+    2: "feb_cf",
+    3: "mar_cf",
+    4: "apr_cf",
+    5: "may_cf",
+    6: "jun_cf",
+    7: "jul_cf",
+    8: "aug_cf",
+    9: "sep_cf",
+    10: "oct_cf",
+    11: "nov_cf",
+    12: "dec_cf",
+}
 
 
 def _default_water_config() -> Dict[str, Any]:
@@ -36,6 +51,7 @@ def _default_water_config() -> Dict[str, Any]:
             "embodied_scarcity_cf": 1.0,
             "criticality": 1.0,
         },
+        "operational_scarcity_temporal_resolution": "monthly",
         "region_to_country": {},
         "by_region": {},
         "by_country": {},
@@ -58,6 +74,12 @@ def load_water_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     merged["enabled"] = bool(water.get("enabled", merged["enabled"]))
     merged["data_sources"].update(water.get("data_sources", {}) or {})
     merged["defaults"].update(water.get("defaults", {}) or {})
+    merged["operational_scarcity_temporal_resolution"] = str(
+        water.get(
+            "operational_scarcity_temporal_resolution",
+            merged["operational_scarcity_temporal_resolution"],
+        )
+    ).strip().lower()
     merged["region_to_country"].update(water.get("region_to_country", {}) or {})
     merged["by_region"].update(water.get("by_region", {}) or {})
     merged["by_country"].update(water.get("by_country", {}) or {})
@@ -172,6 +194,60 @@ def _load_hardware_rows(csv_path: Optional[Path]) -> Dict[str, Dict[str, str]]:
     return result
 
 
+def _parse_row_datetime(value: Any) -> Optional[datetime]:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _slot_month_from_row(row: Dict[str, str]) -> Optional[int]:
+    for key in ("forecast_datetime_utc", "weather_time_utc", "mix_datetime_utc", "datetime", "time"):
+        parsed = _parse_row_datetime(row.get(key))
+        if parsed is not None:
+            return parsed.month
+    return None
+
+
+def _country_cf_for_month(row: Dict[str, str], month: Optional[int], default: float) -> float:
+    if month is None:
+        return default
+    column = MONTH_CF_COLUMNS.get(month)
+    if column is None:
+        return default
+    return _as_float(row.get(column), default)
+
+
+def _apply_operational_scarcity_by_slot(
+    water_config: Dict[str, Any],
+    aware_rows: Dict[str, Dict[str, str]],
+    region_slot_rows: Dict[str, Dict[int, Dict[str, str]]],
+) -> None:
+    if not region_slot_rows:
+        return
+
+    for region, rows_by_slot in region_slot_rows.items():
+        country_code = _resolve_country(region, water_config)
+        country_entry = water_config.setdefault("by_country", {}).setdefault(country_code, {})
+        annual_cf = _as_float(country_entry.get("direct_scarcity_cf"), 1.0)
+        aware_row = aware_rows.get(country_code, {})
+        region_entry = water_config.setdefault("by_region", {}).setdefault(region, {})
+        direct_map = region_entry.setdefault("direct_scarcity_cf_by_slot", {})
+        indirect_map = region_entry.setdefault("indirect_scarcity_cf_by_slot", {})
+
+        for slot, row in rows_by_slot.items():
+            slot_month = _slot_month_from_row(row)
+            month_cf = _country_cf_for_month(aware_row, slot_month, annual_cf)
+            direct_map.setdefault(slot, month_cf)
+            indirect_map.setdefault(slot, month_cf)
+
+
 def _hydrate_dataset_backed_defaults(water_config: Dict[str, Any], base_dir: Path) -> None:
     data_sources = water_config.get("data_sources", {}) or {}
 
@@ -183,12 +259,18 @@ def _hydrate_dataset_backed_defaults(water_config: Dict[str, Any], base_dir: Pat
         country_entry.setdefault("indirect_scarcity_cf", annual_cf)
         country_entry.setdefault("embodied_scarcity_cf", annual_cf)
 
+    operational_scarcity_temporal_resolution = str(
+        water_config.get("operational_scarcity_temporal_resolution", "monthly")
+    ).strip().lower()
+
     grid_rows = _load_country_rows(_resolve_data_path(data_sources.get("grid_water_factors_csv"), base_dir))
     for country_code, row in grid_rows.items():
         country_entry = water_config.setdefault("by_country", {}).setdefault(country_code, {})
         country_entry.setdefault("ewif", _as_float(row.get("consumption_l_per_kwh"), 0.0))
 
     region_wue_rows = _load_region_slot_rows(_resolve_data_path(data_sources.get("wue_region_slot_csv"), base_dir))
+    if operational_scarcity_temporal_resolution == "monthly":
+        _apply_operational_scarcity_by_slot(water_config, aware_rows, region_wue_rows)
     for region, rows_by_slot in region_wue_rows.items():
         region_entry = water_config.setdefault("by_region", {}).setdefault(region, {})
         slot_map = region_entry.setdefault("wue_by_slot", {})
@@ -197,6 +279,8 @@ def _hydrate_dataset_backed_defaults(water_config: Dict[str, Any], base_dir: Pat
                 slot_map[slot] = _as_float(row.get("direct_wue_l_per_kwh"), 0.0)
 
     region_ewif_rows = _load_region_slot_rows(_resolve_data_path(data_sources.get("ewif_region_slot_csv"), base_dir))
+    if operational_scarcity_temporal_resolution == "monthly":
+        _apply_operational_scarcity_by_slot(water_config, aware_rows, region_ewif_rows)
     for region, rows_by_slot in region_ewif_rows.items():
         region_entry = water_config.setdefault("by_region", {}).setdefault(region, {})
         slot_map = region_entry.setdefault("ewif_by_slot", {})
@@ -294,6 +378,28 @@ def attach_water_metadata(
             country_overrides.get("indirect_scarcity_cf", default_indirect_cf),
         ),
         default_indirect_cf,
+    )
+    flavor.water_scarcity_direct_cf_by_slot = _build_slot_map(
+        region_overrides.get(
+            "direct_scarcity_cf_by_slot",
+            region_overrides.get(
+                "direct_scarcity_cf",
+                country_overrides.get("direct_scarcity_cf", default_direct_cf),
+            ),
+        ),
+        flavor.water_scarcity_direct_cf,
+        slot_count,
+    )
+    flavor.water_scarcity_indirect_cf_by_slot = _build_slot_map(
+        region_overrides.get(
+            "indirect_scarcity_cf_by_slot",
+            region_overrides.get(
+                "indirect_scarcity_cf",
+                country_overrides.get("indirect_scarcity_cf", default_indirect_cf),
+            ),
+        ),
+        flavor.water_scarcity_indirect_cf,
+        slot_count,
     )
     flavor.water_scarcity_embodied_cf = _as_float(
         hardware_overrides.get(

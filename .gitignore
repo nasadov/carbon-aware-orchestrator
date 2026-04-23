@@ -23,6 +23,8 @@ env/
 venv/
 ENV/
 .env/
+.env.local
+.env.*.local
 .venv/
 .pytest_cache/
 .ruff_cache/

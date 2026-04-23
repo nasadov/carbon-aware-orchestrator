@@ -26,11 +26,6 @@ class FootprintVector:
     def finalize(self) -> "FootprintVector":
         self.total_carbon_g = self.operational_carbon_g + self.embodied_carbon_g
         self.total_raw_water_l = self.direct_water_l + self.indirect_water_l + self.embodied_water_l
-        self.scarcity_characterized_water = (
-            self.direct_water_l * self._direct_cf
-            + self.indirect_water_l * self._indirect_cf
-            + self.embodied_water_l * self._embodied_cf
-        )
         self.criticality_adjusted_water = self.total_raw_water_l * self._criticality
         return self
 
@@ -77,6 +72,18 @@ def _slot_value(values: Dict[int, float], slot: int, default: float = 0.0) -> fl
     if values:
         return float(next(iter(values.values())))
     return float(default)
+
+
+def _slot_cf_value(
+    flavour: EnvironmentalFlavor,
+    slot: int,
+    slot_attr: str,
+    scalar_attr: str,
+    default: float = 1.0,
+) -> float:
+    slot_values = getattr(flavour, slot_attr, {}) or {}
+    scalar_default = float(getattr(flavour, scalar_attr, default) or default)
+    return _slot_value(slot_values, slot, scalar_default)
 
 
 def _compute_embodied_share(
@@ -165,11 +172,29 @@ def compute_footprint_vector(
         carbon_intensity = get_carbon_intensity(flavour, slot)
         wue = _slot_value(getattr(flavour, "wue_by_slot", {}) or {}, slot, 0.0)
         ewif = _slot_value(getattr(flavour, "ewif_by_slot", {}) or {}, slot, 0.0)
+        direct_cf = _slot_cf_value(
+            flavour,
+            slot,
+            "water_scarcity_direct_cf_by_slot",
+            "water_scarcity_direct_cf",
+            1.0,
+        )
+        indirect_cf = _slot_cf_value(
+            flavour,
+            slot,
+            "water_scarcity_indirect_cf_by_slot",
+            "water_scarcity_indirect_cf",
+            1.0,
+        )
+        embodied_cf = float(getattr(flavour, "water_scarcity_embodied_cf", 1.0) or 1.0)
 
         result.operational_energy_kwh += energy_kwh
         result.operational_carbon_g += carbon_intensity * energy_kwh
-        result.direct_water_l += energy_kwh * wue
-        result.indirect_water_l += energy_kwh * float(getattr(flavour, "pue", 1.0) or 1.0) * ewif
+        direct_water = energy_kwh * wue
+        indirect_water = energy_kwh * float(getattr(flavour, "pue", 1.0) or 1.0) * ewif
+        result.direct_water_l += direct_water
+        result.indirect_water_l += indirect_water
+        result.scarcity_characterized_water += direct_water * direct_cf + indirect_water * indirect_cf
 
         if not operational_only:
             embodied_share = _compute_embodied_share(
@@ -178,6 +203,8 @@ def compute_footprint_vector(
                 embodied_allocation_mode=embodied_allocation_mode,
             )
             result.embodied_carbon_g += embodied_carbon_per_hour * embodied_share
-            result.embodied_water_l += embodied_water_per_hour * embodied_share
+            embodied_water = embodied_water_per_hour * embodied_share
+            result.embodied_water_l += embodied_water
+            result.scarcity_characterized_water += embodied_water * embodied_cf
 
     return result.finalize()

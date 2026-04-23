@@ -53,6 +53,8 @@ class EnvironmentalFlavor:
         embodiedWater: float = 0.0,
         wue_by_slot: Optional[Dict[int, float]] = None,
         ewif_by_slot: Optional[Dict[int, float]] = None,
+        water_scarcity_direct_cf_by_slot: Optional[Dict[int, float]] = None,
+        water_scarcity_indirect_cf_by_slot: Optional[Dict[int, float]] = None,
         water_scarcity_direct_cf: float = 1.0,
         water_scarcity_indirect_cf: float = 1.0,
         water_scarcity_embodied_cf: float = 1.0,
@@ -73,6 +75,8 @@ class EnvironmentalFlavor:
         self.embodiedWater = embodiedWater
         self.wue_by_slot = wue_by_slot or {}
         self.ewif_by_slot = ewif_by_slot or {}
+        self.water_scarcity_direct_cf_by_slot = water_scarcity_direct_cf_by_slot or {}
+        self.water_scarcity_indirect_cf_by_slot = water_scarcity_indirect_cf_by_slot or {}
         self.water_scarcity_direct_cf = water_scarcity_direct_cf
         self.water_scarcity_indirect_cf = water_scarcity_indirect_cf
         self.water_scarcity_embodied_cf = water_scarcity_embodied_cf

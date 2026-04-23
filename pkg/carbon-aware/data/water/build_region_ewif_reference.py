@@ -148,7 +148,7 @@ def _load_factor_rules(path: Path) -> Dict[str, FactorRule]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
-            source_type = str(row.get("source_type", "")).strip().lower()
+            source_type = _canonicalize_source_type(row.get("source_type", ""))
             if not source_type:
                 continue
             rules[source_type] = FactorRule(
@@ -169,6 +169,10 @@ def _safe_optional_float(value: Any) -> Optional[float]:
     if value in (None, "", "None"):
         return None
     return float(value)
+
+
+def _canonicalize_source_type(value: Any) -> str:
+    return str(value).strip().lower().replace("_", "-").replace(" ", "-")
 
 
 def _slot_range_mode(region_slots: Mapping[str, Sequence[SlotRecord]], explicit_mode: str) -> str:
@@ -295,7 +299,7 @@ def _entry_breakdown(entry: Mapping[str, Any]) -> Dict[str, float]:
         value = float(raw_value)
         if value <= 0.0:
             continue
-        result[str(raw_key).strip().lower()] = value
+        result[_canonicalize_source_type(raw_key)] = value
     return result
 
 

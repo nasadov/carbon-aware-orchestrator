@@ -256,6 +256,18 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             return float(next(iter(values.values())))
         return float(default)
 
+    def _slot_cf_value(
+        self,
+        flavour: EnvironmentalFlavor,
+        slot: int,
+        slot_attr: str,
+        scalar_attr: str,
+        default: float = 1.0,
+    ) -> float:
+        slot_values = getattr(flavour, slot_attr, {}) or {}
+        scalar_default = float(getattr(flavour, scalar_attr, default) or default)
+        return self._slot_signal_value(slot_values, slot, scalar_default)
+
     @staticmethod
     def _footprint_water_value(footprint: FootprintVector, water_metric: str) -> float:
         if water_metric == "raw":
@@ -269,8 +281,20 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         direct = wue
         indirect = float(getattr(flavour, "pue", 1.0) or 1.0) * ewif
         if water_metric == "scarcity":
-            direct *= float(getattr(flavour, "water_scarcity_direct_cf", 1.0) or 1.0)
-            indirect *= float(getattr(flavour, "water_scarcity_indirect_cf", 1.0) or 1.0)
+            direct *= self._slot_cf_value(
+                flavour,
+                slot,
+                "water_scarcity_direct_cf_by_slot",
+                "water_scarcity_direct_cf",
+                1.0,
+            )
+            indirect *= self._slot_cf_value(
+                flavour,
+                slot,
+                "water_scarcity_indirect_cf_by_slot",
+                "water_scarcity_indirect_cf",
+                1.0,
+            )
         return direct + indirect
 
     def _build_waterwise_reference_maps(
@@ -440,8 +464,20 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                     direct_component = wue
                     indirect_component = float(getattr(flv_obj, "pue", 1.0) or 1.0) * ewif
                     if self.phase2_water_metric == "scarcity":
-                        direct_component *= float(getattr(flv_obj, "water_scarcity_direct_cf", 1.0) or 1.0)
-                        indirect_component *= float(getattr(flv_obj, "water_scarcity_indirect_cf", 1.0) or 1.0)
+                        direct_component *= self._slot_cf_value(
+                            flv_obj,
+                            slot,
+                            "water_scarcity_direct_cf_by_slot",
+                            "water_scarcity_direct_cf",
+                            1.0,
+                        )
+                        indirect_component *= self._slot_cf_value(
+                            flv_obj,
+                            slot,
+                            "water_scarcity_indirect_cf_by_slot",
+                            "water_scarcity_indirect_cf",
+                            1.0,
+                        )
                     coef = (k_watts * u_pod / 1000.0) * (direct_component + indirect_component)
                     if use_cpsat:
                         dynamic_terms.append(int(round(coef * 1000.0)) * placement_vars[(pod_id, flv_id, ts_id)])
@@ -461,8 +497,20 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 direct_component = wue
                 indirect_component = float(getattr(flv, "pue", 1.0) or 1.0) * ewif
                 if self.phase2_water_metric == "scarcity":
-                    direct_component *= float(getattr(flv, "water_scarcity_direct_cf", 1.0) or 1.0)
-                    indirect_component *= float(getattr(flv, "water_scarcity_indirect_cf", 1.0) or 1.0)
+                    direct_component *= self._slot_cf_value(
+                        flv,
+                        ts.id,
+                        "water_scarcity_direct_cf_by_slot",
+                        "water_scarcity_direct_cf",
+                        1.0,
+                    )
+                    indirect_component *= self._slot_cf_value(
+                        flv,
+                        ts.id,
+                        "water_scarcity_indirect_cf_by_slot",
+                        "water_scarcity_indirect_cf",
+                        1.0,
+                    )
                 coef = (idle_w / 1000.0) * (direct_component + indirect_component) + embodied_water_per_h
                 if use_cpsat:
                     activation_terms.append(int(round(coef * 1000.0)) * activation_vars[(flv.id, ts.id)])
@@ -516,6 +564,21 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
             wue = self._slot_signal_value(getattr(flv_obj, "wue_by_slot", {}) or {}, slot, 0.0)
             ewif = self._slot_signal_value(getattr(flv_obj, "ewif_by_slot", {}) or {}, slot, 0.0)
             pue = float(getattr(flv_obj, "pue", 1.0) or 1.0)
+            direct_cf = self._slot_cf_value(
+                flv_obj,
+                slot,
+                "water_scarcity_direct_cf_by_slot",
+                "water_scarcity_direct_cf",
+                1.0,
+            )
+            indirect_cf = self._slot_cf_value(
+                flv_obj,
+                slot,
+                "water_scarcity_indirect_cf_by_slot",
+                "water_scarcity_indirect_cf",
+                1.0,
+            )
+            embodied_cf = float(getattr(flv_obj, "water_scarcity_embodied_cf", 1.0) or 1.0)
 
             total_u = sum(u for _, u in items)
             if total_u <= 0:
@@ -531,9 +594,17 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 footprint.operational_energy_kwh += operational_energy_kwh
                 footprint.operational_carbon_g += intensity * operational_energy_kwh
                 footprint.embodied_carbon_g += embodied_carbon_per_h * share
-                footprint.direct_water_l += operational_energy_kwh * wue
-                footprint.indirect_water_l += operational_energy_kwh * pue * ewif
-                footprint.embodied_water_l += embodied_water_per_h * share
+                direct_water = operational_energy_kwh * wue
+                indirect_water = operational_energy_kwh * pue * ewif
+                embodied_water = embodied_water_per_h * share
+                footprint.direct_water_l += direct_water
+                footprint.indirect_water_l += indirect_water
+                footprint.embodied_water_l += embodied_water
+                footprint.scarcity_characterized_water += (
+                    direct_water * direct_cf
+                    + indirect_water * indirect_cf
+                    + embodied_water * embodied_cf
+                )
 
         for pod_id_sol, footprint in pod_footprints.items():
             pod_footprints[pod_id_sol] = footprint.finalize()
