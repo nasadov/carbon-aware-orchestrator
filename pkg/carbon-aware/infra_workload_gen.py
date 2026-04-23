@@ -16,6 +16,7 @@ Configuration is read from a infra-workload-config.yaml file.
 """
 
 import os
+import csv
 import yaml
 import random
 import numpy as np
@@ -123,6 +124,13 @@ DEPLOYMENT_TEMPLATE = {
 # ---------------------------------------------------------------------
 
 DEFAULT_CONFIG = {
+    "carbon": {
+        "enabled": True,
+        "data_sources": {
+            "embodied_carbon_reference_csv": "data/carbon/embodied_carbon_reference.csv",
+        },
+        "by_hardware_subcategory": {},
+    },
     "nodes": {
         "filename": "nodes.yaml",
         "num_nodes": 8,
@@ -146,7 +154,7 @@ DEFAULT_CONFIG = {
             "Smartphone": {
                 "cpu": "4",
                 "memory": "4Gi",
-                "embodied_carbon": 52.729,
+                "embodied_carbon": 53.300,
                 "lifetime": 3.03,
                 "power": {
                     "idle": 1.0,    # Watts
@@ -157,7 +165,7 @@ DEFAULT_CONFIG = {
             "Laptop": {
                 "cpu": "8",
                 "memory": "16Gi",
-                "embodied_carbon": 231.855,
+                "embodied_carbon": 201.341,
                 "lifetime": 4.13,
                 "power": {
                     "idle": 10.0,   # Watts
@@ -205,6 +213,47 @@ def _resolve_path(path_str: str, base_dir: Path) -> Path:
     if not candidate.is_absolute():
         candidate = base_dir / candidate
     return candidate.resolve()
+
+
+def _read_csv_rows(path: Path) -> List[Dict[str, str]]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _hydrate_embodied_carbon_defaults(config: Dict[str, Any]) -> None:
+    """Load generated embodied-carbon references and attach them to hardware subcategories."""
+    carbon_cfg = config.setdefault("carbon", {})
+    if not carbon_cfg.get("enabled", True):
+        return
+
+    base_dir = Path(config.get("_base_dir", SCRIPT_DIR))
+    data_sources = carbon_cfg.setdefault("data_sources", {})
+    reference_relpath = data_sources.get("embodied_carbon_reference_csv")
+    if not reference_relpath:
+        return
+
+    reference_path = _resolve_path(reference_relpath, base_dir)
+    if not reference_path.is_file():
+        print(f"Embodied carbon reference not found at {reference_path}; keeping config defaults")
+        return
+
+    by_hardware = carbon_cfg.setdefault("by_hardware_subcategory", {})
+    hardware_subcategories = config.setdefault("nodes", {}).setdefault("hardware_subcategories", {})
+
+    for row in _read_csv_rows(reference_path):
+        subcategory = (row.get("subcategory") or "").strip()
+        embodied_carbon = row.get("embodied_carbon_kg")
+        if not subcategory or embodied_carbon in (None, ""):
+            continue
+        embodied_value = float(embodied_carbon)
+        carbon_entry = by_hardware.setdefault(subcategory, {})
+        carbon_entry["embodied_carbon"] = embodied_value
+        carbon_entry["source_status"] = row.get("source_status", "")
+        carbon_entry["source_ids"] = row.get("source_ids", "")
+        carbon_entry["calibration_factor"] = row.get("calibration_factor", "")
+
+        hw_entry = hardware_subcategories.setdefault(subcategory, {})
+        hw_entry["embodied_carbon"] = embodied_value
 
 # ---------------------------------------------------------------------
 # Helper Functions
@@ -257,6 +306,8 @@ def generate_nodes_file(config: Dict[str, Any]):
     filename = str(_resolve_path(config.get("filename", "nodes.yaml"), base_dir))
     base_node_name = config.get("base_node_name", "kwok-node-0")
     random_seed = config.get("random_seed", 42)
+    carbon_cfg = config.get("_carbon", {})
+    carbon_by_hardware = carbon_cfg.get("by_hardware_subcategory", {}) if isinstance(carbon_cfg, dict) else {}
     
     # Handle regions configuration (new and legacy formats)
     regions_config = config.get("regions", {})
@@ -463,6 +514,13 @@ def generate_nodes_file(config: Dict[str, Any]):
             node_doc["metadata"]["annotations"]["hardware.carbon/embodied_emissions"] = str(hw_specs["embodied_carbon"])
         if "lifetime" in hw_specs:
             node_doc["metadata"]["annotations"]["hardware.carbon/lifetime_years"] = str(hw_specs["lifetime"])
+        carbon_meta = carbon_by_hardware.get(subcategory, {})
+        if carbon_meta.get("source_status"):
+            node_doc["metadata"]["annotations"]["hardware.carbon/source_status"] = str(carbon_meta["source_status"])
+        if carbon_meta.get("source_ids"):
+            node_doc["metadata"]["annotations"]["hardware.carbon/source_ids"] = str(carbon_meta["source_ids"])
+        if carbon_meta.get("calibration_factor"):
+            node_doc["metadata"]["annotations"]["hardware.carbon/calibration_factor"] = str(carbon_meta["calibration_factor"])
             
         # Add power consumption annotations
         if "power" in hw_specs:
@@ -829,6 +887,8 @@ def load_config(config_file="infra-workload-config.yaml"):
                 user_config = yaml.safe_load(f)
                 
                 # Update the defaults with user configuration
+                if user_config.get("carbon"):
+                    config["carbon"].update(user_config["carbon"])
                 if user_config.get("nodes"):
                     config["nodes"].update(user_config["nodes"])
                 if user_config.get("workload"):
@@ -848,7 +908,9 @@ def load_config(config_file="infra-workload-config.yaml"):
         print("Using default configuration")
         
     config["_base_dir"] = Path(config_file).resolve().parent
+    _hydrate_embodied_carbon_defaults(config)
     config["nodes"]["_base_dir"] = config["_base_dir"]
+    config["nodes"]["_carbon"] = config.get("carbon", {})
     config["workload"]["_base_dir"] = config["_base_dir"]
 
     return config

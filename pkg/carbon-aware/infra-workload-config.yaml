@@ -17,6 +17,11 @@ optimization:
     gap_tolerance: 0.05
     threads: 8
     msg: false
+carbon:
+  enabled: true
+  data_sources:
+    embodied_carbon_reference_csv: data/carbon/embodied_carbon_reference.csv
+  by_hardware_subcategory: {}
 nodes:
   filename: nodes.yaml
   regions:
@@ -55,7 +60,7 @@ nodes:
     Smartphone:
       cpu: '4'
       memory: 4Gi
-      embodied_carbon: 52.729
+      embodied_carbon: 53.300
       lifetime: 3.03
       power:
         idle: 1.0
@@ -64,7 +69,7 @@ nodes:
     Laptop:
       cpu: '8'
       memory: 8Gi
-      embodied_carbon: 231.855
+      embodied_carbon: 201.341
       lifetime: 4.13
       power:
         idle: 10.0

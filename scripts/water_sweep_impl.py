@@ -251,6 +251,22 @@ def water_reference_metadata(root: Path) -> Dict[str, Any]:
     }
 
 
+def carbon_reference_metadata(root: Path) -> Dict[str, Any]:
+    carbon_dir = root / "pkg" / "carbon-aware" / "data" / "carbon"
+    if not carbon_dir.is_dir():
+        return {"directory": str(carbon_dir), "files": []}
+    files = [
+        file_metadata(path, root)
+        for path in sorted(carbon_dir.rglob("*"))
+        if path.is_file()
+    ]
+    return {
+        "directory": carbon_dir.relative_to(root).as_posix(),
+        "directory_sha256": sha256_directory(carbon_dir),
+        "files": files,
+    }
+
+
 def case_input_metadata(root: Path, case: StudyCase) -> Dict[str, Any]:
     return {
         "nodes_file": file_metadata(case.nodes_file, root),
@@ -888,6 +904,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "forecasts_file": str(forecasts_file),
         "forecasts_sha256": sha256_file(forecasts_file),
         "water_references": water_reference_metadata(root),
+        "carbon_references": carbon_reference_metadata(root),
         "output_dir": str(run_root),
         "figures_dir": str(figures_dir),
         "case_inputs": {},

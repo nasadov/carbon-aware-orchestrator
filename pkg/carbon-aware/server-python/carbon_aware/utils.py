@@ -1,12 +1,16 @@
 """
 Utility functions for carbon-aware scheduling.
 """
+import csv
 import json
 import logging
 import random
+from functools import lru_cache
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import decimal
+import yaml
 
 # Import kubernetes utils for resource parsing
 from kubernetes import utils as k8sutils
@@ -23,6 +27,8 @@ MICROSERVICE_STATUS_MAP = {
     3: "TO_SCHEDULE",
     4: "TO_DEPLOY"
 }
+
+DEFAULT_INFRA_CONFIG_PATH = Path(__file__).resolve().parents[2] / "infra-workload-config.yaml"
 
 #####################################
 # Carbon Intensity & Power Utilities
@@ -373,6 +379,96 @@ def get_node_region(node) -> str:
     return "DE"  # Default fallback region
 
 
+def _default_hardware_profiles() -> Dict[str, Dict[str, object]]:
+    return {
+        "IoT": {
+            "embodied_carbon_g": 27.471 * 1000.0,
+            "lifetime": 5.2,
+            "power": {"idle": 0.5, "active": 0.5, "max": 5.0},
+        },
+        "Smartphone": {
+            "embodied_carbon_g": 53.300 * 1000.0,
+            "lifetime": 3.03,
+            "power": {"idle": 1.0, "active": 1.0, "max": 15.0},
+        },
+        "Laptop": {
+            "embodied_carbon_g": 201.341 * 1000.0,
+            "lifetime": 4.13,
+            "power": {"idle": 10.0, "active": 10.0, "max": 150.0},
+        },
+        "Server": {
+            "embodied_carbon_g": 1230.656 * 1000.0,
+            "lifetime": 3.87,
+            "power": {"idle": 100.0, "active": 100.0, "max": 400.0},
+        },
+    }
+
+
+@lru_cache(maxsize=1)
+def _load_configured_hardware_profiles() -> Dict[str, Dict[str, object]]:
+    profiles = _default_hardware_profiles()
+    config_path = DEFAULT_INFRA_CONFIG_PATH
+    if not config_path.is_file():
+        return profiles
+
+    try:
+        with config_path.open("r", encoding="utf-8") as handle:
+            config = yaml.safe_load(handle) or {}
+    except Exception as exc:  # pragma: no cover - best effort fallback
+        logging.warning("Failed to load infra config for hardware profiles: %s", exc)
+        return profiles
+
+    nodes_cfg = (config.get("nodes") or {}).get("hardware_subcategories", {}) or {}
+    for subcategory, specs in nodes_cfg.items():
+        profile = profiles.setdefault(subcategory, {})
+        embodied_carbon = specs.get("embodied_carbon")
+        if embodied_carbon not in (None, ""):
+            try:
+                profile["embodied_carbon_g"] = float(embodied_carbon) * 1000.0
+            except (TypeError, ValueError):
+                pass
+        lifetime = specs.get("lifetime")
+        if lifetime not in (None, ""):
+            try:
+                profile["lifetime"] = float(lifetime)
+            except (TypeError, ValueError):
+                pass
+        power = specs.get("power") or {}
+        if isinstance(power, dict):
+            current_power = profile.get("power") or {}
+            profile["power"] = {
+                "idle": float(power.get("idle", current_power.get("idle", 100.0))),
+                "active": float(power.get("active", current_power.get("active", 200.0))),
+                "max": float(power.get("max", current_power.get("max", 400.0))),
+            }
+
+    carbon_cfg = config.get("carbon") or {}
+    data_sources = carbon_cfg.get("data_sources") or {}
+    reference_relpath = data_sources.get("embodied_carbon_reference_csv")
+    if not reference_relpath:
+        return profiles
+
+    reference_path = Path(reference_relpath)
+    if not reference_path.is_absolute():
+        reference_path = config_path.parent / reference_path
+    if not reference_path.is_file():
+        return profiles
+
+    try:
+        with reference_path.open("r", encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                subcategory = (row.get("subcategory") or "").strip()
+                embodied_carbon = row.get("embodied_carbon_kg")
+                if not subcategory or embodied_carbon in (None, ""):
+                    continue
+                profile = profiles.setdefault(subcategory, {})
+                profile["embodied_carbon_g"] = float(embodied_carbon) * 1000.0
+    except Exception as exc:  # pragma: no cover - best effort fallback
+        logging.warning("Failed to load embodied carbon reference CSV: %s", exc)
+
+    return profiles
+
+
 def get_node_hardware_metadata(node) -> tuple[float, float, Dict[str, float]]:
     """
     Extract hardware metadata related to carbon emissions and power consumption.
@@ -452,37 +548,16 @@ def get_node_hardware_metadata(node) -> tuple[float, float, Dict[str, float]]:
     
     # Apply subcategory-based values for any values not set by annotations
     if subcategory:
-        if subcategory == "IoT":
-            if embodied_carbon == default_embodied_carbon:
-                embodied_carbon = 27.471
-            if lifetime == default_lifetime:
-                lifetime = 5.2
-            if power == default_power:  # Only replace if we haven't found any power annotations
-                power = {"idle": 0.5, "active": 0.5, "max": 5.0}
-        elif subcategory == "Smartphone":
-            if embodied_carbon == default_embodied_carbon:
-                embodied_carbon = 52.729
-            if lifetime == default_lifetime:
-                lifetime = 3.03
-            if power == default_power:
-                power = {"idle": 1.0, "active": 1.0, "max": 15.0}
-        elif subcategory == "Laptop":
-            if embodied_carbon == default_embodied_carbon:
-                embodied_carbon = 231.855
-            if lifetime == default_lifetime:
-                lifetime = 4.13
-            if power == default_power:
-                power = {"idle": 10.0, "active": 10.0, "max": 150.0}
-        elif subcategory == "Server":
-            if embodied_carbon == default_embodied_carbon:
-                embodied_carbon = 1230.656
-            if lifetime == default_lifetime:
-                lifetime = 3.87
-            if power == default_power:
-                power = {"idle": 100.0, "active": 100.0, "max": 400.0}
+        profile = _load_configured_hardware_profiles().get(subcategory, {})
+        if embodied_carbon == default_embodied_carbon and profile.get("embodied_carbon_g") is not None:
+            embodied_carbon = float(profile["embodied_carbon_g"])
+        if lifetime == default_lifetime and profile.get("lifetime") is not None:
+            lifetime = float(profile["lifetime"])
+        if power == default_power and isinstance(profile.get("power"), dict):
+            power = dict(profile["power"])
     
     # Log the final values
-    logging.info(f"Node {node.name} hardware metadata: embodied_carbon={embodied_carbon}kg CO2e, "
+    logging.info(f"Node {node.name} hardware metadata: embodied_carbon={embodied_carbon} gCO2e, "
                 f"lifetime={lifetime}y, power(idle)={power['idle']}W, power(active)={power['active']}W")
     
     return embodied_carbon, lifetime, power

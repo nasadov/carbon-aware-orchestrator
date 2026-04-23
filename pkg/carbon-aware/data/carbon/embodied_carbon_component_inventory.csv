@@ -1,0 +1,19 @@
+component_id,unit_basis,raw_carbon_kg_low,raw_carbon_kg_base,raw_carbon_kg_high,source_id,source_note
+processor_iot,device,5.000000,8.000000,13.000000,pirson2021;boaviztaFunctionalBlock,IoT processor or main compute block aligned with Pirson-Bol and Boavizta functional-block bottom-up logic.
+dram_mobile_gb,GB,0.200000,0.350000,0.500000,pirson2021;boaviztaFunctionalBlock,Mobile or lightweight memory proxy carried in bottom-up edge and handset component models.
+flash_mobile_gb,GB,0.030000,0.050000,0.080000,pirson2021;boaviztaFunctionalBlock,Flash storage proxy for low-power devices and smartphones.
+board_assembly_iot,device,8.000000,11.000000,18.000000,pirson2021;boaviztaFunctionalBlock,Board plus assembly block for IoT-class devices.
+peripheral_iot,device,4.560000,8.250000,22.860000,pirson2021;boaviztaFunctionalBlock,Residual enclosure, radio, sensor, and accessory block for IoT-class devices.
+processor_phone,device,7.000000,8.000000,9.000000,appleIphone16Per;cordella2021smartphone,Phone SoC and tightly coupled compute electronics block.
+board_assembly_phone,device,16.000000,18.000000,18.000000,appleIphone16Per;fairphone2Lca;cordella2021smartphone,Phone PCB and assembly block informed by smartphone LCA hotspot literature.
+peripheral_phone,device,17.560000,17.800000,19.098460,appleIphone16Per;fairphone2Lca;ericssonSmartphone,Residual display battery camera enclosure and miscellaneous phone electronics block.
+processor_laptop,device,20.000000,35.000000,50.000000,appleMacbookAir2025;dellXps14Pcf,Portable-compute processor block anchored by laptop product PCFs.
+dram_laptop_gb,GB,0.600000,1.000000,1.400000,boaviztaRam;gcc2021,Laptop DRAM proxy aligned with PAIA or Boavizta-style component families.
+ssd_laptop_tb,TB,6.000000,10.000000,14.000000,boaviztaSsd;tannu2022ssd,Laptop SSD proxy informed by storage embodied-carbon literature and Boavizta SSD methodology.
+board_assembly_laptop,device,35.000000,70.000000,110.000000,appleMacbookAir2025;dellXps14Pcf,GPU-less laptop mainboard and assembly block.
+peripheral_laptop,device,17.400000,64.000000,80.600000,appleMacbookAir2025;dellXps14Pcf,Residual display battery enclosure keyboard trackpad and adapter block.
+processor_server,device,180.000000,260.000000,360.000000,boaviztaCpu;gcc2021,Server CPU block following Green Cloud Computing and Boavizta CPU methodology families.
+dram_server_gb,GB,0.250000,0.350000,0.500000,boaviztaRam;gcc2021,Server DRAM proxy following GCC or Boavizta component families.
+ssd_server_tb,TB,8.000000,12.000000,16.000000,boaviztaSsd;tannu2022ssd,Server SSD storage block aligned with storage embodied-carbon literature.
+board_assembly_server,device,280.000000,400.000000,560.000000,boaviztaServer;gcc2021,Server motherboard chassis electronics and assembly block.
+peripheral_server,device,120.000000,174.976000,260.000000,boaviztaServer;gcc2021,Residual PSU fan enclosure and auxiliary server hardware block.

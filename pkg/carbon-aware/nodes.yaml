@@ -6,6 +6,9 @@ metadata:
     kwok.x-k8s.io/node: fake
     hardware.carbon/embodied_emissions: '27.471'
     hardware.carbon/lifetime_years: '5.2'
+    hardware.carbon/source_status: calibrated_component_model
+    hardware.carbon/source_ids: boaviztaFunctionalBlock;pirson2021
+    hardware.carbon/calibration_factor: '0.981107'
     hardware.power/idle_watts: '0.5'
     hardware.power/active_watts: '2.0'
     hardware.power/max_watts: '5.0'
@@ -50,8 +53,11 @@ metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '52.729'
+    hardware.carbon/embodied_emissions: '53.3'
     hardware.carbon/lifetime_years: '3.03'
+    hardware.carbon/source_status: calibrated_component_model
+    hardware.carbon/source_ids: appleIphone16Per;boaviztaFunctionalBlock;cordella2021smartphone;ericssonSmartphone;fairphone2Lca;pirson2021
+    hardware.carbon/calibration_factor: '1.005660'
     hardware.power/idle_watts: '1.0'
     hardware.power/active_watts: '3.0'
     hardware.power/max_watts: '15.0'
@@ -96,8 +102,11 @@ metadata:
   annotations:
     node.alpha.kubernetes.io/ttl: '0'
     kwok.x-k8s.io/node: fake
-    hardware.carbon/embodied_emissions: '231.855'
+    hardware.carbon/embodied_emissions: '201.341'
     hardware.carbon/lifetime_years: '4.13'
+    hardware.carbon/source_status: calibrated_component_model
+    hardware.carbon/source_ids: appleMacbookAir2025;boaviztaRam;boaviztaSsd;dellXps14Pcf;gcc2021;tannu2022ssd
+    hardware.carbon/calibration_factor: '1.059689'
     hardware.power/idle_watts: '10.0'
     hardware.power/active_watts: '40.0'
     hardware.power/max_watts: '150.0'
@@ -144,6 +153,9 @@ metadata:
     kwok.x-k8s.io/node: fake
     hardware.carbon/embodied_emissions: '1230.656'
     hardware.carbon/lifetime_years: '3.87'
+    hardware.carbon/source_status: calibrated_component_model
+    hardware.carbon/source_ids: boaviztaCpu;boaviztaEmbedded;boaviztaRam;boaviztaServer;boaviztaSsd;gcc2021;tannu2022ssd
+    hardware.carbon/calibration_factor: '1.000000'
     hardware.power/idle_watts: '100.0'
     hardware.power/active_watts: '200.0'
     hardware.power/max_watts: '400.0'
