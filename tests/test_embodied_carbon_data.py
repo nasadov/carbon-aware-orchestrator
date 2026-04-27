@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import csv
+import os
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 from pathlib import Path
+
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +17,7 @@ CARBON_DATA_ROOT = REPO_ROOT / "pkg" / "carbon-aware" / "data" / "carbon"
 if str(SERVER_PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_PYTHON_ROOT))
 
-from carbon_aware.utils import get_node_hardware_metadata
+from carbon_aware.utils import _load_configured_hardware_profiles, get_node_hardware_metadata
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -60,3 +64,46 @@ def test_get_node_hardware_metadata_uses_generated_embodied_carbon_reference() -
     assert embodied_carbon_g == 201.341 * 1000.0
     assert lifetime == 4.13
     assert power == {"idle": 10.0, "active": 40.0, "max": 150.0}
+
+
+def test_hardware_profiles_respect_env_config_override_for_reference_csv() -> None:
+    with TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        reference_csv = tmp / "embodied_carbon_reference_high.csv"
+        reference_csv.write_text(
+            "\n".join(
+                [
+                    "subcategory,embodied_carbon_kg,uncalibrated_component_carbon_kg,calibration_factor,source_status,source_ids,source_note",
+                    "Laptop,999.0,900.0,1.11,component_model,test,test",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        config_path = tmp / "infra-workload-config.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "carbon": {
+                        "enabled": True,
+                        "data_sources": {
+                            "embodied_carbon_reference_csv": str(reference_csv),
+                        },
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        previous = os.environ.get("CARBON_AWARE_CONFIG_PATH")
+        try:
+            os.environ["CARBON_AWARE_CONFIG_PATH"] = str(config_path)
+            _load_configured_hardware_profiles.cache_clear()
+            profiles = _load_configured_hardware_profiles()
+        finally:
+            _load_configured_hardware_profiles.cache_clear()
+            if previous is None:
+                os.environ.pop("CARBON_AWARE_CONFIG_PATH", None)
+            else:
+                os.environ["CARBON_AWARE_CONFIG_PATH"] = previous
+
+        assert profiles["Laptop"]["embodied_carbon_g"] == 999.0 * 1000.0

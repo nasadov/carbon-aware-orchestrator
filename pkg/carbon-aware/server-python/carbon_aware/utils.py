@@ -4,6 +4,7 @@ Utility functions for carbon-aware scheduling.
 import csv
 import json
 import logging
+import os
 import random
 from functools import lru_cache
 from pathlib import Path
@@ -407,7 +408,8 @@ def _default_hardware_profiles() -> Dict[str, Dict[str, object]]:
 @lru_cache(maxsize=1)
 def _load_configured_hardware_profiles() -> Dict[str, Dict[str, object]]:
     profiles = _default_hardware_profiles()
-    config_path = DEFAULT_INFRA_CONFIG_PATH
+    env_config_path = os.environ.get("CARBON_AWARE_CONFIG_PATH")
+    config_path = Path(env_config_path) if env_config_path else DEFAULT_INFRA_CONFIG_PATH
     if not config_path.is_file():
         return profiles
 

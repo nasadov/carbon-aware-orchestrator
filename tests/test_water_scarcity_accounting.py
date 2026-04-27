@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -149,3 +150,21 @@ def test_annual_operational_scarcity_mode_keeps_constant_cf() -> None:
 
         assert footprint.total_raw_water_l == 4.0
         assert footprint.scarcity_characterized_water == 40.0
+
+
+def test_load_water_config_respects_env_override() -> None:
+    with TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        config_path = _write_config_bundle(tmp, operational_mode="monthly")
+        previous = os.environ.get("CARBON_AWARE_CONFIG_PATH")
+        try:
+            os.environ["CARBON_AWARE_CONFIG_PATH"] = str(config_path)
+            hydrated = load_water_config()
+        finally:
+            if previous is None:
+                os.environ.pop("CARBON_AWARE_CONFIG_PATH", None)
+            else:
+                os.environ["CARBON_AWARE_CONFIG_PATH"] = previous
+
+        assert hydrated["operational_scarcity_temporal_resolution"] == "monthly"
+        assert hydrated["data_sources"]["aware_country_factors_csv"] == str(tmp / "aware.csv")

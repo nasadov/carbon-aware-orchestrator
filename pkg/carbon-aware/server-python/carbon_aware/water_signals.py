@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -61,7 +62,9 @@ def _default_water_config() -> Dict[str, Any]:
 
 def load_water_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     """Load the water section from infra-workload-config.yaml with sane defaults."""
-    path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    env_config_path = os.environ.get("CARBON_AWARE_CONFIG_PATH")
+    resolved_path = config_path or env_config_path
+    path = Path(resolved_path) if resolved_path else DEFAULT_CONFIG_PATH
     if not path.exists():
         logging.warning("Water config path %s does not exist; using defaults only", path)
         return _default_water_config()
