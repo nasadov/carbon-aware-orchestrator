@@ -57,6 +57,8 @@ def detect_algorithm(exp_dir: str) -> Optional[str]:
         return "heuristic"
     if b.startswith("global-optimal_"):
         return "global-optimal"
+    if b.startswith("caspian-operational_") or b.startswith("caspian_operational_"):
+        return "caspian-operational"
     return None
 
 
@@ -69,8 +71,13 @@ def detect_pods(exp_dir: str) -> Optional[int]:
 def find_csv(exp_dir: str, algo: str) -> Optional[str]:
     names = {
         "vanilla": ["vanilla_placement_session.csv"],
-        "heuristic": ["heuristic_placements_session.csv", "heuristic_op_placements_session.csv"],
+        "heuristic": [
+            "heuristic_prop_placements_session.csv",
+            "heuristic_placements_session.csv",
+            "heuristic_op_placements_session.csv",
+        ],
         "global-optimal": ["global_optimal_placements_session.csv"],
+        "caspian-operational": ["caspian_operational_placements_session.csv"],
     }.get(algo, [])
     for fname in names:
         p = os.path.join(exp_dir, fname)
@@ -156,7 +163,7 @@ def main():
             })
             continue
         totals["experiments_with_csv"] += 1
-        workloads = args.workloads_dir if algo != "vanilla" else args.workloads_vanilla_dir
+        workloads = args.workloads_vanilla_dir if algo == "vanilla" else args.workloads_dir
         try:
             counts, cap_ok, ts_ok = validate_one(csv_path, args.nodes_file, workloads)
         except Exception as e:
@@ -222,4 +229,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

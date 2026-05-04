@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parameter sweep for precompute runtime scaling (heuristic, vanilla, oracle).
+"""Parameter sweep for precompute runtime scaling (heuristic, vanilla, oracle, baselines).
 
 This script generates synthetic infrastructures and workloads, runs the selected
 algorithm's precomputation pipeline for a grid of node/pod configurations, and
@@ -115,6 +115,10 @@ def lazy_import_dependencies(algorithm: str) -> None:
     elif algorithm == "vanilla":
         from carbon_aware.precompute_vanilla import (
             run_vanilla_precomputation as _run_precompute,  # type: ignore
+        )
+    elif algorithm == "caspian-operational":
+        from carbon_aware.precompute_caspian_operational import (
+            run_caspian_operational_precomputation as _run_precompute,  # type: ignore
         )
     else:
         from carbon_aware.precompute_global_optimal import (
@@ -311,7 +315,7 @@ def run_single_precompute(
             operational_only=operational_only,
             embodied_mode=embodied_mode,
         )
-    else:  # heuristic
+    elif algorithm == "heuristic":
         success = run_precompute(
             workloads_dir=str(config.workloads_dir),
             nodes_file=str(config.nodes_file),
@@ -321,6 +325,16 @@ def run_single_precompute(
             prioritize_efficiency=prioritize_efficiency,
             operational_only=operational_only,
             embodied_mode=embodied_mode,
+        )
+    else:  # caspian-operational
+        success = run_precompute(
+            workloads_dir=str(config.workloads_dir),
+            nodes_file=str(config.nodes_file),
+            forecasts_file=str(forecasts_file),
+            session_log_dir=str(config.log_dir),
+            perf_logger=perf_logger,
+            prioritize_efficiency=prioritize_efficiency,
+            operational_only=True,
         )
     elapsed = time.perf_counter() - start
 
@@ -456,6 +470,7 @@ def create_publication_plot(
     algo_label = (
         "TotEm" if algorithm == "heuristic" else
         "Oracle" if algorithm == "global-optimal" else
+        "Caspian-Operational-Opt" if algorithm == "caspian-operational" else
         "Carbon-Agnostic"
     )
     ax.set_title(f"{algo_label} precompute runtime scaling", fontsize=13)
@@ -480,6 +495,7 @@ def create_publication_plot(
     base = (
         "heuristic_time_complexity" if algorithm == "heuristic" else
         "global_optimal_time_complexity" if algorithm == "global-optimal" else
+        "caspian_operational_time_complexity" if algorithm == "caspian-operational" else
         "vanilla_time_complexity"
     )
     png_path = output_dir / f"{base}.png"
@@ -505,7 +521,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--algorithm",
-        choices=["heuristic", "vanilla", "global-optimal"],
+        choices=["heuristic", "vanilla", "global-optimal", "caspian-operational"],
         default="heuristic",
         help="Algorithm to evaluate in the sweep (default: heuristic)",
     )
@@ -666,6 +682,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     label = (
         "Heuristic" if args.algorithm == "heuristic" else
         "Oracle" if args.algorithm == "global-optimal" else
+        "Caspian-Operational-Opt" if args.algorithm == "caspian-operational" else
         "Carbon-Agnostic"
     )
     if tqdm is not None:
@@ -858,5 +875,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
     sys.exit(main())
-
-

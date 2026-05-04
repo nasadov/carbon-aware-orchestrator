@@ -250,38 +250,71 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
         import pulp
         name = (solver_cfg.get('name') or self.solver_name or 'cbc').lower()
         msg = True
+
+        def available(solver):
+            try:
+                return bool(solver.available())
+            except Exception:
+                return False
+
+        def make_highs():
+            # Prefer the Python API when highspy is installed. HiGHS_CMD needs a
+            # separate command-line binary and may be unavailable in this env.
+            try:
+                solver = pulp.apis.HiGHS(
+                    msg=msg, timeLimit=time_limit, gapRel=gap, threads=threads
+                )
+                if available(solver):
+                    return solver
+            except Exception:
+                pass
+            try:
+                solver = pulp.apis.HiGHS_CMD(
+                    msg=msg, timeLimit=time_limit, gapRel=gap, threads=threads
+                )
+                if available(solver):
+                    return solver
+            except Exception:
+                pass
+            return None
+
+        def make_solver(factory):
+            try:
+                solver = factory()
+                if available(solver):
+                    return solver
+            except Exception:
+                pass
+            return None
+
         # Try explicit name first
         if name == 'highs':
-            try:
-                return pulp.apis.HiGHS_CMD(msg=msg, timeLimit=time_limit, mip_rel_gap=gap, threads=threads)
-            except Exception:
-                pass
+            solver = make_highs()
+            if solver:
+                return solver
         if name == 'gurobi':
-            try:
-                return pulp.GUROBI_CMD(msg=msg, timeLimit=time_limit, mipgap=gap, threads=threads)
-            except Exception:
-                pass
+            solver = make_solver(lambda: pulp.GUROBI_CMD(msg=msg, timeLimit=time_limit, mipgap=gap, threads=threads))
+            if solver:
+                return solver
         if name == 'cplex':
-            try:
-                return pulp.CPLEX_CMD(msg=msg, timelimit=time_limit, epgap=gap, threads=threads)
-            except Exception:
-                pass
+            solver = make_solver(lambda: pulp.CPLEX_CMD(msg=msg, timelimit=time_limit, epgap=gap, threads=threads))
+            if solver:
+                return solver
         if name == 'cbc':
-            try:
-                return pulp.PULP_CBC_CMD(msg=msg, timeLimit=time_limit, gapRel=gap, threads=threads)
-            except Exception:
-                pass
+            solver = make_solver(lambda: pulp.PULP_CBC_CMD(msg=msg, timeLimit=time_limit, gapRel=gap, threads=threads))
+            if solver:
+                return solver
         # Auto-detect best available
-        try:
-            return pulp.apis.HiGHS_CMD(msg=msg, timeLimit=time_limit, mip_rel_gap=gap, threads=threads)
-        except Exception:
-            try:
-                return pulp.GUROBI_CMD(msg=msg, timeLimit=time_limit, mipgap=gap, threads=threads)
-            except Exception:
-                try:
-                    return pulp.CPLEX_CMD(msg=msg, timelimit=time_limit, epgap=gap, threads=threads)
-                except Exception:
-                    return pulp.PULP_CBC_CMD(msg=msg, timeLimit=time_limit, gapRel=gap, threads=threads)
+        solver = make_highs()
+        if solver:
+            return solver
+        solver = make_solver(lambda: pulp.GUROBI_CMD(msg=msg, timeLimit=time_limit, mipgap=gap, threads=threads))
+        if solver:
+            return solver
+        solver = make_solver(lambda: pulp.CPLEX_CMD(msg=msg, timelimit=time_limit, epgap=gap, threads=threads))
+        if solver:
+            return solver
+        return pulp.PULP_CBC_CMD(msg=msg, timeLimit=time_limit, gapRel=gap, threads=threads)
 
     def _solve_phase2_with_cpsat(self, placements, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots,
                                  unplaced_phase1, placed_phase1, time_limit_sec: int, gap_tolerance: float | None = None):

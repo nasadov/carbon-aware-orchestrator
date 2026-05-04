@@ -51,6 +51,8 @@ def find_latest_experiment(algorithm_name,
         patterns = ["global-optimal_perf_log_session_*", "global-optimal_*"]
     elif algorithm == "vanilla":
         patterns = ["vanilla_*"]
+    elif algorithm in ("caspian-operational", "caspian_operational"):
+        patterns = ["caspian-operational_*", "caspian_operational_*"]
     else:
         logging.error(f"Unknown algorithm: {algorithm_name}")
         return None
@@ -145,6 +147,9 @@ def get_experiment_files(algorithm_name,
         if placement_file is None:
             logging.error(f"No vanilla placement file found in {experiment_dir}")
             return None, None
+    elif algorithm_name.lower() in ("caspian-operational", "caspian_operational"):
+        perf_file = os.path.join(experiment_dir, "caspian-operational_perf_session.csv")
+        placement_file = os.path.join(experiment_dir, "caspian_operational_placements_session.csv")
     else:
         logging.error(f"Unknown algorithm: {algorithm_name}")
         return None, None

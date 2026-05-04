@@ -122,8 +122,8 @@ def main() -> None:
     parser.add_argument(
         '--algorithm',
         default='heuristic',
-        choices=['heuristic', 'global-optimal', 'vanilla'],
-        help='Scheduling algorithm to use: heuristic (carbon-aware), global-optimal (MILP), or vanilla (K8s-like, carbon-unaware)'
+        choices=['heuristic', 'global-optimal', 'vanilla', 'caspian-operational'],
+        help='Scheduling algorithm to use: heuristic (TotEm), global-optimal (MILP), vanilla (K8s-like, carbon-unaware), or caspian-operational (spatio-temporal operational-carbon baseline)'
     )
     parser.add_argument(
         '--workloads-dir',
@@ -180,7 +180,7 @@ def main() -> None:
     parser.add_argument(
         '--precompute',
         action='store_true',
-        help='Run precomputation mode: process all timeslot files sequentially and save placements to CSV without starting server (heuristic algorithm only)'
+        help='Run precomputation mode: process all timeslot files sequentially and save placements to CSV without starting server'
     )
     
     args = parser.parse_args()
@@ -309,8 +309,8 @@ def main() -> None:
     
     # Check if precompute mode is requested
     if args.precompute:
-        if args.algorithm not in ['heuristic', 'global-optimal', 'vanilla']:
-            logging.error(f"Precompute mode is only supported for 'heuristic', 'global-optimal', and 'vanilla' algorithms, got: {args.algorithm}")
+        if args.algorithm not in ['heuristic', 'global-optimal', 'vanilla', 'caspian-operational']:
+            logging.error(f"Precompute mode is only supported for 'heuristic', 'global-optimal', 'vanilla', and 'caspian-operational' algorithms, got: {args.algorithm}")
             sys.exit(1)
         
         logging.info(f"🧮 Running precomputation mode for {args.algorithm} algorithm")
@@ -351,6 +351,17 @@ def main() -> None:
                 perf_logger=perf_logger,
                 prioritize_efficiency=args.prioritize_efficiency,
                 operational_only=args.operational_only
+            )
+        elif args.algorithm == 'caspian-operational':
+            from carbon_aware.precompute_caspian_operational import run_caspian_operational_precomputation
+            success = run_caspian_operational_precomputation(
+                workloads_dir=args.workloads_dir,
+                nodes_file=args.nodes_file,
+                forecasts_file=args.forecasts_file,
+                session_log_dir=session_log_dir,
+                perf_logger=perf_logger,
+                prioritize_efficiency=args.prioritize_efficiency,
+                operational_only=True
             )
         
         if success:

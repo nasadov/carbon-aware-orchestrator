@@ -8,6 +8,7 @@ from carbon_aware.algorithms.base import SchedulingAlgorithm
 from carbon_aware.algorithms.heuristic import HeuristicAlgorithm
 from carbon_aware.algorithms.global_optimal import GlobalOptimalAlgorithm
 from carbon_aware.algorithms.vanilla import VanillaAlgorithm
+from carbon_aware.algorithms.caspian_operational import CaspianOperationalAlgorithm
 
 # Store reference to precomputed global optimal instance
 _precomputed_global_optimal = None
@@ -45,5 +46,9 @@ def get_algorithm(name: str) -> SchedulingAlgorithm:
             return GlobalOptimalAlgorithm()
     elif name == "vanilla":
         return VanillaAlgorithm()
+    elif name == "caspian-operational":
+        return CaspianOperationalAlgorithm()
     else:
-        raise ValueError(f"Unknown algorithm: {name}. Available: heuristic, global-optimal, vanilla")
+        raise ValueError(
+            f"Unknown algorithm: {name}. Available: heuristic, global-optimal, vanilla, caspian-operational"
+        )
