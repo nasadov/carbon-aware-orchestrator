@@ -59,6 +59,10 @@ def detect_algorithm(exp_dir: str) -> Optional[str]:
         return "global-optimal"
     if b.startswith("caspian-operational_") or b.startswith("caspian_operational_"):
         return "caspian-operational"
+    if b.startswith("caspian-oracle-batch_"):
+        return "caspian-operational"
+    if b.startswith("piontek-temporal_"):
+        return "piontek-temporal"
     return None
 
 
@@ -78,6 +82,7 @@ def find_csv(exp_dir: str, algo: str) -> Optional[str]:
         ],
         "global-optimal": ["global_optimal_placements_session.csv"],
         "caspian-operational": ["caspian_operational_placements_session.csv"],
+        "piontek-temporal": ["piontek_temporal_placements_session.csv"],
     }.get(algo, [])
     for fname in names:
         p = os.path.join(exp_dir, fname)
@@ -162,6 +167,17 @@ def main():
                 "csv_found": False,
             })
             continue
+        try:
+            if pd.read_csv(csv_path, nrows=1).empty:
+                rows.append({
+                    "experiment": os.path.basename(exp),
+                    "algorithm": algo,
+                    "pods": pods,
+                    "csv_found": False,
+                })
+                continue
+        except Exception:
+            pass
         totals["experiments_with_csv"] += 1
         workloads = args.workloads_vanilla_dir if algo == "vanilla" else args.workloads_dir
         try:

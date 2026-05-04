@@ -127,6 +127,8 @@ def infer_algorithm(exp_dir: Path, csv_path: Path) -> str:
         return "TotEm"
     if name.startswith("vanilla_") or csv_path.name.startswith("vanilla_"):
         return "Vanilla"
+    if name.startswith("piontek-temporal_") or csv_path.name.startswith("piontek_temporal_"):
+        return "Piontek-Temporal-K8s"
     if "caspian-oracle-batch" in name:
         return "Caspian-Operational-Oracle"
     if name.startswith("caspian-operational_") or csv_path.name.startswith("caspian_operational_"):

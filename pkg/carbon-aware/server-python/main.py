@@ -122,8 +122,8 @@ def main() -> None:
     parser.add_argument(
         '--algorithm',
         default='heuristic',
-        choices=['heuristic', 'global-optimal', 'vanilla', 'caspian-operational'],
-        help='Scheduling algorithm to use: heuristic (TotEm), global-optimal (MILP), vanilla (K8s-like, carbon-unaware), or caspian-operational (spatio-temporal operational-carbon baseline)'
+        choices=['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal'],
+        help='Scheduling algorithm to use: heuristic (TotEm), global-optimal (MILP), vanilla (K8s-like, carbon-unaware), caspian-operational (spatio-temporal operational-carbon baseline), or piontek-temporal (temporal CO2-window Kubernetes baseline)'
     )
     parser.add_argument(
         '--workloads-dir',
@@ -309,8 +309,8 @@ def main() -> None:
     
     # Check if precompute mode is requested
     if args.precompute:
-        if args.algorithm not in ['heuristic', 'global-optimal', 'vanilla', 'caspian-operational']:
-            logging.error(f"Precompute mode is only supported for 'heuristic', 'global-optimal', 'vanilla', and 'caspian-operational' algorithms, got: {args.algorithm}")
+        if args.algorithm not in ['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal']:
+            logging.error(f"Precompute mode is only supported for 'heuristic', 'global-optimal', 'vanilla', 'caspian-operational', and 'piontek-temporal' algorithms, got: {args.algorithm}")
             sys.exit(1)
         
         logging.info(f"🧮 Running precomputation mode for {args.algorithm} algorithm")
@@ -355,6 +355,17 @@ def main() -> None:
         elif args.algorithm == 'caspian-operational':
             from carbon_aware.precompute_caspian_operational import run_caspian_operational_precomputation
             success = run_caspian_operational_precomputation(
+                workloads_dir=args.workloads_dir,
+                nodes_file=args.nodes_file,
+                forecasts_file=args.forecasts_file,
+                session_log_dir=session_log_dir,
+                perf_logger=perf_logger,
+                prioritize_efficiency=args.prioritize_efficiency,
+                operational_only=True
+            )
+        elif args.algorithm == 'piontek-temporal':
+            from carbon_aware.precompute_piontek_temporal import run_piontek_temporal_precomputation
+            success = run_piontek_temporal_precomputation(
                 workloads_dir=args.workloads_dir,
                 nodes_file=args.nodes_file,
                 forecasts_file=args.forecasts_file,
