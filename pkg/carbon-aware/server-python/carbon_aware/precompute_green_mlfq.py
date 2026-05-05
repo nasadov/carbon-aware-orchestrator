@@ -1,17 +1,20 @@
 """
-Precomputation runner for the Caspian-style operational-carbon baseline.
+Precomputation runner for the GREEN-style MLFQ baseline.
 """
+
+from __future__ import annotations
+
 import logging
 import os
 import re
 from typing import Optional
 
-from carbon_aware.algorithms.caspian_operational import CaspianOperationalAlgorithm
+from carbon_aware.algorithms.green_mlfq import GreenMLFQAlgorithm
 from carbon_aware.precompute_heuristic import _extract_pods_from_yaml, _load_nodes_from_yaml
-from carbon_aware.utils import PerformanceLogger, load_carbon_intensity_data
+from carbon_aware.utils import PerformanceLogger, build_timeslots, load_carbon_intensity_data
 
 
-def run_caspian_operational_precomputation(
+def run_green_mlfq_precomputation(
     workloads_dir: str,
     nodes_file: str,
     forecasts_file: str,
@@ -21,13 +24,18 @@ def run_caspian_operational_precomputation(
     operational_only: bool = True,
 ) -> bool:
     """
-    Run Caspian-style operational-carbon precomputation on all timeslot files.
+    Run the GREEN-style carbon-aware MLFQ baseline.
 
-    The operational_only argument is accepted for CLI compatibility; this
-    baseline is always operational-only by design.
+    This is a rolling online simulation. Future carbon forecasts are visible,
+    but future workload arrivals are not. Arrived pods are queued. In each
+    scheduling epoch, newly arrived pods form a short upper queue capped at
+    30% of cluster CPU capacity; older pods are ranked by GREEN's carbon
+    footprint priority and shifting factor. Placements start only in the
+    current epoch and are non-preemptive because TotEm's workloads are fixed
+    Kubernetes pods rather than checkpointable ML training jobs.
     """
     try:
-        logging.info("Starting Caspian-style operational-carbon precomputation")
+        logging.info("Starting GREEN-style MLFQ precomputation")
         logging.info("Workloads directory: %s", workloads_dir)
         logging.info("Nodes file: %s", nodes_file)
         logging.info("Forecasts file: %s", forecasts_file)
@@ -46,19 +54,20 @@ def run_caspian_operational_precomputation(
             return False
 
         for flv in flavours:
-            if getattr(flv, "region", None) in carbon_forecast:
-                flv.forecast = carbon_forecast[flv.region]
+            region = getattr(flv, "region", "")
+            if region in carbon_forecast:
+                flv.forecast = carbon_forecast[region]
             else:
                 fallback_region = next(iter(carbon_forecast.keys()))
                 flv.forecast = carbon_forecast[fallback_region]
                 logging.warning(
                     "No forecast found for region %s on node %s; using %s",
-                    getattr(flv, "region", ""),
+                    region,
                     flv.id,
                     fallback_region,
                 )
 
-        algorithm = CaspianOperationalAlgorithm(perf_logger=perf_logger)
+        algorithm = GreenMLFQAlgorithm(perf_logger=perf_logger)
         algorithm.set_workloads_dir(workloads_dir)
         if session_log_dir:
             algorithm.set_base_log_dir(session_log_dir)
@@ -89,14 +98,11 @@ def run_caspian_operational_precomputation(
         for file_idx, yaml_file in enumerate(yaml_files):
             file_path = os.path.join(workloads_dir, yaml_file)
             logging.info("Loading file %s/%s: %s", file_idx + 1, len(yaml_files), yaml_file)
-
             pods = _extract_pods_from_yaml(file_path)
             if not pods:
                 continue
 
-            match = re.match(r"timeslot_(\d+)\.yaml$", yaml_file)
-            file_earliest_ts = int(match.group(1)) if match else 0
-
+            file_earliest_ts = _timeslot_number(yaml_file)
             for pod in pods:
                 pod.earliest_timeslot = file_earliest_ts
                 setattr(pod, "_earliest_timeslot_source", "precompute")
@@ -112,12 +118,19 @@ def run_caspian_operational_precomputation(
                     )
 
         logging.info(
-            "Loaded %s pods for Caspian-style optimizer baseline",
+            "Loaded %s pods for GREEN-style rolling MLFQ baseline",
             total_pods_processed,
         )
 
-        leftover_cpu = {flv.id: {slot: flv.totalCpu for slot in range(max_timeslots)} for flv in flavours}
-        leftover_ram = {flv.id: {slot: flv.totalRam for slot in range(max_timeslots)} for flv in flavours}
+        leftover_cpu = {
+            flv.id: {slot: flv.totalCpu for slot in range(max_timeslots)}
+            for flv in flavours
+        }
+        leftover_ram = {
+            flv.id: {slot: flv.totalRam for slot in range(max_timeslots)}
+            for flv in flavours
+        }
+        timeslots = build_timeslots(max_timeslots)
         pending_pods = []
         total_pods_placed = 0
         total_pods_failed = 0
@@ -135,15 +148,7 @@ def run_caspian_operational_precomputation(
 
             still_pending = []
             for pod in pending_pods:
-                duration_slots = max(1, int(pod.duration))
-                deadline_slot = getattr(pod, "deadline_slot", None)
-                if deadline_slot is None:
-                    deadline_slot = max_timeslots
-                latest_start = min(
-                    int(deadline_slot) - duration_slots,
-                    max_timeslots - duration_slots,
-                )
-                if latest_start < current_slot:
+                if algorithm.latest_start_slot(pod, max_timeslots) < current_slot:
                     total_pods_failed += 1
                     logging.info(
                         "Timeslot %s: pod %s expired before placement",
@@ -157,45 +162,39 @@ def run_caspian_operational_precomputation(
             if not pending_pods:
                 continue
 
-            solution = algorithm.solve_visible_queue_optimizer(
-                pods=pending_pods,
+            ranked_pods = algorithm.rank_pending_pods(
+                pending_pods=pending_pods,
+                current_slot=current_slot,
                 flavours=flavours,
                 max_time_slots=max_timeslots,
-                current_slot=current_slot,
-                available_cpu=leftover_cpu,
-                available_ram=leftover_ram,
-                time_limit_seconds=30.0,
-                carbon_weight=0.85,
-                completion_weight=0.15,
             )
 
-            pod_by_id = {pod.id: pod for pod in pending_pods}
             committed_ids = set()
-            for pod_id, (selected_flavour, start_slot, emissions) in sorted(solution.items()):
-                if start_slot != current_slot:
+            for pod in ranked_pods:
+                if pod.id in committed_ids:
                     continue
-                pod = pod_by_id[pod_id]
-                duration_slots = max(1, int(pod.duration))
+                setattr(pod, "_current_scheduling_slot", current_slot)
+                selected_flavour, selected_timeslot, emissions = algorithm.find_placement(
+                    pod, flavours, timeslots, leftover_cpu, leftover_ram, max_timeslots
+                )
+                if selected_flavour is None or selected_timeslot is None:
+                    continue
 
-                for slot in range(start_slot, start_slot + duration_slots):
+                duration_slots = max(1, int(pod.duration))
+                for slot in range(selected_timeslot.id, selected_timeslot.id + duration_slots):
                     if slot < max_timeslots:
                         leftover_cpu[selected_flavour.id][slot] -= pod.cpuRequest
                         leftover_ram[selected_flavour.id][slot] -= pod.ramRequest
 
-                algorithm._write_placement_to_csv(
-                    pod_id=pod.id,
-                    node_id=selected_flavour.id,
-                    start_slot=start_slot,
-                    duration=pod.duration,
-                    cpu_request=pod.cpuRequest,
-                    ram_request=pod.ramRequest,
-                    decision_operational_emissions_g=emissions,
-                    solver_status=getattr(algorithm, "status", ""),
-                    solution_time_seconds=getattr(algorithm, "solution_time_seconds", 0.0),
-                    baseline_variant="caspian-style",
-                )
-                committed_ids.add(pod_id)
+                committed_ids.add(pod.id)
                 total_pods_placed += 1
+                logging.info(
+                    "Timeslot %s: placed pod %s on %s, emissions=%.3fg",
+                    current_slot,
+                    pod.id,
+                    selected_flavour.id,
+                    emissions,
+                )
 
             if committed_ids:
                 pending_pods = [pod for pod in pending_pods if pod.id not in committed_ids]
@@ -212,7 +211,7 @@ def run_caspian_operational_precomputation(
 
         algorithm.flush_session_placement_log()
 
-        logging.info("Caspian precomputation complete")
+        logging.info("GREEN MLFQ precomputation complete")
         logging.info("Total pods processed: %s", total_pods_processed)
         logging.info(
             "Successfully placed: %s (%.1f%%)",
@@ -231,13 +230,13 @@ def run_caspian_operational_precomputation(
                     handle.write(f"pods={total_pods_processed}\n")
                 from carbon_aware.placement_summary import auto_generate_summary_from_session_dir
 
-                auto_generate_summary_from_session_dir(session_log_dir, "caspian_operational")
+                auto_generate_summary_from_session_dir(session_log_dir, "green_mlfq")
             except Exception as exc:
-                logging.warning("Could not generate Caspian placement summary: %s", exc)
+                logging.warning("Could not generate GREEN placement summary: %s", exc)
 
         return True
     except Exception as exc:
-        logging.error("Fatal error in Caspian precomputation: %s", exc)
+        logging.error("Fatal error in GREEN MLFQ precomputation: %s", exc)
         import traceback
 
         logging.error(traceback.format_exc())

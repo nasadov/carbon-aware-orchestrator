@@ -1,12 +1,12 @@
 """
 Caspian-style spatio-temporal operational-carbon baseline.
 
-The precompute path uses a batch CP-SAT model over pods, nodes, and start times.
-It is intentionally operational-only: dynamic and idle operational emissions
-are part of the objective, while embodied emissions are left out of the
-decision. Post-hoc analyses can still account for embodied emissions using the
-shared placement evaluator. The online find_placement method remains as a
-greedy fallback for server-mode compatibility.
+The precompute path uses a rolling CP-SAT model over currently visible pods,
+nodes, and start times. It is intentionally operational-only: dynamic and idle
+operational emissions are part of the objective, while embodied emissions are
+left out of the decision. Post-hoc analyses can still account for embodied
+emissions using the shared placement evaluator. The online find_placement
+method remains as a greedy fallback for server-mode compatibility.
 """
 import csv
 import logging
@@ -184,7 +184,7 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
 
     @property
     def name(self) -> str:
-        return "Caspian-Operational-Opt"
+        return "Caspian-style"
 
     def _extract_earliest_timeslot_from_yaml_files(self, pod_id: str) -> int:
         workloads_dir = self._workloads_dir or "../workloads"
@@ -452,7 +452,7 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
 
         return selected_flavour, selected_timeslot, selected_emissions
 
-    def solve_batch_optimizer(
+    def solve_visible_queue_optimizer(
         self,
         pods: List[CarbonAwarePod],
         flavours: List[CarbonAwareFlavour],

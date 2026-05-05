@@ -10,6 +10,7 @@ from carbon_aware.algorithms.global_optimal import GlobalOptimalAlgorithm
 from carbon_aware.algorithms.vanilla import VanillaAlgorithm
 from carbon_aware.algorithms.caspian_operational import CaspianOperationalAlgorithm
 from carbon_aware.algorithms.piontek_temporal import PiontekTemporalAlgorithm
+from carbon_aware.algorithms.green_mlfq import GreenMLFQAlgorithm
 
 # Store reference to precomputed global optimal instance
 _precomputed_global_optimal = None
@@ -51,7 +52,9 @@ def get_algorithm(name: str) -> SchedulingAlgorithm:
         return CaspianOperationalAlgorithm()
     elif name == "piontek-temporal":
         return PiontekTemporalAlgorithm()
+    elif name == "green-mlfq":
+        return GreenMLFQAlgorithm()
     else:
         raise ValueError(
-            f"Unknown algorithm: {name}. Available: heuristic, global-optimal, vanilla, caspian-operational, piontek-temporal"
+            f"Unknown algorithm: {name}. Available: heuristic, global-optimal, vanilla, caspian-operational, piontek-temporal, green-mlfq"
         )

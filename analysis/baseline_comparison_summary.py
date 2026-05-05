@@ -98,6 +98,41 @@ def count_workload_pods(workloads_dir: Path) -> int:
     return total
 
 
+def read_experiment_pod_count(exp_dir: Path, fallback: int) -> int:
+    pods_file = exp_dir / "pods.txt"
+    if pods_file.exists():
+        try:
+            text = pods_file.read_text().strip()
+            match = re.search(r"pods\s*=\s*(\d+)", text)
+            if match:
+                return int(match.group(1))
+        except Exception:
+            pass
+    match = re.search(r"_(\d+)pods_", exp_dir.name)
+    if match:
+        return int(match.group(1))
+    return fallback
+
+
+def infer_matrix_context(root: Path, exp_dir: Path) -> Tuple[str, str]:
+    try:
+        parts = exp_dir.relative_to(root).parts[:-1]
+    except ValueError:
+        parts = exp_dir.parts[:-1]
+    parts = (root.name,) + tuple(parts)
+    context = "/".join(parts)
+    seed = ""
+    target_pods = ""
+    for part in parts:
+        seed_match = re.search(r"seed[_-](\d+)", part)
+        pods_match = re.search(r"pods[_-](\d+)", part)
+        if seed_match:
+            seed = seed_match.group(1)
+        if pods_match:
+            target_pods = pods_match.group(1)
+    return seed, target_pods or context
+
+
 def discover_experiment_dirs(root: Path) -> List[Path]:
     dirs: List[Path] = []
     for current, dirnames, filenames in os.walk(root):
@@ -126,22 +161,26 @@ def infer_algorithm(exp_dir: Path, csv_path: Path) -> str:
     if name.startswith("heuristic_") or csv_path.name.startswith("heuristic_"):
         return "TotEm"
     if name.startswith("vanilla_") or csv_path.name.startswith("vanilla_"):
+        if "most_allocated" in name or "most-allocated" in name:
+            return "Vanilla-MostAllocated"
+        if "least_allocated" in name or "least-allocated" in name:
+            return "Vanilla-LeastAllocated"
+        try:
+            sample = pd.read_csv(csv_path, nrows=1)
+            score_mode = str(sample.get("node_score_mode", [""]).iloc[0])
+            if score_mode == "most_allocated":
+                return "Vanilla-MostAllocated"
+            if score_mode == "least_allocated":
+                return "Vanilla-LeastAllocated"
+        except Exception:
+            pass
         return "Vanilla"
     if name.startswith("piontek-temporal_") or csv_path.name.startswith("piontek_temporal_"):
         return "Piontek-Temporal-K8s"
-    if "caspian-oracle-batch" in name:
-        return "Caspian-Operational-Oracle"
+    if name.startswith("green-mlfq_") or csv_path.name.startswith("green_mlfq_"):
+        return "GREEN-MLFQ-K8s"
     if name.startswith("caspian-operational_") or csv_path.name.startswith("caspian_operational_"):
-        try:
-            sample = pd.read_csv(csv_path, nrows=1)
-            variant = str(sample.get("baseline_variant", [""]).iloc[0])
-            if variant == "caspian-oracle-batch":
-                return "Caspian-Operational-Oracle"
-            if variant == "caspian-rolling-optimizer":
-                return "Caspian-Operational-Rolling"
-        except Exception:
-            pass
-        return "Caspian-Operational-Opt"
+        return "Caspian-style"
     if name.startswith("global-optimal_"):
         return "MILP"
     return name
@@ -237,6 +276,8 @@ def evaluate_placements(
 
 def write_markdown(rows: List[dict], output_md: Path) -> None:
     headers = [
+        "seed",
+        "target_pods",
         "algorithm",
         "placed_pods",
         "success_rate_pct",
@@ -299,8 +340,12 @@ def main() -> int:
         row["algorithm"] = infer_algorithm(exp_dir, csv_path)
         row["experiment"] = exp_dir.name
         row["placement_csv"] = str(csv_path)
-        row["total_workload_pods"] = total_pods
-        row["success_rate_pct"] = row["placed_pods"] / max(total_pods, 1) * 100.0
+        exp_total_pods = read_experiment_pod_count(exp_dir, total_pods)
+        seed, target_pods = infer_matrix_context(root, exp_dir)
+        row["seed"] = seed
+        row["target_pods"] = target_pods or exp_total_pods
+        row["total_workload_pods"] = exp_total_pods
+        row["success_rate_pct"] = row["placed_pods"] / max(exp_total_pods, 1) * 100.0
         row["per_pod_g"] = row["total_kg"] * 1000.0 / max(row["placed_pods"], 1)
         row["elapsed_seconds"] = run_times.get(exp_dir.name, "")
         rows.append(row)

@@ -470,7 +470,7 @@ def create_publication_plot(
     algo_label = (
         "TotEm" if algorithm == "heuristic" else
         "Oracle" if algorithm == "global-optimal" else
-        "Caspian-Operational-Opt" if algorithm == "caspian-operational" else
+        "Caspian-style" if algorithm == "caspian-operational" else
         "Carbon-Agnostic"
     )
     ax.set_title(f"{algo_label} precompute runtime scaling", fontsize=13)
@@ -682,7 +682,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     label = (
         "Heuristic" if args.algorithm == "heuristic" else
         "Oracle" if args.algorithm == "global-optimal" else
-        "Caspian-Operational-Opt" if args.algorithm == "caspian-operational" else
+        "Caspian-style" if args.algorithm == "caspian-operational" else
         "Carbon-Agnostic"
     )
     if tqdm is not None:

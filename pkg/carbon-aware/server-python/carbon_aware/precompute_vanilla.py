@@ -29,6 +29,7 @@ def run_vanilla_precomputation(
     perf_logger: Optional[PerformanceLogger] = None,
     prioritize_efficiency: bool = False,  # unused in vanilla
     operational_only: bool = False,       # unused in vanilla
+    score_mode: str = "most_allocated",
 ) -> bool:
     """
     Run vanilla algorithm precomputation on all timeslot files.
@@ -61,7 +62,8 @@ def run_vanilla_precomputation(
 
         # 2. Initialize vanilla algorithm
         logging.info("🔧 STEP 2: Initializing vanilla algorithm")
-        algorithm = VanillaAlgorithm(perf_logger=perf_logger)
+        logging.info(f"📌 Vanilla node score mode: {score_mode}")
+        algorithm = VanillaAlgorithm(perf_logger=perf_logger, score_mode=score_mode)
         if hasattr(algorithm, 'set_workloads_dir'):
             algorithm.set_workloads_dir(workloads_dir)
         if session_log_dir:
@@ -344,5 +346,4 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[CarbonAwareFlavour]:
     except Exception as e:
         logging.error(f"Error loading nodes from {nodes_file}: {e}")
         return []
-
 

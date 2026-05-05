@@ -3,8 +3,10 @@ Vanilla Kubernetes-like scheduler simulation.
 
 This algorithm ignores carbon signals and schedules pods using a simple
 Kubernetes-default-inspired scoring: choose the earliest feasible timeslot,
-then pick the node with highest LeastAllocated score (prefer more free nodes),
-subject to CPU/RAM feasibility across the pod's entire duration.
+then pick the node with the selected resource-only score, subject to CPU/RAM
+feasibility across the pod's entire duration. The default is MostAllocated
+because it is the stronger packing-oriented vanilla baseline for batch pod
+placement.
 
 It writes placements to a session CSV compatible with downstream analyses.
 """
@@ -27,9 +29,10 @@ class VanillaAlgorithm(SchedulingAlgorithm):
 
     _placement_csv_filename = "vanilla_placement_session.csv"
 
-    def __init__(self, perf_logger=None):
+    def __init__(self, perf_logger=None, score_mode: str = "most_allocated"):
         self.experiment_logger = None
         self.perf_logger = perf_logger
+        self.score_mode = score_mode if score_mode in ("most_allocated", "least_allocated") else "most_allocated"
         self._session_log_dir: Optional[str] = None
         self._placement_csv_file_handle = None
         self._placement_csv_writer = None
@@ -91,7 +94,16 @@ class VanillaAlgorithm(SchedulingAlgorithm):
             self._placement_csv_writer = csv.writer(self._placement_csv_file_handle)
 
             if not file_exists_and_not_empty:
-                self._placement_csv_writer.writerow(["pod_id", "node_id", "start_slot", "duration", "cpu_request", "ram_request"])
+                self._placement_csv_writer.writerow([
+                    "pod_id",
+                    "node_id",
+                    "start_slot",
+                    "duration",
+                    "cpu_request",
+                    "ram_request",
+                    "node_score_mode",
+                    "baseline_variant",
+                ])
                 self._placement_csv_file_handle.flush()
             logging.debug(f"Vanilla placements will be logged to: {self._placement_csv_path}")
 
@@ -115,7 +127,16 @@ class VanillaAlgorithm(SchedulingAlgorithm):
                                  cpu_request: float = 0.0, ram_request: float = 0.0) -> None:
         if self._placement_csv_writer and self._placement_csv_file_handle:
             try:
-                self._csv_buffer.append([pod_id, node_id, start_slot, duration, cpu_request, ram_request])
+                self._csv_buffer.append([
+                    pod_id,
+                    node_id,
+                    start_slot,
+                    duration,
+                    cpu_request,
+                    ram_request,
+                    self.score_mode,
+                    f"vanilla-{self.score_mode}",
+                ])
                 if len(self._csv_buffer) >= self._csv_buffer_limit:
                     self._placement_csv_writer.writerows(self._csv_buffer)
                     self._csv_buffer.clear()
@@ -260,6 +281,21 @@ class VanillaAlgorithm(SchedulingAlgorithm):
         # Weight CPU and memory equally
         return 0.5 * cpu_ratio + 0.5 * mem_ratio
 
+    @staticmethod
+    def _most_allocated_score(available_cpu: float, total_cpu: float, available_ram: float, total_ram: float) -> float:
+        """
+        Approximate Kubernetes NodeResourcesFit MostAllocated scoring.
+        Higher is better: prefer nodes with larger allocated fractions of CPU and memory.
+        """
+        cpu_ratio = 1.0 - ((available_cpu / total_cpu) if total_cpu > 0 else 0.0)
+        mem_ratio = 1.0 - ((available_ram / total_ram) if total_ram > 0 else 0.0)
+        return 0.5 * cpu_ratio + 0.5 * mem_ratio
+
+    def _resource_score(self, available_cpu: float, total_cpu: float, available_ram: float, total_ram: float) -> float:
+        if self.score_mode == "least_allocated":
+            return self._least_allocated_score(available_cpu, total_cpu, available_ram, total_ram)
+        return self._most_allocated_score(available_cpu, total_cpu, available_ram, total_ram)
+
     def find_placement(
         self,
         pod: CarbonAwarePod,
@@ -270,7 +306,7 @@ class VanillaAlgorithm(SchedulingAlgorithm):
         max_time_slots: int = 48
     ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
         """
-        Find a placement using earliest-feasible-time, LeastAllocated node selection.
+        Find a placement using earliest-feasible-time and resource-only node selection.
 
         Returns (node, timeslot, 0.0) where emissions are zero for vanilla.
         """
@@ -354,7 +390,7 @@ class VanillaAlgorithm(SchedulingAlgorithm):
                 feasible_found += 1
                 avail_cpu_now = min(arr_cpu[ts_id], flv.totalCpu)
                 avail_ram_now = min(arr_ram[ts_id], flv.totalRam)
-                score = self._least_allocated_score(
+                score = self._resource_score(
                     available_cpu=avail_cpu_now,
                     total_cpu=flv.totalCpu,
                     available_ram=avail_ram_now,
@@ -402,5 +438,4 @@ class VanillaAlgorithm(SchedulingAlgorithm):
             )
 
         return None, None, float('inf')
-
 

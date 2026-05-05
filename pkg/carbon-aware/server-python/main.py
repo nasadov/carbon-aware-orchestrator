@@ -122,8 +122,8 @@ def main() -> None:
     parser.add_argument(
         '--algorithm',
         default='heuristic',
-        choices=['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal'],
-        help='Scheduling algorithm to use: heuristic (TotEm), global-optimal (MILP), vanilla (K8s-like, carbon-unaware), caspian-operational (spatio-temporal operational-carbon baseline), or piontek-temporal (temporal CO2-window Kubernetes baseline)'
+        choices=['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal', 'green-mlfq'],
+        help='Scheduling algorithm to use: heuristic (TotEm), global-optimal (MILP), vanilla (K8s-like, carbon-unaware), caspian-operational (spatio-temporal operational-carbon baseline), piontek-temporal (temporal CO2-window Kubernetes baseline), or green-mlfq (GREEN-style carbon-aware MLFQ baseline)'
     )
     parser.add_argument(
         '--workloads-dir',
@@ -178,6 +178,12 @@ def main() -> None:
         help='Embodied allocation mode for heuristic/global-optimal precompute runs'
     )
     parser.add_argument(
+        '--vanilla-score-mode',
+        default='most_allocated',
+        choices=['most_allocated', 'least_allocated'],
+        help='Resource-only scoring mode for the vanilla Kubernetes baseline'
+    )
+    parser.add_argument(
         '--precompute',
         action='store_true',
         help='Run precomputation mode: process all timeslot files sequentially and save placements to CSV without starting server'
@@ -211,15 +217,18 @@ def main() -> None:
     session_log_dir = None
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    def algorithm_mode_name() -> str:
+        if args.algorithm == 'vanilla':
+            return f"vanilla_{args.vanilla_score_mode}"
+        if args.operational_only:
+            return f"{args.algorithm}_op"
+        mode_suffix = args.embodied_mode if args.algorithm in ('heuristic', 'global-optimal') else None
+        return f"{args.algorithm}_{mode_suffix}" if mode_suffix else args.algorithm
+
     # Set up session directory for logging
     if args.experiment:
         session_type_prefix = "experiment_session"
-        # Include mode suffix: 'op' for operational-only, else embodied mode for supported algos
-        if args.operational_only:
-            algo_mode = f"{args.algorithm}_op"
-        else:
-            mode_suffix = args.embodied_mode if args.algorithm in ('heuristic', 'global-optimal') else None
-            algo_mode = f"{args.algorithm}_{mode_suffix}" if mode_suffix else args.algorithm
+        algo_mode = algorithm_mode_name()
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         logging.info(f"🧪 Experiment mode: {session_log_dir}")
@@ -232,12 +241,7 @@ def main() -> None:
         else:
             session_type_prefix = "perf_log_session"  # Fallback
             
-        # Include mode suffix: 'op' for operational-only, else embodied mode for supported algos
-        if args.operational_only:
-            algo_mode = f"{args.algorithm}_op"
-        else:
-            mode_suffix = args.embodied_mode if args.algorithm in ('heuristic', 'global-optimal') else None
-            algo_mode = f"{args.algorithm}_{mode_suffix}" if mode_suffix else args.algorithm
+        algo_mode = algorithm_mode_name()
         session_log_dir = os.path.join(args.experiment_dir, f"{algo_mode}_{session_type_prefix}_{timestamp}")
         os.makedirs(session_log_dir, exist_ok=True)
         
@@ -309,8 +313,8 @@ def main() -> None:
     
     # Check if precompute mode is requested
     if args.precompute:
-        if args.algorithm not in ['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal']:
-            logging.error(f"Precompute mode is only supported for 'heuristic', 'global-optimal', 'vanilla', 'caspian-operational', and 'piontek-temporal' algorithms, got: {args.algorithm}")
+        if args.algorithm not in ['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal', 'green-mlfq']:
+            logging.error(f"Precompute mode is only supported for 'heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal', and 'green-mlfq' algorithms, got: {args.algorithm}")
             sys.exit(1)
         
         logging.info(f"🧮 Running precomputation mode for {args.algorithm} algorithm")
@@ -350,7 +354,8 @@ def main() -> None:
                 session_log_dir=session_log_dir,
                 perf_logger=perf_logger,
                 prioritize_efficiency=args.prioritize_efficiency,
-                operational_only=args.operational_only
+                operational_only=args.operational_only,
+                score_mode=args.vanilla_score_mode
             )
         elif args.algorithm == 'caspian-operational':
             from carbon_aware.precompute_caspian_operational import run_caspian_operational_precomputation
@@ -366,6 +371,17 @@ def main() -> None:
         elif args.algorithm == 'piontek-temporal':
             from carbon_aware.precompute_piontek_temporal import run_piontek_temporal_precomputation
             success = run_piontek_temporal_precomputation(
+                workloads_dir=args.workloads_dir,
+                nodes_file=args.nodes_file,
+                forecasts_file=args.forecasts_file,
+                session_log_dir=session_log_dir,
+                perf_logger=perf_logger,
+                prioritize_efficiency=args.prioritize_efficiency,
+                operational_only=True
+            )
+        elif args.algorithm == 'green-mlfq':
+            from carbon_aware.precompute_green_mlfq import run_green_mlfq_precomputation
+            success = run_green_mlfq_precomputation(
                 workloads_dir=args.workloads_dir,
                 nodes_file=args.nodes_file,
                 forecasts_file=args.forecasts_file,
