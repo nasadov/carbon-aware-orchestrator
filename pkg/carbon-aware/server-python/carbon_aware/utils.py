@@ -59,48 +59,32 @@ def compute_emissions(
     return total
 
 
-def compute_emissions_operational_only(flavour: CarbonAwareFlavour, timeslot_id: int, pod: CarbonAwarePod) -> float:
+def compute_emissions_operational_only(
+    flavour: CarbonAwareFlavour,
+    timeslot_id: int,
+    pod: CarbonAwarePod,
+    used_cpu_before_by_slot: Optional[Dict[int, float]] = None,
+) -> float:
     """
-    Compute only the operational carbon emissions for placing 'pod' on 'flavour' during timeslot 'timeslot_id'.
-    
-    This function omits embodied emissions and only considers the operational carbon emissions
-    from power consumption during the workload execution.
-    
-    Emissions calculation:
-    - operationalEmissions = carbon_intensity * duration * power_consumption (kW)
-    - embodiedEmissions = 0 (omitted)
-    - total = operationalEmissions only
+    Compute operational-only marginal emissions for placing a pod.
+
+    Idle power is charged only for node-slots that were previously idle.
+    Dynamic power is charged according to the pod's CPU share. If no occupancy
+    map is provided, every covered slot is treated as previously idle, which
+    preserves the historical single-pod behavior.
     """
-    # Default carbon intensity if timeslot not in forecast
-    carbon_intensity = flavour.forecast.get(timeslot_id, 200.0)
-
-    # Calculate power consumption based on CPU usage
-    # Use the formula: idle + (max-idle) * cpu_usage_ratio
-    idle_power = flavour.power["idle"]  # watts
-    max_power = flavour.power["max"]  # watts
-    
-    # CPU usage ratio (ensure we don't divide by zero)
-    cpu_usage_ratio = pod.cpuRequest / max(flavour.totalCpu, 0.001)  # Avoid division by zero
-    
-    # Calculate power based on the formula: idle + (max-idle) * cpu_usage_ratio
-    power_consumption_watts = idle_power + (max_power - idle_power) * cpu_usage_ratio
-    
-    # Convert watts to kilowatts for emissions calculation
-    pod.powerConsumption = power_consumption_watts / 1000.0  # convert W to kW
-    
-    # Calculate operational emissions
-    operationalEmissions = carbon_intensity * pod.duration * pod.powerConsumption
-
-    # For operational-only mode, embodied emissions are zero
-    embodiedEmissions = 0.0
-    total_emi = operationalEmissions
-
+    used_map = used_cpu_before_by_slot or {}
+    total_emi = compute_marginal_emissions_for_pod_over_duration(
+        flavour=flavour,
+        start_slot=timeslot_id,
+        duration_hours=pod.duration,
+        pod_cpu_request=pod.cpuRequest,
+        used_cpu_before_by_slot=used_map,
+        include_embodied=False,
+    )
     logging.debug(
         f"[compute_emissions_operational_only] Node={flavour.id}, TimeslotID={timeslot_id}, "
-        f"carbon_intensity={carbon_intensity}, duration={pod.duration}, "
-        f"cpu_ratio={cpu_usage_ratio:.2f}, power={power_consumption_watts:.2f}W ({pod.powerConsumption:.3f}kW), "
-        f"operationalEmi={operationalEmissions:.3f}, "
-        f"embodiedEmi={embodiedEmissions:.3f} (omitted), total={total_emi:.3f}"
+        f"duration={pod.duration}, used_cpu_map_entries={len(used_map)}, total={total_emi:.3f}"
     )
     return total_emi
 

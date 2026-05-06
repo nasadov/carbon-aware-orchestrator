@@ -131,6 +131,7 @@ def validate_capacity_constraints(df: pd.DataFrame, node_capacities: Dict[str, D
         Tuple of (is_valid, violations_list)
     """
     violations = []
+    epsilon = 1e-9
     node_timeslot_usage = defaultdict(lambda: defaultdict(lambda: {'cpu': 0, 'memory': 0, 'pods': []}))
     
     # Calculate resource usage by node and timeslot
@@ -168,7 +169,7 @@ def validate_capacity_constraints(df: pd.DataFrame, node_capacities: Dict[str, D
         
         for slot, usage in timeslots.items():
             # Check CPU violation
-            if usage['cpu'] > node_caps['cpu']:
+            if usage['cpu'] > node_caps['cpu'] + epsilon:
                 violations.append({
                     'type': 'cpu_violation',
                     'node_id': node_id,
@@ -181,7 +182,7 @@ def validate_capacity_constraints(df: pd.DataFrame, node_capacities: Dict[str, D
                 })
             
             # Check memory violation
-            if usage['memory'] > node_caps['memory']:
+            if usage['memory'] > node_caps['memory'] + epsilon:
                 violations.append({
                     'type': 'memory_violation',
                     'node_id': node_id,

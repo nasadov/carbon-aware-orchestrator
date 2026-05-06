@@ -10,7 +10,12 @@ from datetime import datetime
 
 from carbon_aware.algorithms.base import SchedulingAlgorithm
 from carbon_aware.models import CarbonAwarePod, CarbonAwareFlavour, CarbonAwareTimeslot
-from carbon_aware.utils import is_timeslot_valid, compute_emissions, compute_emissions_with_allocation
+from carbon_aware.utils import (
+    is_timeslot_valid,
+    compute_emissions,
+    compute_emissions_with_allocation,
+    compute_marginal_emissions_for_pod_over_duration,
+)
 
 
 class HeuristicAlgorithm(SchedulingAlgorithm):
@@ -484,8 +489,14 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
                             ram_slack_sum += max(leftover_ram_now - pod.ramRequest, 0.0)
 
                         if self._operational_only:
-                            from carbon_aware.utils import compute_emissions_operational_only
-                            total_emi = compute_emissions_operational_only(flv, ts.id, pod)
+                            total_emi = compute_marginal_emissions_for_pod_over_duration(
+                                flavour=flv,
+                                start_slot=ts.id,
+                                duration_hours=pod.duration,
+                                pod_cpu_request=pod.cpuRequest,
+                                used_cpu_before_by_slot=used_cpu_before,
+                                include_embodied=False,
+                            )
                         else:
                             from carbon_aware.utils import compute_emissions_with_allocation
                             total_emi = compute_emissions_with_allocation(
@@ -629,27 +640,28 @@ def find_best_node_and_timeslot(
                     break
 
             if duration_feasible:
-                # Pre-compute packing slacks for tie-breaker
+                # Pre-compute occupancy and packing slacks for the scoring model.
+                used_cpu_before = {}
                 cpu_slack_sum = 0.0
                 ram_slack_sum = 0.0
                 for slot_offset in range(int(pod.duration)):
                     slot_id = ts.id + slot_offset
                     leftover_cpu_now = leftover_cpu[flv.id][slot_id]
                     leftover_ram_now = leftover_ram[flv.id][slot_id]
+                    used_cpu_before[slot_id] = max(flv.totalCpu - leftover_cpu_now, 0.0)
                     cpu_slack_sum += max(leftover_cpu_now - pod.cpuRequest, 0.0)
                     ram_slack_sum += max(leftover_ram_now - pod.ramRequest, 0.0)
 
                 if operational_only:
-                    from carbon_aware.utils import compute_emissions_operational_only
-                    total_emi = compute_emissions_operational_only(flv, ts.id, pod)
+                    total_emi = compute_marginal_emissions_for_pod_over_duration(
+                        flavour=flv,
+                        start_slot=ts.id,
+                        duration_hours=pod.duration,
+                        pod_cpu_request=pod.cpuRequest,
+                        used_cpu_before_by_slot=used_cpu_before,
+                        include_embodied=False,
+                    )
                 else:
-                    # Build a minimal used_cpu_before map for proportional/uniform embodied
-                    used_cpu_before = {}
-                    for slot_offset in range(int(pod.duration)):
-                        slot_id = ts.id + slot_offset
-                        total_capacity = flv.totalCpu
-                        leftover = leftover_cpu[flv.id][slot_id]
-                        used_cpu_before[slot_id] = max(total_capacity - leftover, 0.0)
                     total_emi = compute_emissions_with_allocation(
                         flavour=flv,
                         start_slot=ts.id,

@@ -157,7 +157,7 @@ def run_caspian_operational_precomputation(
             if not pending_pods:
                 continue
 
-            solution = algorithm.solve_visible_queue_optimizer(
+            solution = algorithm.solve_visible_queue_lp_guided(
                 pods=pending_pods,
                 flavours=flavours,
                 max_time_slots=max_timeslots,
