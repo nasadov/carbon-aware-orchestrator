@@ -165,8 +165,9 @@ def run_caspian_operational_precomputation(
                 available_cpu=leftover_cpu,
                 available_ram=leftover_ram,
                 time_limit_seconds=30.0,
-                carbon_weight=0.85,
-                completion_weight=0.15,
+                carbon_weight=0.70,
+                qos_weight=0.20,
+                completion_weight=0.10,
             )
 
             pod_by_id = {pod.id: pod for pod in pending_pods}

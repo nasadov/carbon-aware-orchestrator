@@ -40,7 +40,7 @@ class PiontekTemporalAlgorithm(SchedulingAlgorithm):
         optimal_window_hours: int = 6,
         cpu_utilization_threshold: float = 0.95,
         max_stale_hours: int = 24,
-        node_score_mode: str = "least_allocated",
+        node_score_mode: str = "most_allocated",
     ):
         self.experiment_logger = None
         self.perf_logger = perf_logger
@@ -54,7 +54,9 @@ class PiontekTemporalAlgorithm(SchedulingAlgorithm):
         self.optimal_window_hours = max(1, int(optimal_window_hours))
         self.cpu_utilization_threshold = max(0.0, min(1.0, float(cpu_utilization_threshold)))
         self.max_stale_hours = max(1, int(max_stale_hours))
-        self.node_score_mode = node_score_mode
+        self.node_score_mode = (
+            node_score_mode if node_score_mode in ("most_allocated", "least_allocated") else "most_allocated"
+        )
         self.iterations = 0
         self.steps = 0
 

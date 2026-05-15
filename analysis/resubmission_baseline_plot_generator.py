@@ -40,8 +40,10 @@ DEFAULT_OUTPUT_ROOT = (
 )
 
 ALGORITHM_ORDER = [
+    "Vanilla-LeastAllocated",
     "Vanilla-MostAllocated",
     "Piontek-Temporal-K8s",
+    "Wait-Awhile",
     "GREEN-MLFQ-K8s",
     "Caspian-style",
     "TotEm-OpOnly",
@@ -49,15 +51,33 @@ ALGORITHM_ORDER = [
 ]
 
 LABELS = {
+    "Vanilla-LeastAllocated": "Vanilla LeastAllocated",
     "Vanilla-MostAllocated": "Vanilla MostAllocated",
     "Piontek-Temporal-K8s": "Piontek-style",
+    "Wait-Awhile": "Wait-Awhile",
     "GREEN-MLFQ-K8s": "GREEN-style",
     "Caspian-style": "Caspian-style",
     "TotEm-OpOnly": "TotEm operational-only",
     "TotEm": "TotEm",
 }
 
+SCATTER_LABELS = {
+    "Vanilla-LeastAllocated": "V. LeastAllocated",
+    "Vanilla-MostAllocated": "V. MostAllocated",
+    "Piontek-Temporal-K8s": "Piontek",
+    "Wait-Awhile": "Wait-Awhile",
+    "GREEN-MLFQ-K8s": "GREEN",
+    "Caspian-style": "Caspian",
+    "TotEm-OpOnly": "TotEm op-only",
+    "TotEm": "TotEm",
+}
+
 STYLES = {
+    "Vanilla-LeastAllocated": {
+        "color": "#999999",
+        "marker": "X",
+        "linestyle": ":",
+    },
     "Vanilla-MostAllocated": {
         "color": "#666666",
         "marker": "o",
@@ -67,6 +87,11 @@ STYLES = {
         "color": "#CC79A7",
         "marker": "D",
         "linestyle": ":",
+    },
+    "Wait-Awhile": {
+        "color": "#56B4E9",
+        "marker": "*",
+        "linestyle": "--",
     },
     "GREEN-MLFQ-K8s": {
         "color": "#009E73",
@@ -507,10 +532,12 @@ def plot_tradeoff(
     )
     merged.to_csv(output_dir / f"runtime_emissions_tradeoff_{pod_count}pods.csv", index=False)
 
-    fig, ax = plt.subplots(figsize=(5.2, 3.35))
+    fig, ax = plt.subplots(figsize=(6.1, 3.45))
     label_offsets = {
-        "Vanilla-MostAllocated": (-62, -7),
-        "Piontek-Temporal-K8s": (-62, 7),
+        "Vanilla-LeastAllocated": (7, -16),
+        "Vanilla-MostAllocated": (7, -7),
+        "Piontek-Temporal-K8s": (7, 14),
+        "Wait-Awhile": (7, 2),
         "GREEN-MLFQ-K8s": (7, -12),
         "Caspian-style": (7, 5),
         "TotEm-OpOnly": (7, -12),
@@ -532,7 +559,7 @@ def plot_tradeoff(
         )
         xytext = label_offsets.get(algo, (5, 4))
         ax.annotate(
-            LABELS.get(algo, algo),
+            SCATTER_LABELS.get(algo, LABELS.get(algo, algo)),
             (row["mean_runtime_s"], row["mean_per_pod_g"]),
             xytext=xytext,
             textcoords="offset points",
@@ -597,11 +624,13 @@ def plot_carbon_success_pareto(
     merged = _mark_pareto_front(merged)
     merged.to_csv(output_dir / f"carbon_success_pareto_{pod_count}pods.csv", index=False)
 
-    fig, ax = plt.subplots(figsize=(5.4, 3.55))
+    fig, ax = plt.subplots(figsize=(6.1, 3.55))
     label_offsets = {
-        "Vanilla-MostAllocated": (-82, 5),
-        "Piontek-Temporal-K8s": (-78, 6),
-        "GREEN-MLFQ-K8s": (-76, -12),
+        "Vanilla-LeastAllocated": (7, -16),
+        "Vanilla-MostAllocated": (7, 7),
+        "Piontek-Temporal-K8s": (7, 12),
+        "Wait-Awhile": (7, -8),
+        "GREEN-MLFQ-K8s": (7, -12),
         "Caspian-style": (7, 4),
         "TotEm-OpOnly": (7, 5),
         "TotEm": (7, -13),
@@ -635,7 +664,7 @@ def plot_carbon_success_pareto(
             zorder=3,
         )
         ax.annotate(
-            LABELS.get(algo, algo),
+            SCATTER_LABELS.get(algo, LABELS.get(algo, algo)),
             (row["mean_success"], row["mean_per_pod_g"]),
             xytext=label_offsets.get(algo, (5, 4)),
             textcoords="offset points",

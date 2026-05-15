@@ -177,6 +177,8 @@ def infer_algorithm(exp_dir: Path, csv_path: Path) -> str:
         return "Vanilla"
     if name.startswith("piontek-temporal_") or csv_path.name.startswith("piontek_temporal_"):
         return "Piontek-Temporal-K8s"
+    if name.startswith("wait-awhile_") or csv_path.name.startswith("wait_awhile_"):
+        return "Wait-Awhile"
     if name.startswith("green-mlfq_") or csv_path.name.startswith("green_mlfq_"):
         return "GREEN-MLFQ-K8s"
     if name.startswith("caspian-operational_") or csv_path.name.startswith("caspian_operational_"):

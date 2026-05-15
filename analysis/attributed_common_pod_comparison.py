@@ -24,6 +24,7 @@ from baseline_comparison_summary import (
     discover_experiment_dirs,
     find_placement_csv,
     infer_algorithm,
+    infer_matrix_context,
     load_forecasts,
     load_nodes,
 )
@@ -100,6 +101,8 @@ def summarize_subset(
 
 def write_markdown(rows: List[dict], output_md: Path) -> None:
     headers = [
+        "seed",
+        "target_pods",
         "comparison",
         "algorithm",
         "common_pods",
@@ -167,6 +170,7 @@ def main() -> int:
         if not placement_csv:
             continue
         algorithm = infer_algorithm(exp_dir, placement_csv)
+        seed, target_pods = infer_matrix_context(root, exp_dir)
         attributed = attribute_pod_emissions(placement_csv, nodes, forecasts)
         if not attributed:
             continue
@@ -174,6 +178,8 @@ def main() -> int:
             {
                 "algorithm": algorithm,
                 "experiment": exp_dir.name,
+                "seed": seed,
+                "target_pods": target_pods,
                 "pod_ids": set(attributed.keys()),
                 "attributed": attributed,
             }
@@ -183,40 +189,49 @@ def main() -> int:
     if not runs:
         raise SystemExit(f"No placement CSVs found under {root}")
 
-    all_common = set.intersection(*(run["pod_ids"] for run in runs))
+    grouped: Dict[Tuple[str, str], List[dict]] = defaultdict(list)
     for run in runs:
-        row = summarize_subset(run["attributed"], all_common)
-        row.update(
-            {
-                "comparison": "all_algorithms_common",
-                "algorithm": run["algorithm"],
-                "experiment": run["experiment"],
-            }
-        )
-        rows.append(row)
+        grouped[(str(run["seed"]), str(run["target_pods"]))].append(run)
 
-    reference_runs = [
-        run for run in runs if run["algorithm"] == args.reference_algorithm
-    ]
-    if reference_runs:
-        reference = reference_runs[0]
-        for run in runs:
-            if run is reference:
-                continue
-            common = reference["pod_ids"] & run["pod_ids"]
-            comparison = f"{args.reference_algorithm}_vs_{run['algorithm']}"
-            for current in (reference, run):
-                row = summarize_subset(current["attributed"], common)
-                row.update(
-                    {
-                        "comparison": comparison,
-                        "algorithm": current["algorithm"],
-                        "experiment": current["experiment"],
-                    }
-                )
-                rows.append(row)
+    for (seed, target_pods), group_runs in sorted(grouped.items(), key=lambda item: (item[0][0], item[0][1])):
+        all_common = set.intersection(*(run["pod_ids"] for run in group_runs))
+        for run in group_runs:
+            row = summarize_subset(run["attributed"], all_common)
+            row.update(
+                {
+                    "seed": seed,
+                    "target_pods": target_pods,
+                    "comparison": "all_algorithms_common",
+                    "algorithm": run["algorithm"],
+                    "experiment": run["experiment"],
+                }
+            )
+            rows.append(row)
 
-    rows.sort(key=lambda item: (item["comparison"], item["algorithm"]))
+        reference_runs = [
+            run for run in group_runs if run["algorithm"] == args.reference_algorithm
+        ]
+        if reference_runs:
+            reference = sorted(reference_runs, key=lambda run: run["experiment"])[0]
+            for run in group_runs:
+                if run is reference:
+                    continue
+                common = reference["pod_ids"] & run["pod_ids"]
+                comparison = f"{args.reference_algorithm}_vs_{run['algorithm']}"
+                for current in (reference, run):
+                    row = summarize_subset(current["attributed"], common)
+                    row.update(
+                        {
+                            "seed": seed,
+                            "target_pods": target_pods,
+                            "comparison": comparison,
+                            "algorithm": current["algorithm"],
+                            "experiment": current["experiment"],
+                        }
+                    )
+                    rows.append(row)
+
+    rows.sort(key=lambda item: (str(item["target_pods"]), str(item["seed"]), item["comparison"], item["algorithm"]))
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(output_csv, index=False)
     write_markdown(rows, output_md)

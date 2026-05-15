@@ -482,28 +482,33 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
         available_cpu: Optional[Dict[str, Dict[int, float]]] = None,
         available_ram: Optional[Dict[str, Dict[int, float]]] = None,
         time_limit_seconds: float = 30.0,
-        carbon_weight: float = 0.85,
-        completion_weight: float = 0.15,
+        carbon_weight: float = 0.70,
+        qos_weight: float = 0.20,
+        completion_weight: float = 0.10,
+        unplaced_penalty: float = 5.0,
     ) -> Dict[str, Tuple[CarbonAwareFlavour, int, float]]:
         """
-        Solve a Caspian-style rolling horizon using LP relaxation plus allocation.
+        Solve a Caspian-style rolling horizon using one LP relaxation plus allocation.
 
-        This mirrors Caspian's practical structure more closely than the CP-SAT
-        implementation: the LP relaxation estimates a good fractional schedule
-        under capacity and deadline constraints, then a deterministic allocation
-        pass constructs an integral feasible schedule from the ranked candidates.
+        The LP uses a single scalar objective combining operational carbon, QoS
+        degradation, completion time, and a finite QoS penalty for unplaced pods.
+        It is then rounded by allocating the highest-fractional LP choices while
+        preserving the simulator's hard CPU/RAM and deadline constraints.
         """
         solve_start = time.time()
         carbon_weight = float(carbon_weight)
+        qos_weight = float(qos_weight)
         completion_weight = float(completion_weight)
-        total_weight = max(carbon_weight + completion_weight, 1e-9)
+        total_weight = max(carbon_weight + qos_weight + completion_weight, 1e-9)
         carbon_weight /= total_weight
+        qos_weight /= total_weight
         completion_weight /= total_weight
 
         candidate_meta: Dict[Tuple[str, str, int], dict] = {}
         candidates_by_pod: Dict[str, List[Tuple[str, str, int]]] = {}
         pod_by_id = {pod.id: pod for pod in pods}
         max_carbon_ref = 1e-9
+        y_keys = set()
 
         for pod in pods:
             self._set_pod_earliest_timeslot(pod)
@@ -547,9 +552,17 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
                     if not feasible:
                         continue
 
+                    dynamic_g = self._candidate_dynamic_operational_g(flv, start_slot, pod)
                     solo_g = self._candidate_solo_operational_g(flv, start_slot, pod)
-                    completion_norm = (start_slot + duration_slots - earliest_slot) / max(
-                        float(deadline_slot) - earliest_slot,
+                    finish_slot = start_slot + duration_slots
+                    start_slack = max(latest_start - earliest_slot, 0)
+                    qos_norm = (
+                        (start_slot - earliest_slot) / max(float(start_slack), 1.0)
+                        if start_slack > 0
+                        else 0.0
+                    )
+                    completion_norm = (finish_slot - current_slot) / max(
+                        float(max_time_slots) - current_slot,
                         1.0,
                     )
                     key = (pod_id, flv.id, start_slot)
@@ -558,11 +571,22 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
                         "flavour": flv,
                         "start_slot": start_slot,
                         "duration_slots": duration_slots,
+                        "dynamic_g": dynamic_g,
                         "solo_g": solo_g,
+                        "qos_norm": max(0.0, qos_norm),
                         "completion_norm": max(0.0, completion_norm),
                     }
                     candidates_by_pod[pod_id].append(key)
                     max_carbon_ref = max(max_carbon_ref, solo_g)
+                    for slot in range(start_slot, start_slot + duration_slots):
+                        y_keys.add((flv.id, slot))
+
+        idle_meta = {}
+        for flv_id, slot in y_keys:
+            flv = next(flv for flv in flavours if flv.id == flv_id)
+            idle_g = self._idle_operational_g(flv, slot)
+            idle_meta[(flv_id, slot)] = idle_g
+            max_carbon_ref = max(max_carbon_ref, idle_g)
 
         candidate_keys = list(candidate_meta.keys())
         if not candidate_keys:
@@ -573,19 +597,22 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
             return {}
 
         lp_values = {key: 0.0 for key in candidate_keys}
-        phase1_status = "SKIPPED"
-        phase2_status = "SKIPPED"
+        lp_unplaced_values = {pod_id: 1.0 for pod_id in pod_by_id}
+        lp_status = "SKIPPED"
 
         try:
             import numpy as np
             from scipy.optimize import linprog
-            from scipy.sparse import coo_matrix, vstack
+            from scipy.sparse import coo_matrix
 
             pod_ids = list(pod_by_id.keys())
             x_index = {key: idx for idx, key in enumerate(candidate_keys)}
             u_offset = len(candidate_keys)
             u_index = {pod_id: u_offset + idx for idx, pod_id in enumerate(pod_ids)}
-            n_vars = len(candidate_keys) + len(pod_ids)
+            y_offset = len(candidate_keys) + len(pod_ids)
+            y_keys_sorted = sorted(y_keys)
+            y_index = {key: y_offset + idx for idx, key in enumerate(y_keys_sorted)}
+            n_vars = len(candidate_keys) + len(pod_ids) + len(y_keys_sorted)
 
             eq_rows: List[int] = []
             eq_cols: List[int] = []
@@ -631,6 +658,13 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
                     ub_rows.append(row)
                     ub_cols.append(var_idx)
                     ub_data.append(float(pod.ramRequest))
+                    row = row_for("active", flv_id, slot)
+                    ub_rows.append(row)
+                    ub_cols.append(var_idx)
+                    ub_data.append(1.0)
+                    ub_rows.append(row)
+                    ub_cols.append(y_index[(flv_id, slot)])
+                    ub_data.append(-1.0)
 
             b_ub_values = []
             flavour_by_id = {flv.id: flv for flv in flavours}
@@ -644,7 +678,7 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
                             else flv.totalCpu
                         )
                     )
-                else:
+                elif kind == "ram":
                     b_ub_values.append(
                         float(
                             available_ram.get(flv_id, {}).get(slot, flv.totalRam)
@@ -652,6 +686,8 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
                             else flv.totalRam
                         )
                     )
+                else:
+                    b_ub_values.append(0.0)
 
             a_ub = coo_matrix(
                 (ub_data, (ub_rows, ub_cols)),
@@ -660,67 +696,43 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
             b_ub = np.array(b_ub_values)
             bounds = [(0.0, 1.0)] * n_vars
 
-            c_phase1 = np.zeros(n_vars)
+            objective = np.zeros(n_vars)
+            for key in candidate_keys:
+                meta = candidate_meta[key]
+                objective[x_index[key]] = (
+                    carbon_weight * (meta["dynamic_g"] / max_carbon_ref)
+                    + qos_weight * meta["qos_norm"]
+                    + completion_weight * meta["completion_norm"]
+                )
+            for key in y_keys_sorted:
+                objective[y_index[key]] = carbon_weight * (
+                    idle_meta.get(key, 0.0) / max_carbon_ref
+                )
             for pod_id in pod_ids:
-                c_phase1[u_index[pod_id]] = 1.0
-            phase1_limit = max(float(time_limit_seconds) * 0.4, 1.0)
-            res1 = linprog(
-                c_phase1,
+                objective[u_index[pod_id]] = float(unplaced_penalty)
+
+            res = linprog(
+                objective,
                 A_ub=a_ub,
                 b_ub=b_ub,
                 A_eq=a_eq,
                 b_eq=b_eq,
                 bounds=bounds,
                 method="highs",
-                options={"time_limit": phase1_limit},
+                options={"time_limit": max(float(time_limit_seconds), 1.0)},
             )
-            phase1_status = "OPTIMAL" if res1.success else f"STATUS_{res1.status}"
-            lp_solution = res1.x if res1.success else None
-
-            if res1.success:
-                min_unplaced = float(res1.fun)
-                c_phase2 = np.zeros(n_vars)
-                for key in candidate_keys:
-                    meta = candidate_meta[key]
-                    c_phase2[x_index[key]] = (
-                        carbon_weight * (meta["solo_g"] / max_carbon_ref)
-                        + completion_weight * meta["completion_norm"]
-                    )
-                for pod_id in pod_ids:
-                    c_phase2[u_index[pod_id]] = 10.0
-
-                unplaced_row = coo_matrix(
-                    (
-                        [1.0] * len(pod_ids),
-                        ([0] * len(pod_ids), [u_index[pod_id] for pod_id in pod_ids]),
-                    ),
-                    shape=(1, n_vars),
-                ).tocsr()
-                a_ub_phase2 = vstack([a_ub, unplaced_row], format="csr")
-                b_ub_phase2 = np.concatenate([b_ub, [min_unplaced + 1e-5]])
-                remaining = max(float(time_limit_seconds) - (time.time() - solve_start), 1.0)
-                res2 = linprog(
-                    c_phase2,
-                    A_ub=a_ub_phase2,
-                    b_ub=b_ub_phase2,
-                    A_eq=a_eq,
-                    b_eq=b_eq,
-                    bounds=bounds,
-                    method="highs",
-                    options={"time_limit": remaining},
-                )
-                phase2_status = "OPTIMAL" if res2.success else f"STATUS_{res2.status}"
-                if res2.success:
-                    lp_solution = res2.x
-
-            if lp_solution is not None:
+            lp_status = "OPTIMAL" if res.success else f"STATUS_{res.status}"
+            if res.success:
                 lp_values = {
-                    key: max(float(lp_solution[x_index[key]]), 0.0)
+                    key: max(float(res.x[x_index[key]]), 0.0)
                     for key in candidate_keys
                 }
+                lp_unplaced_values = {
+                    pod_id: max(float(res.x[u_index[pod_id]]), 0.0)
+                    for pod_id in pod_ids
+                }
         except Exception as exc:
-            phase1_status = f"LP_FALLBACK_{type(exc).__name__}"
-            phase2_status = "GREEDY_ONLY"
+            lp_status = f"LP_FALLBACK_{type(exc).__name__}"
             logging.warning("Caspian LP-guided solve fell back to greedy ranking: %s", exc)
 
         working_cpu = self._copy_capacity_map(available_cpu, flavours, max_time_slots, "cpu")
@@ -730,7 +742,8 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
         def objective_score(key: Tuple[str, str, int]) -> float:
             meta = candidate_meta[key]
             return (
-                carbon_weight * (meta["solo_g"] / max_carbon_ref)
+                carbon_weight * (meta["dynamic_g"] / max_carbon_ref)
+                + qos_weight * meta["qos_norm"]
                 + completion_weight * meta["completion_norm"]
             )
 
@@ -745,24 +758,13 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
                     return False
             return True
 
-        ranked_candidates = sorted(
-            candidate_keys,
-            key=lambda key: (
-                -lp_values.get(key, 0.0),
-                objective_score(key),
-                candidate_meta[key]["start_slot"],
-                key[0],
-                key[1],
-            ),
-        )
-
-        for key in ranked_candidates:
+        def commit_candidate(key: Tuple[str, str, int]) -> bool:
             pod_id, _, _ = key
             if pod_id in solution:
-                continue
+                return False
             meta = candidate_meta[key]
             if not feasible_now(meta):
-                continue
+                return False
             pod = meta["pod"]
             flv = meta["flavour"]
             start_slot = meta["start_slot"]
@@ -780,13 +782,50 @@ class CaspianOperationalAlgorithm(SchedulingAlgorithm):
                 working_cpu[flv.id][slot] -= pod.cpuRequest
                 working_ram[flv.id][slot] -= pod.ramRequest
             solution[pod_id] = (flv, start_slot, marginal_g)
+            return True
 
-        self.status = f"LP_GUIDED_P1_{phase1_status}_P2_{phase2_status}"
+        pod_order = sorted(
+            pod_by_id.keys(),
+            key=lambda pod_id: (
+                lp_unplaced_values.get(pod_id, 1.0),
+                min(
+                    (
+                        candidate_meta[key]["qos_norm"]
+                        for key in candidates_by_pod.get(pod_id, [])
+                    ),
+                    default=1.0,
+                ),
+                min(
+                    (
+                        candidate_meta[key]["completion_norm"]
+                        for key in candidates_by_pod.get(pod_id, [])
+                    ),
+                    default=1.0,
+                ),
+                pod_id,
+            ),
+        )
+
+        for pod_id in pod_order:
+            ranked_candidates = sorted(
+                candidates_by_pod.get(pod_id, []),
+                key=lambda key: (
+                    -lp_values.get(key, 0.0),
+                    objective_score(key),
+                    candidate_meta[key]["start_slot"],
+                    key[1],
+                ),
+            )
+            for key in ranked_candidates:
+                if commit_candidate(key):
+                    break
+
+        self.status = f"LP_SCALAR_{lp_status}"
         self.iterations = len(candidate_keys)
         self.steps = len(solution)
         self.solution_time_seconds = time.time() - solve_start
         logging.info(
-            "Caspian LP-guided allocation status=%s placed=%s/%s candidates=%s time=%.2fs",
+            "Caspian scalar-LP allocation status=%s placed=%s/%s candidates=%s time=%.2fs",
             self.status,
             len(solution),
             len(pods),

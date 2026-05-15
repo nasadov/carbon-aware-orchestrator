@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List
 
+import pandas as pd
 import yaml
 
 
@@ -42,6 +43,12 @@ BASELINES = [
         "prefix": "vanilla_most_allocated_",
     },
     {
+        "label": "vanilla-least-allocated",
+        "algorithm": "vanilla",
+        "extra": ["--vanilla-score-mode", "least_allocated"],
+        "prefix": "vanilla_least_allocated_",
+    },
+    {
         "label": "totem-oponly",
         "algorithm": "heuristic",
         "extra": ["--operational-only"],
@@ -50,8 +57,14 @@ BASELINES = [
     {
         "label": "piontek-temporal",
         "algorithm": "piontek-temporal",
-        "extra": [],
+        "extra": ["--piontek-node-score-mode", "most_allocated"],
         "prefix": "piontek-temporal_",
+    },
+    {
+        "label": "wait-awhile",
+        "algorithm": "wait-awhile",
+        "extra": ["--wait-awhile-node-score-mode", "most_allocated"],
+        "prefix": "wait-awhile_",
     },
     {
         "label": "caspian-style",
@@ -203,6 +216,22 @@ def run_cell_reports(combo_dir: Path) -> None:
     ]
     subprocess.run(summary_cmd, cwd=str(REPO_ROOT), check=False)
 
+    common_cmd = [
+        "python3",
+        str(REPO_ROOT / "analysis/attributed_common_pod_comparison.py"),
+        "--experiments-root",
+        str(combo_dir),
+        "--nodes-file",
+        str(combo_dir / "nodes.yaml"),
+        "--forecasts-file",
+        str(combo_dir / "all_forecasts.json"),
+        "--output-csv",
+        str(combo_dir / "attributed_common_pod_comparison.csv"),
+        "--output-md",
+        str(combo_dir / "attributed_common_pod_comparison.md"),
+    ]
+    subprocess.run(common_cmd, cwd=str(REPO_ROOT), check=False)
+
     validation_cmd = [
         "python3",
         str(REPO_ROOT / "tests/validate_experiments_and_report.py"),
@@ -218,6 +247,107 @@ def run_cell_reports(combo_dir: Path) -> None:
         str(combo_dir / "validation"),
     ]
     subprocess.run(validation_cmd, cwd=str(REPO_ROOT), check=False)
+
+
+def fmt(value) -> str:
+    if pd.isna(value):
+        return ""
+    if isinstance(value, float):
+        return f"{value:.6g}"
+    return str(value)
+
+
+def write_markdown(df: pd.DataFrame, path: Path, title: str) -> None:
+    cols = list(df.columns)
+    with path.open("w") as handle:
+        handle.write(f"# {title}\n\n")
+        handle.write("| " + " | ".join(cols) + " |\n")
+        handle.write("| " + " | ".join(["---"] * len(cols)) + " |\n")
+        for _, row in df.iterrows():
+            handle.write("| " + " | ".join(fmt(row[col]) for col in cols) + " |\n")
+
+
+def aggregate_outputs(root: Path, combo_dirs: list[Path]) -> None:
+    summary_frames = []
+    common_frames = []
+    for combo_dir in combo_dirs:
+        summary_path = combo_dir / "baseline_comparison_summary.csv"
+        common_path = combo_dir / "attributed_common_pod_comparison.csv"
+        if summary_path.exists():
+            summary_frames.append(pd.read_csv(summary_path))
+        if common_path.exists():
+            common_frames.append(pd.read_csv(common_path))
+
+    if summary_frames:
+        summary = pd.concat(summary_frames, ignore_index=True)
+        summary["target_pods"] = pd.to_numeric(summary["target_pods"], errors="coerce")
+        summary["elapsed_seconds"] = pd.to_numeric(summary["elapsed_seconds"], errors="coerce")
+        summary.to_csv(root / "baseline_comparison_summary.csv", index=False)
+        whole = (
+            summary.groupby(["target_pods", "algorithm"], as_index=False)
+            .agg(
+                runs=("experiment", "count"),
+                mean_success=("success_rate_pct", "mean"),
+                mean_placed_pods=("placed_pods", "mean"),
+                mean_total_kg=("total_kg", "mean"),
+                mean_operational_kg=("operational_kg", "mean"),
+                mean_embodied_kg=("embodied_kg", "mean"),
+                mean_per_pod_g=("per_pod_g", "mean"),
+                std_per_pod_g=("per_pod_g", "std"),
+                mean_runtime_s=("elapsed_seconds", "mean"),
+                std_runtime_s=("elapsed_seconds", "std"),
+            )
+            .sort_values(["target_pods", "algorithm"])
+        )
+        whole.to_csv(root / "baseline_comparison_aggregate_by_pods.csv", index=False)
+        write_markdown(
+            whole,
+            root / "baseline_comparison_aggregate_by_pods.md",
+            "Baseline Comparison Aggregate",
+        )
+
+    if common_frames:
+        common_detail = pd.concat(common_frames, ignore_index=True)
+        common_detail["target_pods"] = pd.to_numeric(common_detail["target_pods"], errors="coerce")
+        common_detail.to_csv(root / "attributed_common_pod_comparison.csv", index=False)
+
+        all_common = common_detail[common_detail["comparison"] == "all_algorithms_common"]
+        common_agg = (
+            all_common.groupby(["target_pods", "algorithm"], as_index=False)
+            .agg(
+                runs=("experiment", "count"),
+                mean_common_pods=("common_pods", "mean"),
+                mean_total_kg=("total_kg", "mean"),
+                mean_per_pod_g=("per_pod_g", "mean"),
+                std_per_pod_g=("per_pod_g", "std"),
+            )
+            .sort_values(["target_pods", "algorithm"])
+        )
+        common_agg.to_csv(root / "attributed_common_all_algorithms_aggregate.csv", index=False)
+        write_markdown(
+            common_agg,
+            root / "attributed_common_all_algorithms_aggregate.md",
+            "Attributed Common-Pod Aggregate",
+        )
+
+        pairwise = common_detail[common_detail["comparison"] != "all_algorithms_common"]
+        pairwise_agg = (
+            pairwise.groupby(["target_pods", "comparison", "algorithm"], as_index=False)
+            .agg(
+                runs=("experiment", "count"),
+                mean_common_pods=("common_pods", "mean"),
+                mean_total_kg=("total_kg", "mean"),
+                mean_per_pod_g=("per_pod_g", "mean"),
+                std_per_pod_g=("per_pod_g", "std"),
+            )
+            .sort_values(["target_pods", "comparison", "algorithm"])
+        )
+        pairwise_agg.to_csv(root / "attributed_common_totem_pairwise_aggregate.csv", index=False)
+        write_markdown(
+            pairwise_agg,
+            root / "attributed_common_totem_pairwise_aggregate.md",
+            "Attributed TotEm Pairwise Aggregate",
+        )
 
 
 def selected_baselines(include_milp: bool) -> Iterable[dict]:
@@ -247,6 +377,7 @@ def main() -> int:
     root = Path(args.experiment_root).resolve() / f"matrix_{timestamp}"
     root.mkdir(parents=True, exist_ok=False)
     run_times_path = root / "run_times.csv"
+    combo_dirs: list[Path] = []
 
     original_config = CONFIG_FILE.read_text()
     try:
@@ -269,6 +400,7 @@ def main() -> int:
                 for pod_count in pod_counts:
                     combo_dir = root / f"seed_{seed}_pods_{pod_count}"
                     combo_dir.mkdir(parents=True, exist_ok=True)
+                    combo_dirs.append(combo_dir)
                     update_config(seed=seed, pod_count=pod_count)
                     gen_stdout = combo_dir / "command_logs/generator.stdout.log"
                     gen_stderr = combo_dir / "command_logs/generator.stderr.log"
@@ -298,6 +430,7 @@ def main() -> int:
     finally:
         CONFIG_FILE.write_text(original_config)
 
+    aggregate_outputs(root, combo_dirs)
     print(f"Matrix complete: {root}")
     return 0
 

@@ -61,6 +61,8 @@ def detect_algorithm(exp_dir: str) -> Optional[str]:
         return "caspian-operational"
     if b.startswith("piontek-temporal_"):
         return "piontek-temporal"
+    if b.startswith("wait-awhile_"):
+        return "wait-awhile"
     if b.startswith("green-mlfq_"):
         return "green-mlfq"
     return None
@@ -83,6 +85,7 @@ def find_csv(exp_dir: str, algo: str) -> Optional[str]:
         "global-optimal": ["global_optimal_placements_session.csv"],
         "caspian-operational": ["caspian_operational_placements_session.csv"],
         "piontek-temporal": ["piontek_temporal_placements_session.csv"],
+        "wait-awhile": ["wait_awhile_placements_session.csv"],
         "green-mlfq": ["green_mlfq_placements_session.csv"],
     }.get(algo, [])
     for fname in names:

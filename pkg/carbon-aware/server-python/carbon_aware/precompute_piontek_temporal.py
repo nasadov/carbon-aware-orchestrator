@@ -4,7 +4,7 @@ Precomputation runner for the Piontek-style temporal Kubernetes baseline.
 import logging
 import os
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 from carbon_aware.algorithms.piontek_temporal import PiontekTemporalAlgorithm
 from carbon_aware.precompute_heuristic import _extract_pods_from_yaml, _load_nodes_from_yaml
@@ -19,6 +19,10 @@ def run_piontek_temporal_precomputation(
     perf_logger: Optional[PerformanceLogger] = None,
     prioritize_efficiency: bool = False,
     operational_only: bool = True,
+    node_score_mode: str = "most_allocated",
+    algorithm_factory: Optional[Callable[..., PiontekTemporalAlgorithm]] = None,
+    summary_algorithm_name: str = "piontek_temporal",
+    display_name: str = "Piontek-style temporal Kubernetes",
 ) -> bool:
     """
     Run the Piontek-style temporal CO2-window baseline.
@@ -29,7 +33,7 @@ def run_piontek_temporal_precomputation(
     still satisfies their deadline.
     """
     try:
-        logging.info("Starting Piontek-style temporal Kubernetes precomputation")
+        logging.info("Starting %s precomputation", display_name)
         logging.info("Workloads directory: %s", workloads_dir)
         logging.info("Nodes file: %s", nodes_file)
         logging.info("Forecasts file: %s", forecasts_file)
@@ -60,7 +64,12 @@ def run_piontek_temporal_precomputation(
                     fallback_region,
                 )
 
-        algorithm = PiontekTemporalAlgorithm(perf_logger=perf_logger)
+        logging.info("%s node score mode: %s", display_name, node_score_mode)
+        factory = algorithm_factory or PiontekTemporalAlgorithm
+        algorithm = factory(
+            perf_logger=perf_logger,
+            node_score_mode=node_score_mode,
+        )
         algorithm.set_workloads_dir(workloads_dir)
         if session_log_dir:
             algorithm.set_base_log_dir(session_log_dir)
@@ -111,8 +120,9 @@ def run_piontek_temporal_precomputation(
                     )
 
         logging.info(
-            "Loaded %s pods for Piontek-style rolling temporal baseline",
+            "Loaded %s pods for %s rolling temporal baseline",
             total_pods_processed,
+            display_name,
         )
 
         leftover_cpu = {
@@ -206,7 +216,7 @@ def run_piontek_temporal_precomputation(
 
         algorithm.flush_session_placement_log()
 
-        logging.info("Piontek temporal precomputation complete")
+        logging.info("%s precomputation complete", display_name)
         logging.info("Total pods processed: %s", total_pods_processed)
         logging.info(
             "Successfully placed: %s (%.1f%%)",
@@ -225,13 +235,13 @@ def run_piontek_temporal_precomputation(
                     handle.write(f"pods={total_pods_processed}\n")
                 from carbon_aware.placement_summary import auto_generate_summary_from_session_dir
 
-                auto_generate_summary_from_session_dir(session_log_dir, "piontek_temporal")
+                auto_generate_summary_from_session_dir(session_log_dir, summary_algorithm_name)
             except Exception as exc:
-                logging.warning("Could not generate Piontek placement summary: %s", exc)
+                logging.warning("Could not generate %s placement summary: %s", display_name, exc)
 
         return True
     except Exception as exc:
-        logging.error("Fatal error in Piontek temporal precomputation: %s", exc)
+        logging.error("Fatal error in %s precomputation: %s", display_name, exc)
         import traceback
 
         logging.error(traceback.format_exc())
