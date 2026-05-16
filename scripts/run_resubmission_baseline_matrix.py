@@ -67,6 +67,12 @@ BASELINES = [
         "prefix": "wait-awhile_",
     },
     {
+        "label": "greencourier-spatial",
+        "algorithm": "greencourier-spatial",
+        "extra": ["--greencourier-node-score-mode", "most_allocated"],
+        "prefix": "greencourier-spatial_",
+    },
+    {
         "label": "caspian-style",
         "algorithm": "caspian-operational",
         "extra": [],

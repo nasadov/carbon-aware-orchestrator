@@ -122,8 +122,8 @@ def main() -> None:
     parser.add_argument(
         '--algorithm',
         default='heuristic',
-        choices=['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal', 'wait-awhile', 'green-mlfq'],
-        help='Scheduling algorithm to use: heuristic (TotEm), global-optimal (MILP), vanilla (K8s-like, carbon-unaware), caspian-operational (spatio-temporal operational-carbon baseline), piontek-temporal (temporal CO2-window Kubernetes baseline), wait-awhile (non-interrupting temporal carbon-shifting baseline), or green-mlfq (GREEN-style carbon-aware MLFQ baseline)'
+        choices=['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal', 'wait-awhile', 'green-mlfq', 'greencourier-spatial'],
+        help='Scheduling algorithm to use: heuristic (TotEm), global-optimal (MILP), vanilla (K8s-like, carbon-unaware), caspian-operational (spatio-temporal operational-carbon baseline), piontek-temporal (temporal CO2-window Kubernetes baseline), wait-awhile (non-interrupting temporal carbon-shifting baseline), green-mlfq (GREEN-style carbon-aware MLFQ baseline), or greencourier-spatial (GreenCourier-style spatial carbon baseline)'
     )
     parser.add_argument(
         '--workloads-dir',
@@ -194,6 +194,12 @@ def main() -> None:
         default='most_allocated',
         choices=['most_allocated', 'least_allocated'],
         help='Resource-only node scoring mode used after Wait-Awhile temporal admission'
+    )
+    parser.add_argument(
+        '--greencourier-node-score-mode',
+        default='most_allocated',
+        choices=['most_allocated', 'least_allocated'],
+        help='Resource-only tie-break scoring mode used by the GreenCourier-style spatial baseline'
     )
     parser.add_argument(
         '--precompute',
@@ -325,8 +331,8 @@ def main() -> None:
     
     # Check if precompute mode is requested
     if args.precompute:
-        if args.algorithm not in ['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal', 'wait-awhile', 'green-mlfq']:
-            logging.error(f"Precompute mode is only supported for 'heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal', 'wait-awhile', and 'green-mlfq' algorithms, got: {args.algorithm}")
+        if args.algorithm not in ['heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal', 'wait-awhile', 'green-mlfq', 'greencourier-spatial']:
+            logging.error(f"Precompute mode is only supported for 'heuristic', 'global-optimal', 'vanilla', 'caspian-operational', 'piontek-temporal', 'wait-awhile', 'green-mlfq', and 'greencourier-spatial' algorithms, got: {args.algorithm}")
             sys.exit(1)
         
         logging.info(f"🧮 Running precomputation mode for {args.algorithm} algorithm")
@@ -414,6 +420,18 @@ def main() -> None:
                 perf_logger=perf_logger,
                 prioritize_efficiency=args.prioritize_efficiency,
                 operational_only=True
+            )
+        elif args.algorithm == 'greencourier-spatial':
+            from carbon_aware.precompute_greencourier_spatial import run_greencourier_spatial_precomputation
+            success = run_greencourier_spatial_precomputation(
+                workloads_dir=args.workloads_dir,
+                nodes_file=args.nodes_file,
+                forecasts_file=args.forecasts_file,
+                session_log_dir=session_log_dir,
+                perf_logger=perf_logger,
+                prioritize_efficiency=args.prioritize_efficiency,
+                operational_only=True,
+                node_score_mode=args.greencourier_node_score_mode
             )
         
         if success:

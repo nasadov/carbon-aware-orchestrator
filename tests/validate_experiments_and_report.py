@@ -65,6 +65,8 @@ def detect_algorithm(exp_dir: str) -> Optional[str]:
         return "wait-awhile"
     if b.startswith("green-mlfq_"):
         return "green-mlfq"
+    if b.startswith("greencourier-spatial_"):
+        return "greencourier-spatial"
     return None
 
 
@@ -87,6 +89,7 @@ def find_csv(exp_dir: str, algo: str) -> Optional[str]:
         "piontek-temporal": ["piontek_temporal_placements_session.csv"],
         "wait-awhile": ["wait_awhile_placements_session.csv"],
         "green-mlfq": ["green_mlfq_placements_session.csv"],
+        "greencourier-spatial": ["greencourier_spatial_placements_session.csv"],
     }.get(algo, [])
     for fname in names:
         p = os.path.join(exp_dir, fname)

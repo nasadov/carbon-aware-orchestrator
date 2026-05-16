@@ -181,6 +181,8 @@ def infer_algorithm(exp_dir: Path, csv_path: Path) -> str:
         return "Wait-Awhile"
     if name.startswith("green-mlfq_") or csv_path.name.startswith("green_mlfq_"):
         return "GREEN-MLFQ-K8s"
+    if name.startswith("greencourier-spatial_") or csv_path.name.startswith("greencourier_spatial_"):
+        return "GreenCourier-Spatial-K8s"
     if name.startswith("caspian-operational_") or csv_path.name.startswith("caspian_operational_"):
         return "Caspian-style"
     if name.startswith("global-optimal_"):

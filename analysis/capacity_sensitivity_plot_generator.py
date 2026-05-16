@@ -28,6 +28,7 @@ ALGORITHM_ORDER = [
     "Vanilla-MostAllocated",
     "Piontek-Temporal-K8s",
     "Wait-Awhile",
+    "GreenCourier-Spatial-K8s",
     "GREEN-MLFQ-K8s",
     "Caspian-style",
     "TotEm-OpOnly",
@@ -39,6 +40,7 @@ LABELS = {
     "Vanilla-MostAllocated": "Vanilla MostAllocated",
     "Piontek-Temporal-K8s": "Piontek-style",
     "Wait-Awhile": "Wait-Awhile",
+    "GreenCourier-Spatial-K8s": "GreenCourier-style",
     "GREEN-MLFQ-K8s": "GREEN-style",
     "Caspian-style": "Caspian-style",
     "TotEm-OpOnly": "TotEm operational-only",
@@ -50,6 +52,7 @@ STYLES = {
     "Vanilla-MostAllocated": {"color": "#666666", "marker": "o", "linestyle": "-."},
     "Piontek-Temporal-K8s": {"color": "#CC79A7", "marker": "D", "linestyle": ":"},
     "Wait-Awhile": {"color": "#56B4E9", "marker": "*", "linestyle": "--"},
+    "GreenCourier-Spatial-K8s": {"color": "#117733", "marker": "h", "linestyle": "-."},
     "GREEN-MLFQ-K8s": {"color": "#009E73", "marker": "v", "linestyle": "--"},
     "Caspian-style": {"color": "#0072B2", "marker": "^", "linestyle": "-"},
     "TotEm-OpOnly": {"color": "#E69F00", "marker": "s", "linestyle": "--"},
@@ -285,16 +288,35 @@ def plot_metric_vs_capacity(
     for algo in ordered_algorithms(chunk):
         current = chunk[chunk["algorithm"] == algo].sort_values("capacity_multiplier")
         style = STYLES.get(algo, {})
-        ax.plot(
-            current["capacity_multiplier"],
-            current[metric],
-            label=LABELS.get(algo, algo),
-            color=style.get("color"),
-            marker=style.get("marker", "o"),
-            linestyle=style.get("linestyle", "-"),
-            linewidth=1.7,
-            markersize=5,
-        )
+        yerr = None
+        if metric == "mean_per_pod_g" and "std_per_pod_g" in current.columns:
+            yerr = current["std_per_pod_g"].fillna(0.0)
+        if yerr is not None:
+            ax.errorbar(
+                current["capacity_multiplier"],
+                current[metric],
+                yerr=yerr,
+                label=LABELS.get(algo, algo),
+                color=style.get("color"),
+                marker=style.get("marker", "o"),
+                linestyle=style.get("linestyle", "-"),
+                linewidth=1.7,
+                markersize=5,
+                elinewidth=0.7,
+                capsize=2,
+                alpha=0.9,
+            )
+        else:
+            ax.plot(
+                current["capacity_multiplier"],
+                current[metric],
+                label=LABELS.get(algo, algo),
+                color=style.get("color"),
+                marker=style.get("marker", "o"),
+                linestyle=style.get("linestyle", "-"),
+                linewidth=1.7,
+                markersize=5,
+            )
     ax.set_xticks(sorted(chunk["capacity_multiplier"].unique()))
     ax.set_xlabel("Capacity multiplier")
     ax.set_ylabel(ylabel)
