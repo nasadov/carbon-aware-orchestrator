@@ -106,6 +106,18 @@ def parse_int_list(text: str) -> List[int]:
     return [int(part.strip()) for part in text.split(",") if part.strip()]
 
 
+def parse_str_list(text: str) -> List[str]:
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def selected_baselines(labels: List[str]) -> list[dict]:
+    by_label = {baseline["label"]: baseline for baseline in BASELINES}
+    unknown = sorted(set(labels) - set(by_label))
+    if unknown:
+        raise ValueError(f"Unknown baselines: {unknown}")
+    return [by_label[label] for label in labels]
+
+
 def update_config(seed: int, pod_count: int) -> None:
     with CONFIG_FILE.open("r") as handle:
         cfg = yaml.safe_load(handle) or {}
@@ -475,6 +487,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seeds", default="42,43,44,45,46")
     parser.add_argument("--multipliers", default="1,2,4")
     parser.add_argument(
+        "--paired-scale",
+        action="store_true",
+        help="Pair pod-counts and multipliers by index instead of running their cross product. Useful for large scalability stress tests.",
+    )
+    parser.add_argument(
+        "--algorithms",
+        default=",".join(b["label"] for b in BASELINES),
+        help="Comma-separated baseline labels to run. Defaults to all practical baselines.",
+    )
+    parser.add_argument(
         "--experiment-root",
         default=str(REPO_ROOT / "experiments/resubmission_capacity_sensitivity"),
     )
@@ -487,6 +509,9 @@ def main() -> int:
     pod_counts = parse_int_list(args.pod_counts)
     seeds = parse_int_list(args.seeds)
     multipliers = parse_int_list(args.multipliers)
+    baselines = selected_baselines(parse_str_list(args.algorithms))
+    if args.paired_scale and len(pod_counts) != len(multipliers):
+        raise ValueError("--paired-scale requires the same number of pod-counts and multipliers")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     root = Path(args.experiment_root).resolve() / f"capacity_{timestamp}"
     root.mkdir(parents=True, exist_ok=False)
@@ -511,8 +536,11 @@ def main() -> int:
             writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()
 
+            scale_cells = list(zip(pod_counts, multipliers)) if args.paired_scale else None
+
             for seed in seeds:
-                for pod_count in pod_counts:
+                pod_loop = [pod for pod, _mult in scale_cells] if scale_cells else pod_counts
+                for pod_count in pod_loop:
                     update_config(seed=seed, pod_count=pod_count)
                     workload_snapshot = root / "workload_snapshots" / f"seed_{seed}_pods_{pod_count}"
                     workload_snapshot.mkdir(parents=True, exist_ok=True)
@@ -525,7 +553,11 @@ def main() -> int:
                     if gen_rc != 0:
                         raise RuntimeError(f"workload generation failed for seed={seed}, pods={pod_count}")
 
-                    for multiplier in multipliers:
+                    multiplier_loop = [
+                        mult for pod, mult in scale_cells if pod == pod_count
+                    ] if scale_cells else multipliers
+
+                    for multiplier in multiplier_loop:
                         combo_dir = (
                             root
                             / f"capacity_{multiplier}x"
@@ -533,7 +565,7 @@ def main() -> int:
                         )
                         snapshot_inputs(combo_dir, multiplier)
                         combo_dirs.append((multiplier, seed, pod_count, combo_dir))
-                        for baseline in BASELINES:
+                        for baseline in baselines:
                             print(
                                 f"[capacity] {multiplier}x seed={seed} pods={pod_count} baseline={baseline['label']}",
                                 flush=True,

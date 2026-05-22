@@ -69,6 +69,7 @@ docs/paper-two/Schemes/**/*.log
 # Generated experiment results
 **/experiment_results/
 **/experiments/*/
+external/real-traces/raw/
 
 # Performance logs
 pkg/carbon-aware/server-python/performance_logs/*.csv
