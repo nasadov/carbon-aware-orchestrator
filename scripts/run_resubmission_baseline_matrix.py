@@ -43,28 +43,10 @@ BASELINES = [
         "prefix": "vanilla_most_allocated_",
     },
     {
-        "label": "vanilla-least-allocated",
-        "algorithm": "vanilla",
-        "extra": ["--vanilla-score-mode", "least_allocated"],
-        "prefix": "vanilla_least_allocated_",
-    },
-    {
         "label": "totem-oponly",
         "algorithm": "heuristic",
         "extra": ["--operational-only"],
         "prefix": "heuristic_op_",
-    },
-    {
-        "label": "piontek-temporal",
-        "algorithm": "piontek-temporal",
-        "extra": ["--piontek-node-score-mode", "most_allocated"],
-        "prefix": "piontek-temporal_",
-    },
-    {
-        "label": "wait-awhile",
-        "algorithm": "wait-awhile",
-        "extra": ["--wait-awhile-node-score-mode", "most_allocated"],
-        "prefix": "wait-awhile_",
     },
     {
         "label": "greencourier-spatial",

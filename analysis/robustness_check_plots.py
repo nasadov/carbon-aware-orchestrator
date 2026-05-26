@@ -9,16 +9,14 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 
 ALGORITHM_ORDER = [
     "Vanilla-MostAllocated",
-    "Vanilla-LeastAllocated",
-    "Piontek-Temporal-K8s",
-    "Wait-Awhile",
-    "GreenCourier-Spatial-K8s",
     "GREEN-MLFQ-K8s",
+    "GreenCourier-Spatial-K8s",
     "Caspian-style",
     "TotEm-OpOnly",
     "TotEm",
@@ -26,11 +24,8 @@ ALGORITHM_ORDER = [
 
 COLORS = {
     "Vanilla-MostAllocated": "#666666",
-    "Vanilla-LeastAllocated": "#999999",
-    "Piontek-Temporal-K8s": "#8c6bb1",
-    "Wait-Awhile": "#756bb1",
-    "GreenCourier-Spatial-K8s": "#2ca25f",
     "GREEN-MLFQ-K8s": "#31a354",
+    "GreenCourier-Spatial-K8s": "#2ca25f",
     "Caspian-style": "#3182bd",
     "TotEm-OpOnly": "#e6550d",
     "TotEm": "#de2d26",
@@ -39,7 +34,7 @@ COLORS = {
 
 def ordered_algorithms(df: pd.DataFrame) -> list[str]:
     present = set(df["algorithm"])
-    return [name for name in ALGORITHM_ORDER if name in present] + sorted(present - set(ALGORITHM_ORDER))
+    return [name for name in ALGORITHM_ORDER if name in present]
 
 
 def savefig(path: Path) -> None:
@@ -111,7 +106,10 @@ def plot_scalability(scale_root: Path, out_dir: Path) -> list[Path]:
     written: list[Path] = []
     df = pd.read_csv(scale_root / "capacity_baseline_aggregate_by_pods.csv")
     df["nodes"] = df["capacity_multiplier"] * 4
+    df["pod_node_pairs"] = df["target_pods"] * df["nodes"]
     order = ordered_algorithms(df)
+    node_labels = ", ".join(str(int(n)) for n in sorted(df["nodes"].unique()))
+    slope_rows = []
 
     plt.figure(figsize=(7.5, 3.6))
     for algorithm in order:
@@ -126,11 +124,74 @@ def plot_scalability(scale_root: Path, out_dir: Path) -> list[Path]:
             label=algorithm,
             color=COLORS.get(algorithm),
         )
-    plt.xlabel("Pods (nodes scale proportionally: 16, 32, 64, 128)")
+    plt.xlabel(f"Pods (nodes scale proportionally: {node_labels})")
     plt.ylabel("Runtime (s)")
     plt.grid(alpha=0.25)
     plt.legend(fontsize=7, ncol=2)
     path = out_dir / "paired_scalability_runtime.pdf"
+    savefig(path)
+    written.append(path)
+
+    plt.figure(figsize=(7.5, 3.6))
+    for algorithm in order:
+        data = df[df["algorithm"] == algorithm].sort_values("pod_node_pairs")
+        if len(data) >= 2 and (data["mean_runtime_s"] > 0).all():
+            beta, intercept = np.polyfit(
+                np.log2(data["pod_node_pairs"]),
+                np.log2(data["mean_runtime_s"]),
+                deg=1,
+            )
+            label = f"{algorithm} (slope {beta:.2f})"
+            slope_rows.append(
+                {
+                    "algorithm": algorithm,
+                    "loglog_slope_runtime_vs_pod_node_pairs": beta,
+                    "intercept_log2": intercept,
+                }
+            )
+        else:
+            label = algorithm
+        plt.errorbar(
+            data["pod_node_pairs"],
+            data["mean_runtime_s"],
+            yerr=data["std_runtime_s"].fillna(0),
+            marker="o",
+            linewidth=1.6,
+            capsize=3,
+            label=label,
+            color=COLORS.get(algorithm),
+        )
+    plt.xscale("log", base=2)
+    plt.yscale("log", base=2)
+    plt.xlabel("Pod-node candidate pairs per run (P x N, log scale)")
+    plt.ylabel("Runtime (s, log scale)")
+    plt.grid(alpha=0.25, which="both")
+    plt.legend(fontsize=7, ncol=2)
+    path = out_dir / "paired_scalability_runtime_loglog.pdf"
+    savefig(path)
+    written.append(path)
+    if slope_rows:
+        slope_path = out_dir / "paired_scalability_runtime_slopes.csv"
+        pd.DataFrame(slope_rows).to_csv(slope_path, index=False)
+        written.append(slope_path)
+
+    plt.figure(figsize=(7.5, 3.6))
+    for algorithm in order:
+        data = df[df["algorithm"] == algorithm].sort_values("target_pods").copy()
+        data["throughput"] = data["mean_placed_pods"] / data["mean_runtime_s"].clip(lower=1e-9)
+        plt.plot(
+            data["target_pods"],
+            data["throughput"],
+            marker="o",
+            linewidth=1.6,
+            label=algorithm,
+            color=COLORS.get(algorithm),
+        )
+    plt.xlabel(f"Pods (nodes scale proportionally: {node_labels})")
+    plt.ylabel("Placed pods per second")
+    plt.grid(alpha=0.25)
+    plt.legend(fontsize=7, ncol=2)
+    path = out_dir / "paired_scalability_throughput.pdf"
     savefig(path)
     written.append(path)
 
@@ -160,7 +221,7 @@ def plot_scalability(scale_root: Path, out_dir: Path) -> list[Path]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--real-trace-root", required=True)
+    parser.add_argument("--real-trace-root")
     parser.add_argument("--scalability-root", required=True)
     parser.add_argument("--output-dir", required=True)
     return parser.parse_args()
@@ -170,11 +231,12 @@ def main() -> int:
     args = parse_args()
     out_dir = Path(args.output_dir).resolve()
     written = []
-    written.extend(plot_real_trace(Path(args.real_trace_root).resolve(), out_dir / "RealTrace"))
+    if args.real_trace_root:
+        written.extend(plot_real_trace(Path(args.real_trace_root).resolve(), out_dir / "RealTrace"))
     written.extend(plot_scalability(Path(args.scalability_root).resolve(), out_dir / "ScalabilityStress"))
     manifest = out_dir / "plot_manifest.md"
     manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text("# Robustness Check Plot Manifest\n\n" + "\n".join(f"- {p}" for p in written) + "\n")
+    manifest.write_text("# Scalability Plot Manifest\n\n" + "\n".join(f"- {p}" for p in written) + "\n")
     for path in written:
         print(path)
     return 0
