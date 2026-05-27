@@ -494,19 +494,20 @@ def plot_embodied_ablation_composite(
     output_dir: Path,
     formats: Iterable[str],
 ) -> list[Path]:
-    fig = plt.figure(figsize=(7.05, 2.85))
+    fig = plt.figure(figsize=(7.25, 3.05))
     gs = fig.add_gridspec(
         1,
-        2,
-        width_ratios=[1.08, 1.0],
+        3,
+        width_ratios=[1.18, 0.95, 1.0],
         left=0.08,
         right=0.99,
         bottom=0.20,
         top=0.84,
-        wspace=0.35,
+        wspace=0.44,
     )
     ax_left = fig.add_subplot(gs[0, 0])
-    ax_right = fig.add_subplot(gs[0, 1])
+    ax_mid = fig.add_subplot(gs[0, 1])
+    ax_right = fig.add_subplot(gs[0, 2])
 
     subset = matrix_common[matrix_common["algorithm"].isin(["TotEm", "TotEm-OpOnly"])]
     lineplot(
@@ -519,7 +520,7 @@ def plot_embodied_ablation_composite(
     )
     ax_left.set_xlabel("Target pods")
     ax_left.set_ylabel("Common-pod emissions (gCO2e/pod)")
-    ax_left.set_title("Operational-only is a strong ablation")
+    ax_left.set_title("Operational-only ablation")
     ax_left.set_xticks(sorted(subset["target_pods"].unique()))
     panel_label(ax_left, "a")
 
@@ -542,7 +543,7 @@ def plot_embodied_ablation_composite(
     width = 0.56
     op_color = "#4C78A8"
     embodied_color = "#D55E00"
-    ax_right.bar(
+    ax_mid.bar(
         x,
         components["operational_g_per_pod"],
         width=width,
@@ -551,7 +552,7 @@ def plot_embodied_ablation_composite(
         linewidth=0.5,
         label="Operational",
     )
-    ax_right.bar(
+    ax_mid.bar(
         x,
         components["embodied_g_per_pod"],
         width=width,
@@ -564,7 +565,7 @@ def plot_embodied_ablation_composite(
 
     totals = components["total_g_per_pod"].to_numpy()
     for xpos, total in zip(x, totals):
-        ax_right.text(
+        ax_mid.text(
             xpos,
             total + 0.22,
             f"{total:.2f}",
@@ -576,28 +577,28 @@ def plot_embodied_ablation_composite(
 
     benefit = totals[0] - totals[1]
     bracket_x = x[-1] + 0.55
-    ax_right.plot(
+    ax_mid.plot(
         [bracket_x, bracket_x],
         [totals[1], totals[0]],
         color="#333333",
         linewidth=0.8,
         clip_on=False,
     )
-    ax_right.plot(
+    ax_mid.plot(
         [bracket_x - 0.05, bracket_x + 0.05],
         [totals[0], totals[0]],
         color="#333333",
         linewidth=0.8,
         clip_on=False,
     )
-    ax_right.plot(
+    ax_mid.plot(
         [bracket_x - 0.05, bracket_x + 0.05],
         [totals[1], totals[1]],
         color="#333333",
         linewidth=0.8,
         clip_on=False,
     )
-    ax_right.text(
+    ax_mid.text(
         bracket_x + 0.08,
         (totals[0] + totals[1]) / 2.0,
         f"-{benefit:.2f}",
@@ -608,13 +609,68 @@ def plot_embodied_ablation_composite(
         color="#333333",
     )
 
-    ax_right.set_xticks(x)
-    ax_right.set_xticklabels(["Operational-only", "Embodied-aware"])
-    ax_right.set_xlim(-0.55, 1.92)
-    ax_right.set_ylabel("Emissions at 4x/200 (gCO2e/pod)")
-    ax_right.set_title("Embodied-aware scoring lowers attributed total")
-    ax_right.legend(frameon=False, loc="lower right", fontsize=6.7)
-    panel_label(ax_right, "b")
+    ax_mid.set_xticks(x)
+    ax_mid.set_xticklabels(["Op-only", "Embodied-aware"], rotation=15, ha="right")
+    ax_mid.set_xlim(-0.55, 1.92)
+    ax_mid.set_ylabel("Emissions at 4x/200 (gCO2e/pod)")
+    ax_mid.set_title("Component split")
+    ax_mid.legend(frameon=False, loc="lower right", fontsize=6.7)
+    panel_label(ax_mid, "b")
+
+    rate_factors = np.array([0.50, 2.0 / 3.0, 1.00, 1.50, 2.00])
+    rate_labels = ["0.5x", "0.67x", "1x", "1.5x", "2x"]
+    op_only = components.set_index("algorithm").loc["TotEm-OpOnly"]
+    totem = components.set_index("algorithm").loc["TotEm"]
+    op_only_total = op_only["operational_g_per_pod"] + rate_factors * op_only["embodied_g_per_pod"]
+    totem_total = totem["operational_g_per_pod"] + rate_factors * totem["embodied_g_per_pod"]
+    sensitivity = pd.DataFrame(
+        {
+            "embodied_rate_multiplier": rate_factors,
+            "totem_oponly_g_per_pod": op_only_total,
+            "totem_g_per_pod": totem_total,
+            "totem_reduction_g_per_pod": op_only_total - totem_total,
+        }
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    sensitivity.to_csv(output_dir / "composite_embodied_lifecycle_sensitivity.csv", index=False)
+
+    ax_right.axhline(0.0, color="#4d4d4d", linewidth=0.7)
+    ax_right.plot(
+        sensitivity["embodied_rate_multiplier"],
+        sensitivity["totem_reduction_g_per_pod"],
+        color=STYLES["TotEm"]["color"],
+        marker=STYLES["TotEm"]["marker"],
+        linewidth=1.8,
+        markersize=4.8,
+    )
+    ax_right.fill_between(
+        sensitivity["embodied_rate_multiplier"],
+        0.0,
+        sensitivity["totem_reduction_g_per_pod"],
+        color=STYLES["TotEm"]["color"],
+        alpha=0.13,
+    )
+    min_delta = sensitivity["totem_reduction_g_per_pod"].min()
+    max_delta = sensitivity["totem_reduction_g_per_pod"].max()
+    ax_right.text(
+        rate_factors[0] * 1.04,
+        max_delta - 0.03,
+        f"positive across range\n{min_delta:.2f}-{max_delta:.2f} g/pod",
+        ha="left",
+        va="top",
+        fontsize=6.6,
+        color="#333333",
+    )
+    ax_right.set_xscale("log", base=2)
+    ax_right.set_xlim(rate_factors[0] / 1.08, rate_factors[-1] * 1.08)
+    ax_right.set_xlabel("Embodied-rate multiplier")
+    ax_right.set_ylabel("TotEm reduction vs op-only (g/pod)")
+    ax_right.set_title("Lifecycle-rate sensitivity")
+    ax_right.set_xticks(rate_factors)
+    ax_right.set_xticklabels(rate_labels)
+    ax_right.minorticks_off()
+    ax_right.set_ylim(0, max_delta * 1.22)
+    panel_label(ax_right, "c")
 
     handles, labels = legend_handles(["TotEm-OpOnly", "TotEm"])
     ax_left.legend(handles, labels, frameon=False, loc="upper right", fontsize=6.8)
