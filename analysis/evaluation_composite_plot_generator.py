@@ -89,11 +89,11 @@ SHORT_LABELS = {
 }
 
 STYLES = {
-    "Vanilla-MostAllocated": {"color": "#5F6368", "marker": "o", "linestyle": "-."},
-    "GREEN-MLFQ-K8s": {"color": "#009E73", "marker": "v", "linestyle": "--"},
-    "GreenCourier-Spatial-K8s": {"color": "#117733", "marker": "h", "linestyle": "-."},
+    "Vanilla-MostAllocated": {"color": "#5F6368", "marker": "o", "linestyle": (0, (4, 1.5, 1, 1.5))},
+    "GREEN-MLFQ-K8s": {"color": "#009E73", "marker": "v", "linestyle": (0, (5, 2))},
+    "GreenCourier-Spatial-K8s": {"color": "#117733", "marker": "h", "linestyle": (0, (4, 1.5, 1, 1.5))},
     "Caspian-style": {"color": "#0072B2", "marker": "^", "linestyle": "-"},
-    "TotEm-OpOnly": {"color": "#E69F00", "marker": "s", "linestyle": "--"},
+    "TotEm-OpOnly": {"color": "#E69F00", "marker": "s", "linestyle": (0, (5, 2))},
     "TotEm": {"color": "#D55E00", "marker": "P", "linestyle": "-"},
 }
 
@@ -221,7 +221,7 @@ def lineplot(
             markersize = 3.7
         else:
             alpha = 0.96 if is_focus else 0.72
-            linewidth = 2.05 if is_focus else 1.25
+            linewidth = 1.4 if is_focus else 0.9
             markersize = 4.8 if is_focus else 4.0
         yerr = chunk[err_col].fillna(0.0) if err_col and err_col in chunk.columns else None
         ax.errorbar(
@@ -252,7 +252,7 @@ def legend_handles(order: list[str]) -> tuple[list[plt.Line2D], list[str]]:
                 marker=style.get("marker", "o"),
                 color=style.get("color", "#777777"),
                 linestyle=style.get("linestyle", "-"),
-                linewidth=1.6,
+                linewidth=1.4,
                 markersize=5,
             )
         )
@@ -403,7 +403,7 @@ def plot_baseline_composite(
         ncol=3,
         frameon=False,
         columnspacing=1.2,
-        handlelength=2.0,
+        handlelength=3.5,
     )
     return save_figure(fig, output_dir, "composite_baseline_matrix_200pods", formats)
 
@@ -483,7 +483,7 @@ def plot_capacity_mechanism_composite(
         ncol=3,
         frameon=False,
         columnspacing=1.2,
-        handlelength=2.0,
+        handlelength=3.5,
     )
     return save_figure(fig, output_dir, "composite_capacity_mechanism_200pods", formats)
 
@@ -745,7 +745,7 @@ def plot_robustness_composite(
                 color=style.get("color"),
                 marker=style.get("marker", "o"),
                 linestyle=style.get("linestyle", "-"),
-                linewidth=1.55 if algo in FOCUS_ALGORITHMS else 1.15,
+                linewidth=1.2 if algo in FOCUS_ALGORITHMS else 0.85,
                 markersize=4.4,
                 capsize=2,
                 alpha=0.92,
@@ -766,7 +766,7 @@ def plot_robustness_composite(
         ncol=3,
         frameon=False,
         columnspacing=1.2,
-        handlelength=2.0,
+        handlelength=3.5,
     )
     return save_figure(fig, output_dir, "composite_robustness_scalability", formats)
 
