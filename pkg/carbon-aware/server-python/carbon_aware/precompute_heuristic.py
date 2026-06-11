@@ -29,7 +29,10 @@ def run_heuristic_precomputation(
     perf_logger: Optional[PerformanceLogger] = None,
     prioritize_efficiency: bool = False,
     operational_only: bool = False,
-    embodied_mode: str = "proportional"
+    embodied_mode: str = "proportional",
+    deferral_margin: float = 0.0,
+    deferral_budget: float = 1.0,
+    embodied_gate: float = 0.0
 ) -> bool:
     """
     Run heuristic algorithm precomputation on all timeslot files.
@@ -84,6 +87,10 @@ def run_heuristic_precomputation(
             algorithm.set_workloads_dir(workloads_dir)  # Fix hardcoded path bug!
         if hasattr(algorithm, 'set_embodied_allocation_mode'):
             algorithm.set_embodied_allocation_mode(embodied_mode)
+        if hasattr(algorithm, 'set_gates'):
+            algorithm.set_gates(deferral_margin=deferral_margin,
+                                deferral_budget=deferral_budget,
+                                embodied_gate=embodied_gate)
         
         # Use provided session_log_dir as-is; main.py now includes the mode suffix
         if session_log_dir:

@@ -343,6 +343,16 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         self._embodied_allocation_mode = mode
         logging.info(f"HeuristicAlgorithm: embodied_allocation_mode set to {self._embodied_allocation_mode}")
         
+    def set_gates(self, deferral_margin: float = 0.0, deferral_budget: float = 1.0, embodied_gate: float = 0.0):
+        """Configure regime-aware gates; all defaults reproduce legacy behavior."""
+        if deferral_margin > 0.0 or deferral_budget < 1.0 or embodied_gate > 0.0:
+            self._gates = {"deferral_margin": deferral_margin,
+                           "deferral_budget": deferral_budget,
+                           "embodied_gate": embodied_gate}
+        else:
+            self._gates = None
+        self._deferred_cpu = {}
+
     def set_workloads_dir(self, workloads_dir: str):
         """Set the workloads directory for YAML file lookup."""
         self._workloads_dir = workloads_dir
@@ -369,8 +379,13 @@ class HeuristicAlgorithm(SchedulingAlgorithm):
         considered_options = len(flavours) * len(timeslots)
         
         best_node, best_slot, emissions = find_best_node_and_timeslot(
-            pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots, self._operational_only, self._embodied_allocation_mode
+            pod, flavours, timeslots, leftover_cpu, leftover_ram, max_time_slots, self._operational_only, self._embodied_allocation_mode,
+            gates=getattr(self, "_gates", None), deferred_cpu=getattr(self, "_deferred_cpu", None)
         )
+        if best_node and best_slot and getattr(self, "_gates", None) and best_slot.id > getattr(pod, "earliest_timeslot", 0):
+            node_book = self._deferred_cpu.setdefault(best_node.id, {})
+            for _off in range(int(pod.duration)):
+                node_book[best_slot.id + _off] = node_book.get(best_slot.id + _off, 0.0) + pod.cpuRequest
         
         if self.experiment_logger:
             execution_time = time.time() - start_time
@@ -582,7 +597,9 @@ def find_best_node_and_timeslot(
     leftover_ram: Dict[str, Dict[int, float]],
     max_time_slots: int = 48,
     operational_only: bool = False,
-    embodied_allocation_mode: str = "proportional"
+    embodied_allocation_mode: str = "proportional",
+    gates: Optional[dict] = None,
+    deferred_cpu: Optional[Dict[str, Dict[int, float]]] = None
 ) -> Tuple[Optional[CarbonAwareFlavour], Optional[CarbonAwareTimeslot], float]:
     """
     Find the best node and timeslot for a pod that minimizes carbon emissions.
@@ -605,6 +622,14 @@ def find_best_node_and_timeslot(
     best_node = None
     best_slot = None
     minimal_emissions = float('inf')
+
+    # Regime-aware gates (all default-off => behavior identical to legacy TotEm).
+    g_margin = float(gates.get("deferral_margin", 0.0)) if gates else 0.0
+    g_budget = float(gates.get("deferral_budget", 1.0)) if gates else 1.0
+    g_tau = float(gates.get("embodied_gate", 0.0)) if gates else 0.0
+    gates_active = (g_margin > 0.0) or (g_budget < 1.0) or (g_tau > 0.0)
+    # buckets[(objective, timing)] = [score, tot, emb, node, slot, pack]
+    buckets: Dict[tuple, list] = {}
 
     # Prefer lower-carbon hours first across nodes (best-effort)
     try:
@@ -639,6 +664,14 @@ def find_best_node_and_timeslot(
                     )
                     break
 
+            if duration_feasible and gates_active and g_budget < 1.0 and ts.id > getattr(pod, "earliest_timeslot", 0):
+                for slot_offset in range(int(pod.duration)):
+                    sid = ts.id + slot_offset
+                    booked = (deferred_cpu or {}).get(flv.id, {}).get(sid, 0.0)
+                    if booked + pod.cpuRequest > g_budget * flv.totalCpu + 1e-9:
+                        duration_feasible = False
+                        break
+
             if duration_feasible:
                 # Pre-compute occupancy and packing slacks for the scoring model.
                 used_cpu_before = {}
@@ -669,6 +702,28 @@ def find_best_node_and_timeslot(
                         used_cpu_before_by_slot=used_cpu_before,
                         embodied_allocation_mode=embodied_allocation_mode,
                     )
+                if gates_active:
+                    op_emi = total_emi
+                    if (not operational_only) and g_tau > 0.0:
+                        op_emi = compute_marginal_emissions_for_pod_over_duration(
+                            flavour=flv, start_slot=ts.id, duration_hours=pod.duration,
+                            pod_cpu_request=pod.cpuRequest, used_cpu_before_by_slot=used_cpu_before,
+                            include_embodied=False,
+                        )
+                    emb_comp = total_emi - op_emi
+                    timing = "now" if ts.id <= getattr(pod, "earliest_timeslot", 0) else "def"
+                    pack = (cpu_slack_sum, ram_slack_sum, flv.totalCpu, flv.totalRam)
+                    dur = max(int(pod.duration), 1)
+                    for obj, score in (("tot", total_emi), ("op", op_emi)):
+                        cur = buckets.get((obj, timing))
+                        if cur is None or score + 1e-9 < cur[0]:
+                            buckets[(obj, timing)] = [score, total_emi, emb_comp, flv, ts, pack]
+                        elif abs(score - cur[0]) <= 1e-9:
+                            pcs, prs, pcc, prc = cur[5]
+                            prior_norm = (pcs / max(pcc * dur, 1e-6)) + (prs / max(prc * dur, 1e-6))
+                            curr_norm = (cpu_slack_sum / max(flv.totalCpu * dur, 1e-6)) + (ram_slack_sum / max(flv.totalRam * dur, 1e-6))
+                            if curr_norm < prior_norm:
+                                buckets[(obj, timing)] = [score, total_emi, emb_comp, flv, ts, pack]
                 # Apply packing-aware tie-breaker when emissions are equal (within tiny epsilon)
                 if total_emi + 1e-9 < minimal_emissions:
                     minimal_emissions = total_emi
@@ -688,5 +743,27 @@ def find_best_node_and_timeslot(
                         f"[find_best_node_and_timeslot] New best found for pod={pod.id}: "
                         f"node={best_node.id}, timeslot={best_slot.id}, emissions={minimal_emissions:.3f}"
                     )
+
+    if gates_active:
+        def _choose(obj: str):
+            now = buckets.get((obj, "now"))
+            deferred = buckets.get((obj, "def"))
+            if now is None:
+                return deferred
+            if deferred is None:
+                return now
+            if deferred[0] < now[0] * (1.0 - g_margin) - 1e-12:
+                return deferred
+            return now
+
+        cand_tot = _choose("tot")
+        if cand_tot is None:
+            return None, None, float("inf")
+        chosen = cand_tot
+        if g_tau > 0.0 and not operational_only:
+            cand_op = _choose("op")
+            if cand_op is not None and (cand_op[2] - cand_tot[2]) < g_tau:
+                chosen = cand_op
+        return chosen[3], chosen[4], chosen[1]
 
     return best_node, best_slot, minimal_emissions

@@ -1,42 +1,45 @@
-# TotEm: Carbon-Aware Kubernetes Scheduling with Embodied Emissions
+# TotEm: Carbon-Aware Kubernetes-Style Scheduling Accounting for Embodied Emissions
 
-TotEm (Total Emissions) is a carbon-aware scheduler for Kubernetes that minimizes operational **and** embodied emissions using regional carbon-intensity forecasts. This repository packages the TotEm heuristic, an Oracle MILP benchmark, a carbon-agnostic baseline, reproducible workloads, and the analysis pipeline used in our paper under `docs/paper-two/`.
+TotEm (Total Emissions) is a carbon-aware scheduler for Kubernetes-style clusters that minimizes operational **and** embodied emissions using regional carbon-intensity forecasts. This repository packages the TotEm algorithm, a suite of carbon-aware and carbon-agnostic baselines, reproducible workloads, the real-trace pipeline, a real-control-plane validation harness, and the analysis pipeline used in our paper under `docs/paper-two/`.
 
 ![TotEm overview](docs/visTotEm.png)
 
-## What’s inside
-- **TotEm (heuristic, `--algorithm heuristic`)**: fast carbon-aware scheduler for multi-timeslot workloads.
-- **Oracle (MILP benchmark, `--algorithm global-optimal`)**: lexicographic two-phase optimizer for lower-bound comparisons.
-- **Carbon-agnostic baseline (`--algorithm vanilla`)**: Kubernetes-like LeastAllocated scoring with node sampling and early stopping.
-- **Reproducible data**: infrastructure/workload generator, carbon-intensity traces, and experiment harnesses.
-- **Interfaces**: gRPC IDL plus a Go client prototype for Kubernetes integration.
-- **Analysis**: figure generators for emissions, runtime, success rate, utilization, and sensitivity studies.
-- **Paper**: `docs/paper-two/main.tex` — TotEm: Carbon-Aware Kubernetes Scheduling with Embodied Emissions.
+## What's inside
+- **TotEm (`--algorithm heuristic`)**: fast greedy scheduler that scores feasible pod–node–timeslot placements by operational plus embodied emissions; supports an exact operational-only ablation (`--operational-only`).
+- **Baseline suite**, all run under one online-arrival, feasibility, and accounting contract:
+  - `--algorithm vanilla` — Vanilla-MostAllocated, Kubernetes-like filter–score–select resource packing (carbon-blind).
+  - `--algorithm green-mlfq` — GREEN-MLFQ-K8s, policy-level adaptation of GREEN (Xu et al., NSDI '25): rolling-epoch MLFQ with carbon-priority factors.
+  - `--algorithm greencourier-spatial` — GreenCourier-style spatial clean-region placement (Chadha et al., 2024).
+  - `--algorithm caspian-operational` — Caspian-style rolling spatio-temporal operational-carbon optimization (Bahreini et al., 2024).
+  - `--algorithm global-optimal` — full-horizon MILP. Serves as the formal feasibility/accounting contract only; it requires future-arrival knowledge and is **not** an empirical baseline in the paper.
+  - `--algorithm piontek-temporal`, `--algorithm wait-awhile` — additional temporal policies kept for reference.
+- **Real-trace pipeline**: converter for the Azure Trace for Packing 2020 plus a windowed runner that evaluates all schedulers on trace-derived workloads.
+- **Control-plane validation**: KWOK-based harness that replays schedules on a genuine Kubernetes control plane (API server, etcd, scheduler) and drives the released `kubectl-carbon` plugin and FogAtlas gRPC integration end to end.
+- **Reproducible data**: infrastructure/workload generator, carbon-intensity forecasts, experiment runners, and the figure/statistics pipeline behind every number in the paper.
 
 ## Emissions & constraints model
-- **Carbon signal**: time- and region-indexed carbon-intensity forecasts (shared across algorithms).
-- **Co-location-aware power**: \(P_\text{node} = P_\text{idle} + (P_\text{max} - P_\text{active}) \times U\) where \(U\) is aggregate CPU utilization; dynamic cost per pod scales linearly with its CPU share.
-- **Embodied carbon**: grams of CO₂e per node amortized over lifetime hours; allocation modes `proportional` (default) or `uniform`. Toggle `--operational-only` to drop embodied emissions.
-- **Constraints enforced**: CPU/Memory across each pod’s duration, earliest start from `timeslot_<X>.yaml`, deadlines, and optional prioritization of emissions-per-CPU vs totals.
+- **Carbon signal**: hourly, region-indexed average carbon intensity (ACI) forecasts, shared by all carbon-aware algorithms.
+- **Power**: two-point node model — idle baseline plus a dynamic component that scales linearly with the pod's CPU-request share; the first pod on an otherwise idle node-slot is attributed the idle draw.
+- **Embodied carbon**: per-node grams CO₂e amortized uniformly over lifetime hours and attributed to pods by active time and CPU share (SCI-consistent, attributional); allocation modes `proportional` (default) or `uniform`.
+- **Constraints enforced**: CPU/memory across each pod's full duration, earliest start (online arrivals), and deadlines.
 
 ## Repository layout
-- `pkg/idl/idl.proto` — gRPC interface for the placement service.
-- `pkg/carbon-aware/` — scheduler implementation and data (infra/workload generator, `nodes.yaml`, `workloads*/`, Python server, Go client).
-- `analysis/` — figure generators: `carbon_emissions_comparison.py`, `emissions_vs_pods*_plot_generator.py`, `success_rate_plot_generator.py`, `time_complexity_*`, `utilization_plot_generator.py`, `schedule_visualization.py`, `forecast_error_sensitivity.py`, `embodied_sensitivity.py`, `simple_carbon_heatmap.py`, and utilities.
-- `scripts/` — sweeps/time-complexity helpers (`sweep_podcounts_and_precompute.sh`, `time_complexity_sweep.py`, `update_config.py`).
+- `pkg/idl/idl.proto` — gRPC interface for the placement service (used by `kubectl-carbon` and FogAtlas).
+- `pkg/carbon-aware/` — scheduler implementations and data: infra/workload generator, `nodes.yaml`, `workloads*/`, Python server (`server-python/`), Go client.
+- `scripts/` — experiment runners: `run_resubmission_baseline_matrix.py` (density matrix), `run_capacity_sensitivity.py` (capacity sweep / scalability), `run_real_trace_baseline_matrix.py` + `real_traces/convert_azure_packing_trace.py` (Azure trace pipeline), `time_complexity_sweep.py`.
+- `analysis/` — paper pipeline: `evaluation_composite_plot_generator.py` (all composite figures), `motivation_aci_figure.py` (Fig. 1), `workload_regime_sweep.py` (32-regime embodied-awareness sweep), `build_merged_matrix_n10.py` + `seed_extension_pilot_stats.py` (ten-seed cohorts and paired statistics), `kwok_validation.py` + `kwok_plugin_validate.py` (control-plane validation), `attributed_common_pod_comparison.py` (shared common-pod accounting), plus legacy plot utilities.
 - `tests/` — constraint validators and batch experiment checks.
-- `experiments/` & `figures/` — generated results (gitignored).
-- `docs/paper-two/` — paper source.
-- `media/`, `external/`, `workloads*` — supporting data and generated workloads.
+- `experiments/` — generated results (gitignored); the paper-backing runs are kept locally under the roots referenced by `analysis/evaluation_composite_plot_generator.py`.
+- `docs/paper-two/` — paper source (`ResubmissionDraft/main.tex`), response letter (`FeedbackReviewers/`), and generated figures (`figures/CompositeEvaluation/`).
 
 ## Quickstart (offline, reproducible runs)
 
 ### Requirements
-- Python 3.9+, Go 1.18+.
+- Python 3.9+, Go 1.18+ (Go client only).
 - Python dependencies: `pip install -r pkg/carbon-aware/server-python/requirements.txt` and, for plotting, `pip install matplotlib pandas seaborn`.
 
 ### Generate infrastructure & workloads
-Configuration lives in `pkg/carbon-aware/infra-workload-config.yaml` (regions/hardware, workload scales, deadlines, solver defaults). Run from the generator directory so the config is picked up:
+Configuration lives in `pkg/carbon-aware/infra-workload-config.yaml` (regions/hardware, workload scales, deadlines). Run from the generator directory so the config is picked up:
 
 ```bash
 cd pkg/carbon-aware
@@ -44,17 +47,12 @@ python3 infra_workload_gen.py
 cd ..
 ```
 
-Outputs:
-- `pkg/carbon-aware/nodes.yaml`
-- `pkg/carbon-aware/workloads/` (TotEm/Oracle)
-- `pkg/carbon-aware/workloads-vanilla/` (baseline)
-
-The generator supports Poisson or exact-total pod counts, fixed seeds, and explicit region/hardware counts.
+Outputs: `pkg/carbon-aware/nodes.yaml`, `pkg/carbon-aware/workloads/`, and `pkg/carbon-aware/workloads-vanilla/`.
 
 ### Run schedulers (precompute)
 Pick an experiment directory and embodied allocation mode (`--embodied-mode proportional|uniform`).
 
-**TotEm (heuristic):**
+**TotEm:**
 ```bash
 python3 pkg/carbon-aware/server-python/main.py \
   --algorithm heuristic --precompute \
@@ -65,63 +63,36 @@ python3 pkg/carbon-aware/server-python/main.py \
   --embodied-mode proportional --loglevel INFO
 ```
 
-**Carbon-agnostic baseline:**
-```bash
-python3 pkg/carbon-aware/server-python/main.py \
-  --algorithm vanilla --precompute \
-  --workloads-dir pkg/carbon-aware/workloads-vanilla \
-  --nodes-file pkg/carbon-aware/nodes.yaml \
-  --experiment-dir experiments/vanilla_demo \
-  --loglevel INFO
-```
-
-**Oracle (MILP benchmark, lexicographic two-phase by default via `infra-workload-config.yaml`):**
-```bash
-python3 pkg/carbon-aware/server-python/main.py \
-  --algorithm global-optimal --precompute \
-  --workloads-dir pkg/carbon-aware/workloads \
-  --nodes-file pkg/carbon-aware/nodes.yaml \
-  --forecasts-file pkg/carbon-aware/server-python/all_forecasts.json \
-  --experiment-dir experiments/oracle_demo \
-  --embodied-mode proportional --loglevel INFO
-```
+**Any baseline** — swap `--algorithm` for `vanilla`, `green-mlfq`, `greencourier-spatial`, or `caspian-operational` (carbon-blind `vanilla` needs no forecasts file). All schedulers see only pods that have already arrived; none has future-workload knowledge.
 
 Flags of note:
-- `--operational-only` to ignore embodied emissions (TotEm/Oracle).
-- `--prioritize-efficiency` to optimize emissions-per-CPU instead of totals (TotEm).
-- Solver/time-limit/gap settings live under `optimization` in `pkg/carbon-aware/infra-workload-config.yaml` (cp_sat/highs/gurobi/cplex/cbc).
+- `--operational-only` — exact TotEm-OpOnly ablation (drops the embodied term).
+- `--deferral-margin / --deferral-budget / --embodied-gate` — experimental TotEm regime gates; defaults off reproduce TotEm bit-for-bit.
 
-Outputs:
-- Placement CSVs `*_placements_session.csv` under the chosen experiment directory.
-- Performance logs under `pkg/carbon-aware/server-python/performance_logs/`.
-- Timestamped subfolders within `experiments/…`.
+Outputs: placement CSVs (`*_placements_session.csv`) under the experiment directory, performance logs under `pkg/carbon-aware/server-python/performance_logs/`.
 
-## Algorithm details
-- **TotEm (heuristic)**: Greedy carbon-aware scheduler that scores feasible pod–node–timeslot pairs on operational+embodied emissions, orders pods by tightest window then size, scans low-carbon windows first, and uses a packing-aware tie-breaker. Supports proportional/uniform embodied allocation and operational-only ablation.
-- **Oracle (MILP benchmark)**: Two-phase lexicographic objective (maximize placed pods, then minimize emissions) with warm-starts and a dynamic-only fallback when activation binaries time out. Backends: cp_sat, highs, gurobi, cplex, cbc (set in the YAML).
-- **Carbon-agnostic baseline**: K8s-like Filter → Score → Select with LeastAllocated-style scoring, node sampling, and early stop; respects earliest timeslot and CPU/RAM/duration constraints but ignores carbon signals and embodied costs.
+## Reproducing the paper
+The evaluation pipeline, in order:
 
-## Analysis & visualization
-Run from repo root unless noted:
-- `analysis/carbon_emissions_comparison.py`: end-to-end emissions + runtime summaries for TotEm vs Oracle vs carbon-agnostic.
-- `analysis/emissions_vs_pods_plot_generator.py` and `analysis/emissions_vs_pods_common_pods_plot_generator.py`: emissions vs implied average cluster CPU utilization (proportional/uniform variants).
-- `analysis/success_rate_plot_generator.py`: placement success vs load.
-- `analysis/time_complexity_plot_generator.py`, `analysis/time_complexity_fixed_axes_plot.py`, `analysis/time_complexity_overlay_slices.py`: runtime scaling overlays; feed with data from `scripts/time_complexity_sweep.py` or `scripts/sweep_podcounts_and_precompute.sh`.
-- `analysis/utilization_plot_generator.py`: CPU/memory utilization across experiments.
-- `analysis/schedule_visualization.py`: per-timeslot placement heatmaps from `*_placements_session.csv`.
-- Sensitivity: `analysis/forecast_error_sensitivity.py`, `analysis/embodied_sensitivity.py`; quick visuals: `analysis/simple_carbon_heatmap.py`.
+1. **Baseline matrix** (ten seeds × pod densities): `scripts/run_resubmission_baseline_matrix.py`
+2. **Capacity sweep / paired scalability** (1×/2×/4×; 200→3,200 pods with 16→256 nodes): `scripts/run_capacity_sensitivity.py`
+3. **32-regime embodied-awareness sweep + siting follow-up**: `analysis/workload_regime_sweep.py`
+4. **Ten-seed merging and paired statistics** (all p-values in the paper): `analysis/build_merged_matrix_n10.py`, then `analysis/seed_extension_pilot_stats.py`
+5. **Azure trace experiment**: `scripts/real_traces/convert_azure_packing_trace.py` (SQLite → workloads), then `scripts/run_real_trace_baseline_matrix.py` (five non-overlapping 12-hour arrival windows, 1× and 4×)
+6. **Control-plane validation (KWOK)**: `analysis/kwok_validation.py` (feasibility/realizability on a real control plane) and `analysis/kwok_plugin_validate.py` (`kubectl-carbon` → gRPC → FogAtlas end to end)
+7. **Figures**: `analysis/evaluation_composite_plot_generator.py` (composite Figs. 3–6) and `analysis/motivation_aci_figure.py` (Fig. 1); outputs land in `docs/paper-two/figures/CompositeEvaluation/current/`
 
-Figures are written to `figures/` (timestamped folders). Sweep artifacts and logs stay under `experiments/`.
+Common-pod comparisons (same placed pod IDs across schedulers) and per-seed/per-window pairing are computed by `analysis/attributed_common_pod_comparison.py`, which all runners share.
 
 ## Validation & reporting
 - `tests/check_timeslot_constraints.py <placements_csv>` validates earliest-timeslot, deadline, CPU, and memory constraints for a single run.
-- `tests/validate_experiments_and_report.py --experiments-dir experiments --nodes-file pkg/carbon-aware/nodes.yaml --workloads-dir pkg/carbon-aware/workloads --workloads-vanilla-dir pkg/carbon-aware/workloads-vanilla` performs batch validation and writes CSV/TXT reports to `tests/reports/`.
-- `analysis/fix_start_slots.py` can normalize vanilla placements when needed.
+- `tests/validate_experiments_and_report.py --experiments-dir experiments ...` performs batch validation and writes CSV/TXT reports to `tests/reports/`.
+- The KWOK harness independently confirms zero capacity violations and 100% admission/binding of placed pods through the real Kubernetes API.
 
 ## Data & units
-- Embodied carbon values are expressed in **grams** CO₂e per node; lifetimes are in years (amortized to hours internally).
+- Embodied carbon values are **grams** CO₂e per node; lifetimes are in years (amortized to hours internally).
 - Power values are in Watts; durations are hours; carbon intensity is gCO₂e/kWh.
-- Default forecasts: `pkg/carbon-aware/server-python/all_forecasts.json` (12–24h horizons). Swap in region-matched data as needed.
+- Default forecasts: `pkg/carbon-aware/server-python/all_forecasts.json` (24-hour horizon). Swap in region-matched data as needed.
 
 ## Paper & naming
-The repository underpins `docs/paper-two/main.tex`: *TotEm: Carbon-Aware Kubernetes Scheduling with Embodied Emissions*. Analysis plots use the names TotEm (heuristic), Oracle (MILP benchmark), and Carbon-Agnostic (vanilla baseline). The gRPC interface in `pkg/idl/idl.proto` enables integration into a Kubernetes control plane.
+The repository underpins `docs/paper-two/ResubmissionDraft/main.tex`: *TotEm: Carbon-Aware Kubernetes-Style Scheduling Accounting for Embodied Emissions* (under review, IEEE Transactions on Sustainable Computing). Plots and tables use the names TotEm, TotEm-OpOnly, Vanilla-MostAllocated, GREEN-MLFQ-K8s, GreenCourier-Spatial-K8s, and Caspian-style. The gRPC interface in `pkg/idl/idl.proto`, the `kubectl-carbon` plugin, and the FogAtlas scheduler integration connect TotEm to a real Kubernetes control plane.

@@ -166,6 +166,12 @@ def main() -> None:
         action='store_true',
         help='Prioritize carbon efficiency per CPU rather than total emissions for scheduling decisions'
     )
+    parser.add_argument('--deferral-margin', type=float, default=0.0,
+        help='Regime gate: require deferred placements to beat place-now by this relative margin (0 disables)')
+    parser.add_argument('--deferral-budget', type=float, default=1.0,
+        help='Regime gate: max fraction of a future node-slot CPU that deferred pods may reserve (1.0 disables)')
+    parser.add_argument('--embodied-gate', type=float, default=0.0,
+        help='Regime gate: include embodied term only when it saves at least this many grams vs op-optimal (0 disables)')
     parser.add_argument(
         '--operational-only',
         action='store_true',
@@ -349,7 +355,10 @@ def main() -> None:
                 perf_logger=perf_logger,
                 prioritize_efficiency=args.prioritize_efficiency,
                 operational_only=args.operational_only,
-                embodied_mode=args.embodied_mode
+                embodied_mode=args.embodied_mode,
+                deferral_margin=args.deferral_margin,
+                deferral_budget=args.deferral_budget,
+                embodied_gate=args.embodied_gate
             )
         elif args.algorithm == 'global-optimal':
             from carbon_aware.precompute_global_optimal import run_global_optimal_precomputation

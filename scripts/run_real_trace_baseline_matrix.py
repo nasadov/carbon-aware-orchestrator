@@ -2,9 +2,10 @@
 """
 Run a trace-derived baseline matrix using Azure Trace for Packing 2020.
 
-This runner converts fixed 24-hour windows from the Azure VM request trace into
-the same timeslot_*.yaml format used by the synthetic experiments, then runs the
-existing scheduler/baseline harness unchanged.
+This runner samples fixed 12-hour arrival windows from the Azure VM request
+trace into the same timeslot_*.yaml format used by the synthetic experiments,
+then runs the existing scheduler/baseline harness with its 24-hour execution
+horizon unchanged.
 """
 
 from __future__ import annotations
@@ -140,8 +141,9 @@ def convert_window(
     window_day: int,
     seed: int,
     target_pods: int,
-    horizon_slots: int,
+    arrival_window_slots: int,
     log_dir: Path,
+    allow_horizon_overflow: bool = False,
 ) -> Path:
     output_root = trace_root / f"window_day_{window_day}_seed_{seed}_{target_pods}pods"
     cmd = [
@@ -155,8 +157,9 @@ def convert_window(
         str(window_day),
         "--target-pods",
         str(target_pods),
-        "--horizon-slots",
-        str(horizon_slots),
+        "--arrival-window-slots",
+        str(arrival_window_slots),
+        *( ["--allow-horizon-overflow"] if allow_horizon_overflow else [] ),
         "--seed",
         str(seed),
     ]
@@ -382,7 +385,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--window-days", default="0,2,4,6,8")
     parser.add_argument("--seeds", default="42,43,44,45,46")
     parser.add_argument("--capacity-multipliers", default="1,4")
-    parser.add_argument("--horizon-slots", type=int, default=24)
+    parser.add_argument(
+        "--arrival-window-slots",
+        type=int,
+        default=12,
+        help="Number of hourly Azure arrival slots to sample; scheduler execution remains bounded by 24 slots.",
+    )
+    parser.add_argument("--allow-horizon-overflow", action="store_true")
     parser.add_argument("--experiment-root", default=str(REPO_ROOT / "experiments/real_trace_baseline_matrix"))
     parser.add_argument("--trace-workload-root", default=str(REPO_ROOT / "experiments/real_trace_workloads/azure_packing_2020"))
     parser.add_argument(
@@ -436,7 +445,8 @@ def main() -> int:
                 window_day=window_day,
                 seed=seed,
                 target_pods=args.target_pods,
-                horizon_slots=args.horizon_slots,
+                arrival_window_slots=args.arrival_window_slots,
+            allow_horizon_overflow=args.allow_horizon_overflow,
                 log_dir=root / "command_logs",
             )
             for multiplier in multipliers:
