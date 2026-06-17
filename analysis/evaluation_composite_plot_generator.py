@@ -36,8 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MATRIX_ROOT = (
     REPO_ROOT
     / "experiments"
-    / "resubmission_baseline_matrix_sweep_v5"
-    / "matrix_20260515_111056"
+    / "resubmission_baseline_matrix_merged_n10"
 )
 DEFAULT_CAPACITY_ROOT = (
     REPO_ROOT
@@ -66,8 +65,7 @@ DEFAULT_REGIME_SWEEP_ROOT = (
 DEFAULT_REGIME_FOLLOWUP_ROOT = (
     REPO_ROOT
     / "experiments"
-    / "workload_regime_baseline_followup"
-    / "sweep_20260609_151612"
+    / "workload_regime_baseline_followup_merged_n10"
 )
 DEFAULT_OUTPUT_DIR = (
     REPO_ROOT / "docs" / "paper-two" / "figures" / "CompositeEvaluation" / "current"
@@ -105,7 +103,7 @@ SHORT_LABELS = {
     "GREEN-MLFQ-K8s": "GREEN",
     "GreenCourier-Spatial-K8s": "GreenCourier",
     "Caspian-style": "Caspian",
-    "TotEm-OpOnly": "TotEm op-only",
+    "TotEm-OpOnly": "TotEm-OpOnly",
     "TotEm": "TotEm",
 }
 
@@ -186,6 +184,28 @@ def load_matrix(root: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     for df in (whole, common):
         df["target_pods"] = df["target_pods"].astype(int)
     return whole, common
+
+
+def paired_pvalues_vs_totem(root: Path, target_pods: int = 200) -> dict[str, float]:
+    """Paired t-test p-values of each algorithm vs TotEm on the per-seed common
+    cohort at a given density. Returns {} if the per-seed file is absent so the
+    figure still renders without significance marks."""
+    path = root / "attributed_common_pod_comparison.csv"
+    if not path.exists():
+        return {}
+    df = read_csv(path)
+    df = df[(df["comparison"] == "all_algorithms_common") & (df["target_pods"] == target_pods)]
+    piv = df.pivot_table(index="seed", columns="algorithm", values="per_pod_g")
+    if "TotEm" not in piv.columns:
+        return {}
+    out: dict[str, float] = {}
+    for algo in piv.columns:
+        if algo == "TotEm":
+            continue
+        pair = piv[[algo, "TotEm"]].dropna()
+        if len(pair) >= 2:
+            out[algo] = float(stats.ttest_rel(pair[algo], pair["TotEm"]).pvalue)
+    return out
 
 
 def load_capacity(root: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -519,7 +539,9 @@ def plot_baseline_composite(
     common: pd.DataFrame,
     output_dir: Path,
     formats: Iterable[str],
+    sig_vs_totem: dict[str, float] | None = None,
 ) -> list[Path]:
+    sig_vs_totem = sig_vs_totem or {}
     order = ordered_algorithms(whole)
     common = add_ci95(common, "std_per_pod_g", "ci95_per_pod_g")
     fig = plt.figure(figsize=(7.25, 3.30))
@@ -613,15 +635,18 @@ def plot_baseline_composite(
             alpha=0.96 if algo in FOCUS_ALGORITHMS else 0.78,
             zorder=3,
         )
+        label = SHORT_LABELS.get(algo, algo)
+        if sig_vs_totem.get(algo, 1.0) < 0.05:
+            label += "*"
         ax_pareto.annotate(
-            SHORT_LABELS.get(algo, algo),
+            label,
             (row["mean_success"], row["mean_per_pod_g"]),
             xytext=label_offsets.get(algo, (4, 4)),
             textcoords="offset points",
             fontsize=6.5,
         )
     ax_pareto.set_xlabel("Scheduled pods (%)")
-    ax_pareto.set_ylabel("Common-pod emissions")
+    ax_pareto.set_ylabel("Common-pod emissions (gCO2e/pod)")
     ax_pareto.set_title("200-pod tradeoff")
     ax_pareto.set_xlim(max(0, merged["mean_success"].min() - 1.4), min(101, merged["mean_success"].max() + 1.8))
     ax_pareto.set_ylim(max(0, merged["mean_per_pod_g"].min() - 0.8), merged["mean_per_pod_g"].max() + 0.9)
@@ -712,7 +737,7 @@ def plot_capacity_mechanism_composite(
         err_col="ci95_weighted_carbon_intensity",
         focus_only=True,
     )
-    axes[2].set_ylabel("CPU-hour weighted CI (gCO2/kWh)")
+    axes[2].set_ylabel("CPU-hour weighted ACI (gCO2e/kWh)")
     axes[2].set_title("Selected-grid cleanliness")
     axes[2].set_xticks([1, 2, 4])
     panel_label(axes[2], "c")
@@ -797,7 +822,7 @@ def plot_embodied_ablation_composite(
         wspace=0.47,
     )
 
-    heatmap_grid = outer[0, 0].subgridspec(2, 2, height_ratios=[1.0, 0.07], hspace=0.34, wspace=0.10)
+    heatmap_grid = outer[0, 0].subgridspec(2, 2, height_ratios=[1.0, 0.06], hspace=1.00, wspace=0.10)
     ax_tight = fig.add_subplot(heatmap_grid[0, 0])
     ax_flexible = fig.add_subplot(heatmap_grid[0, 1])
     cax = fig.add_subplot(heatmap_grid[1, :])
@@ -833,7 +858,7 @@ def plot_embodied_ablation_composite(
             annot_kws={"fontsize": 6.1, "fontweight": "bold"},
         )
         ax.set_title(f"{deadline.capitalize()} deadlines")
-        ax.set_xlabel("Offered CPU-hour load")
+        ax.set_xlabel("")
         ax.set_xticklabels(["25%", "50%", "75%", "90%"], rotation=0)
         ax.set_yticklabels(["4", "2", "1", "0.5"], rotation=0)
         ax.tick_params(length=0)
@@ -843,9 +868,21 @@ def plot_embodied_ablation_composite(
             ax.set_ylabel("")
             ax.set_yticklabels([])
     ax_flexible.add_patch(Rectangle((1, 1), 1, 1, fill=False, edgecolor="#1F2430", linewidth=1.4))
-    cax.set_xlabel("TotEm reduction vs op-only (%)")
+    cax.set_xlabel("Reduction vs TotEm-OpOnly (%)", labelpad=2)
     cax.xaxis.set_label_position("bottom")
-    cax.tick_params(axis="x", labelsize=6.0, length=2)
+    cax.tick_params(axis="x", labelsize=6.0, length=2, pad=1)
+    heatmap_left = ax_tight.get_position().x0
+    heatmap_right = ax_flexible.get_position().x1
+    gap_bottom = cax.get_position().y1
+    gap_top = min(ax_tight.get_position().y0, ax_flexible.get_position().y0)
+    fig.text(
+        (heatmap_left + heatmap_right) / 2,
+        gap_bottom + 0.62 * (gap_top - gap_bottom),
+        "Requested demand (% capacity)",
+        ha="center",
+        va="center",
+        fontsize=7.0,
+    )
     panel_label(ax_tight, "a")
 
     ax_components = fig.add_subplot(outer[0, 1])
@@ -894,7 +931,8 @@ def plot_embodied_ablation_composite(
         fontweight="bold",
     )
     ax_components.set_xticks(x)
-    ax_components.set_xticklabels(["Op-only", "TotEm"], rotation=0)
+    ax_components.set_xticklabels(["TotEm-\nOpOnly", "TotEm"], rotation=0)
+    ax_components.tick_params(axis="x", pad=1)
     ax_components.set_ylabel("Emissions (gCO2e/pod)")
     ax_components.set_title("Representative mechanism")
     ax_components.set_xlim(-0.5, 2.05)
@@ -935,7 +973,7 @@ def plot_embodied_ablation_composite(
     for ypos, value, ci in zip(y, baseline_plot["mean_per_pod_g"], baseline_plot["ci95_per_pod_g"].fillna(0.0)):
         ax_baselines.text(value + ci + 0.5, ypos, f"{value:.1f}", va="center", ha="left", fontsize=6.1)
     ax_baselines.set_xlim(0, 33)
-    ax_baselines.set_xlabel("Common-pod gCO2e/pod")
+    ax_baselines.set_xlabel("Common-pod emissions (gCO2e/pod)")
     ax_baselines.set_title("Six-policy comparison")
     ax_baselines.grid(axis="y", visible=False)
     panel_label(ax_baselines, "c")
@@ -993,7 +1031,7 @@ def plot_robustness_composite(
         ax.set_yticks(y)
         ax.set_yticklabels([SHORT_LABELS[a] for a in chunk["algorithm"]])
         ax.invert_yaxis()
-        ax.set_xlabel("Common-pod emissions")
+        ax.set_xlabel("Common-pod emissions (gCO2e/pod)")
         ax.set_title(f"Azure trace-derived, {capacity}x")
         panel_label(ax, label)
 
@@ -1090,7 +1128,10 @@ def main() -> int:
     )
 
     written: list[Path] = []
-    written.extend(plot_baseline_composite(matrix_whole, matrix_common, output_dir, formats))
+    matrix_sig = paired_pvalues_vs_totem(matrix_root, target_pods=200)
+    written.extend(
+        plot_baseline_composite(matrix_whole, matrix_common, output_dir, formats, matrix_sig)
+    )
     written.extend(
         plot_embodied_ablation_composite(
             regime_sweep_root,
