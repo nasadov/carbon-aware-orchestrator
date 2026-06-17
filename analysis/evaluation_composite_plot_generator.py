@@ -186,28 +186,6 @@ def load_matrix(root: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     return whole, common
 
 
-def paired_pvalues_vs_totem(root: Path, target_pods: int = 200) -> dict[str, float]:
-    """Paired t-test p-values of each algorithm vs TotEm on the per-seed common
-    cohort at a given density. Returns {} if the per-seed file is absent so the
-    figure still renders without significance marks."""
-    path = root / "attributed_common_pod_comparison.csv"
-    if not path.exists():
-        return {}
-    df = read_csv(path)
-    df = df[(df["comparison"] == "all_algorithms_common") & (df["target_pods"] == target_pods)]
-    piv = df.pivot_table(index="seed", columns="algorithm", values="per_pod_g")
-    if "TotEm" not in piv.columns:
-        return {}
-    out: dict[str, float] = {}
-    for algo in piv.columns:
-        if algo == "TotEm":
-            continue
-        pair = piv[[algo, "TotEm"]].dropna()
-        if len(pair) >= 2:
-            out[algo] = float(stats.ttest_rel(pair[algo], pair["TotEm"]).pvalue)
-    return out
-
-
 def load_capacity(root: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     whole = read_csv(root / "capacity_baseline_aggregate_by_pods.csv")
     common = read_csv(root / "capacity_attributed_common_all_algorithms_aggregate.csv")
@@ -539,9 +517,7 @@ def plot_baseline_composite(
     common: pd.DataFrame,
     output_dir: Path,
     formats: Iterable[str],
-    sig_vs_totem: dict[str, float] | None = None,
 ) -> list[Path]:
-    sig_vs_totem = sig_vs_totem or {}
     order = ordered_algorithms(whole)
     common = add_ci95(common, "std_per_pod_g", "ci95_per_pod_g")
     fig = plt.figure(figsize=(7.25, 3.30))
@@ -635,11 +611,8 @@ def plot_baseline_composite(
             alpha=0.96 if algo in FOCUS_ALGORITHMS else 0.78,
             zorder=3,
         )
-        label = SHORT_LABELS.get(algo, algo)
-        if sig_vs_totem.get(algo, 1.0) < 0.05:
-            label += "*"
         ax_pareto.annotate(
-            label,
+            SHORT_LABELS.get(algo, algo),
             (row["mean_success"], row["mean_per_pod_g"]),
             xytext=label_offsets.get(algo, (4, 4)),
             textcoords="offset points",
@@ -973,7 +946,7 @@ def plot_embodied_ablation_composite(
     for ypos, value, ci in zip(y, baseline_plot["mean_per_pod_g"], baseline_plot["ci95_per_pod_g"].fillna(0.0)):
         ax_baselines.text(value + ci + 0.5, ypos, f"{value:.1f}", va="center", ha="left", fontsize=6.1)
     ax_baselines.set_xlim(0, 33)
-    ax_baselines.set_xlabel("Common-pod emissions (gCO2e/pod)")
+    ax_baselines.set_xlabel("Emissions on shared pods\n(gCO2e/pod)", labelpad=1)
     ax_baselines.set_title("Six-policy comparison")
     ax_baselines.grid(axis="y", visible=False)
     panel_label(ax_baselines, "c")
@@ -1128,10 +1101,7 @@ def main() -> int:
     )
 
     written: list[Path] = []
-    matrix_sig = paired_pvalues_vs_totem(matrix_root, target_pods=200)
-    written.extend(
-        plot_baseline_composite(matrix_whole, matrix_common, output_dir, formats, matrix_sig)
-    )
+    written.extend(plot_baseline_composite(matrix_whole, matrix_common, output_dir, formats))
     written.extend(
         plot_embodied_ablation_composite(
             regime_sweep_root,
