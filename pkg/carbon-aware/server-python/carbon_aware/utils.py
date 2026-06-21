@@ -213,52 +213,6 @@ def compute_emissions_with_allocation(
     return total_g
 
 
-def compute_marginal_emissions_for_pod_over_duration(
-    flavour: EnvironmentalFlavor,
-    start_slot: int,
-    duration_hours: float,
-    pod_cpu_request: float,
-    used_cpu_before_by_slot: Dict[int, float],
-    include_embodied: bool = True,
-) -> float:
-    """Compute marginal emissions (grams CO2e) to add this pod on a node over its duration.
-
-    - used_cpu_before_by_slot: mapping slot -> already allocated CPU on node BEFORE placing this pod (in cores)
-    - We attribute node idle and embodied only once when the first pod in a slot is placed.
-    - Operational emissions are calculated using per-slot carbon intensity and marginal power delta.
-    """
-    total_g = 0.0
-    dynamic_k = compute_node_dynamic_coeff_watts(flavour)
-    embodied_per_hour = compute_embodied_per_hour_g(flavour) if include_embodied else 0.0
-
-    # Iterate integer hour slots covered by the pod
-    for offset in range(int(duration_hours)):
-        slot = start_slot + offset
-
-        used_before = used_cpu_before_by_slot.get(slot, 0.0)
-        total_cpu = max(flavour.totalCpu, 1e-6)
-        U_before = used_before / total_cpu
-        u_pod = pod_cpu_request / total_cpu
-
-        # Marginal node power change (W)
-        delta_power_w = 0.0
-        # Idle applies only if slot was previously empty and this pod activates the node
-        if U_before <= 0.0 and u_pod > 0.0:
-            delta_power_w += flavour.power["idle"]
-        # Dynamic marginal is linear in cpu share
-        delta_power_w += dynamic_k * u_pod
-
-        # Operational emissions: gCO2 = intensity(g/kWh) * (delta_power_w/1000 kW) * 1h
-        intensity = get_carbon_intensity(flavour, slot)
-        total_g += intensity * (delta_power_w / 1000.0) * 1.0
-
-        # Embodied per hour once if slot was previously empty
-        if include_embodied and U_before <= 0.0 and u_pod > 0.0:
-            total_g += embodied_per_hour
-
-    return total_g
-
-
 def load_carbon_intensity_data(json_file_path: str = "all_forecasts.json", regions: Optional[List[str]] = None) -> Dict[str, Dict[int, float]]:
     """
     Load carbon intensity data from the specified JSON file.

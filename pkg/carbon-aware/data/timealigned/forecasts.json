@@ -1,0 +1,1562 @@
+{
+  "DE": {
+    "zone": "DE",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 398.66
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 404.23
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 416.4
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 442.6
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 500.02
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 525.4
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 509.19
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 473.37
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 446.06
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 429.27
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 409.78
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 402.87
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 403.12
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 407.19
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 419.66
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 440.69
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 479.48
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 517.75
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 522.96
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 508.67
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 484.66
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 447.69
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 412.32
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 397.77
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 385.79
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 385.46
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 396.98
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 420.26
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 474.75
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 507.88
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 499.99
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 465.41
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 425.87
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 399.83
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 370.7
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 356.78
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 349.63
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 360.24
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 377.75
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 410.59
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 446.12
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 478.3
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 486.7
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 453.53
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 412.38
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 356.06
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 330.09
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 317.71
+      },
+      {
+        "datetime": "2018-07-27T00:00:00Z",
+        "carbonIntensity": 315.7
+      },
+      {
+        "datetime": "2018-07-27T01:00:00Z",
+        "carbonIntensity": 322.26
+      },
+      {
+        "datetime": "2018-07-27T02:00:00Z",
+        "carbonIntensity": 337.84
+      },
+      {
+        "datetime": "2018-07-27T03:00:00Z",
+        "carbonIntensity": 369.35
+      },
+      {
+        "datetime": "2018-07-27T04:00:00Z",
+        "carbonIntensity": 433.19
+      },
+      {
+        "datetime": "2018-07-27T05:00:00Z",
+        "carbonIntensity": 474.19
+      },
+      {
+        "datetime": "2018-07-27T06:00:00Z",
+        "carbonIntensity": 477.79
+      },
+      {
+        "datetime": "2018-07-27T07:00:00Z",
+        "carbonIntensity": 446.97
+      },
+      {
+        "datetime": "2018-07-27T08:00:00Z",
+        "carbonIntensity": 406.26
+      },
+      {
+        "datetime": "2018-07-27T09:00:00Z",
+        "carbonIntensity": 370.33
+      },
+      {
+        "datetime": "2018-07-27T10:00:00Z",
+        "carbonIntensity": 345.42
+      },
+      {
+        "datetime": "2018-07-27T11:00:00Z",
+        "carbonIntensity": 337.73
+      },
+      {
+        "datetime": "2018-07-27T12:00:00Z",
+        "carbonIntensity": 334.88
+      },
+      {
+        "datetime": "2018-07-27T13:00:00Z",
+        "carbonIntensity": 337.63
+      },
+      {
+        "datetime": "2018-07-27T14:00:00Z",
+        "carbonIntensity": 350.14
+      },
+      {
+        "datetime": "2018-07-27T15:00:00Z",
+        "carbonIntensity": 375.24
+      },
+      {
+        "datetime": "2018-07-27T16:00:00Z",
+        "carbonIntensity": 401.62
+      },
+      {
+        "datetime": "2018-07-27T17:00:00Z",
+        "carbonIntensity": 423.19
+      },
+      {
+        "datetime": "2018-07-27T18:00:00Z",
+        "carbonIntensity": 431.07
+      },
+      {
+        "datetime": "2018-07-27T19:00:00Z",
+        "carbonIntensity": 405.21
+      },
+      {
+        "datetime": "2018-07-27T20:00:00Z",
+        "carbonIntensity": 375.7
+      },
+      {
+        "datetime": "2018-07-27T21:00:00Z",
+        "carbonIntensity": 345.14
+      },
+      {
+        "datetime": "2018-07-27T22:00:00Z",
+        "carbonIntensity": 323.79
+      },
+      {
+        "datetime": "2018-07-27T23:00:00Z",
+        "carbonIntensity": 305.56
+      },
+      {
+        "datetime": "2018-07-28T00:00:00Z",
+        "carbonIntensity": 300.96
+      },
+      {
+        "datetime": "2018-07-28T01:00:00Z",
+        "carbonIntensity": 301.33
+      },
+      {
+        "datetime": "2018-07-28T02:00:00Z",
+        "carbonIntensity": 295.79
+      },
+      {
+        "datetime": "2018-07-28T03:00:00Z",
+        "carbonIntensity": 300.21
+      },
+      {
+        "datetime": "2018-07-28T04:00:00Z",
+        "carbonIntensity": 311.68
+      },
+      {
+        "datetime": "2018-07-28T05:00:00Z",
+        "carbonIntensity": 325.38
+      },
+      {
+        "datetime": "2018-07-28T06:00:00Z",
+        "carbonIntensity": 329.79
+      },
+      {
+        "datetime": "2018-07-28T07:00:00Z",
+        "carbonIntensity": 319.56
+      },
+      {
+        "datetime": "2018-07-28T08:00:00Z",
+        "carbonIntensity": 295.84
+      },
+      {
+        "datetime": "2018-07-28T09:00:00Z",
+        "carbonIntensity": 276.8
+      },
+      {
+        "datetime": "2018-07-28T10:00:00Z",
+        "carbonIntensity": 267.62
+      },
+      {
+        "datetime": "2018-07-28T11:00:00Z",
+        "carbonIntensity": 238.94
+      },
+      {
+        "datetime": "2018-07-28T12:00:00Z",
+        "carbonIntensity": 232.64
+      },
+      {
+        "datetime": "2018-07-28T13:00:00Z",
+        "carbonIntensity": 242.8
+      },
+      {
+        "datetime": "2018-07-28T14:00:00Z",
+        "carbonIntensity": 268.48
+      },
+      {
+        "datetime": "2018-07-28T15:00:00Z",
+        "carbonIntensity": 306.71
+      },
+      {
+        "datetime": "2018-07-28T16:00:00Z",
+        "carbonIntensity": 337.82
+      },
+      {
+        "datetime": "2018-07-28T17:00:00Z",
+        "carbonIntensity": 373.78
+      },
+      {
+        "datetime": "2018-07-28T18:00:00Z",
+        "carbonIntensity": 381.33
+      },
+      {
+        "datetime": "2018-07-28T19:00:00Z",
+        "carbonIntensity": 383.82
+      },
+      {
+        "datetime": "2018-07-28T20:00:00Z",
+        "carbonIntensity": 377.56
+      },
+      {
+        "datetime": "2018-07-28T21:00:00Z",
+        "carbonIntensity": 348.76
+      },
+      {
+        "datetime": "2018-07-28T22:00:00Z",
+        "carbonIntensity": 323.29
+      },
+      {
+        "datetime": "2018-07-28T23:00:00Z",
+        "carbonIntensity": 314.96
+      }
+    ],
+    "updatedAt": "2018-07-25T00:00:00Z"
+  },
+  "FR": {
+    "zone": "FR",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 43.71
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 41.66
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 41.34
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 43.07
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 45.52
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 48.87
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 52.18
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 54.22
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 54.68
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 55.36
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 56.05
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 55.35
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 55.42
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 54.78
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 54.21
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 53.96
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 55.15
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 55.66
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 53.85
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 52.53
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 54.76
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 54.78
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 49.98
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 46.81
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 45.24
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 42.9
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 42.32
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 44.09
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 46.56
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 49.92
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 53.2
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 55.11
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 55.98
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 56.73
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 57.09
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 56.43
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 56.25
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 55.58
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 55.07
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 54.87
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 56.07
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 56.52
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 54.39
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 53.29
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 55.25
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 55.08
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 49.7
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 46.31
+      },
+      {
+        "datetime": "2018-07-27T00:00:00Z",
+        "carbonIntensity": 44.71
+      },
+      {
+        "datetime": "2018-07-27T01:00:00Z",
+        "carbonIntensity": 42.51
+      },
+      {
+        "datetime": "2018-07-27T02:00:00Z",
+        "carbonIntensity": 41.88
+      },
+      {
+        "datetime": "2018-07-27T03:00:00Z",
+        "carbonIntensity": 43.76
+      },
+      {
+        "datetime": "2018-07-27T04:00:00Z",
+        "carbonIntensity": 46.05
+      },
+      {
+        "datetime": "2018-07-27T05:00:00Z",
+        "carbonIntensity": 49.4
+      },
+      {
+        "datetime": "2018-07-27T06:00:00Z",
+        "carbonIntensity": 52.87
+      },
+      {
+        "datetime": "2018-07-27T07:00:00Z",
+        "carbonIntensity": 55.25
+      },
+      {
+        "datetime": "2018-07-27T08:00:00Z",
+        "carbonIntensity": 56.11
+      },
+      {
+        "datetime": "2018-07-27T09:00:00Z",
+        "carbonIntensity": 56.25
+      },
+      {
+        "datetime": "2018-07-27T10:00:00Z",
+        "carbonIntensity": 56.34
+      },
+      {
+        "datetime": "2018-07-27T11:00:00Z",
+        "carbonIntensity": 55.17
+      },
+      {
+        "datetime": "2018-07-27T12:00:00Z",
+        "carbonIntensity": 55.07
+      },
+      {
+        "datetime": "2018-07-27T13:00:00Z",
+        "carbonIntensity": 54.25
+      },
+      {
+        "datetime": "2018-07-27T14:00:00Z",
+        "carbonIntensity": 53.14
+      },
+      {
+        "datetime": "2018-07-27T15:00:00Z",
+        "carbonIntensity": 52.38
+      },
+      {
+        "datetime": "2018-07-27T16:00:00Z",
+        "carbonIntensity": 52.61
+      },
+      {
+        "datetime": "2018-07-27T17:00:00Z",
+        "carbonIntensity": 51.92
+      },
+      {
+        "datetime": "2018-07-27T18:00:00Z",
+        "carbonIntensity": 50.33
+      },
+      {
+        "datetime": "2018-07-27T19:00:00Z",
+        "carbonIntensity": 49.76
+      },
+      {
+        "datetime": "2018-07-27T20:00:00Z",
+        "carbonIntensity": 51.8
+      },
+      {
+        "datetime": "2018-07-27T21:00:00Z",
+        "carbonIntensity": 51.63
+      },
+      {
+        "datetime": "2018-07-27T22:00:00Z",
+        "carbonIntensity": 46.55
+      },
+      {
+        "datetime": "2018-07-27T23:00:00Z",
+        "carbonIntensity": 43.89
+      },
+      {
+        "datetime": "2018-07-28T00:00:00Z",
+        "carbonIntensity": 42.09
+      },
+      {
+        "datetime": "2018-07-28T01:00:00Z",
+        "carbonIntensity": 39.39
+      },
+      {
+        "datetime": "2018-07-28T02:00:00Z",
+        "carbonIntensity": 38.01
+      },
+      {
+        "datetime": "2018-07-28T03:00:00Z",
+        "carbonIntensity": 38.07
+      },
+      {
+        "datetime": "2018-07-28T04:00:00Z",
+        "carbonIntensity": 38.0
+      },
+      {
+        "datetime": "2018-07-28T05:00:00Z",
+        "carbonIntensity": 38.95
+      },
+      {
+        "datetime": "2018-07-28T06:00:00Z",
+        "carbonIntensity": 40.99
+      },
+      {
+        "datetime": "2018-07-28T07:00:00Z",
+        "carbonIntensity": 42.12
+      },
+      {
+        "datetime": "2018-07-28T08:00:00Z",
+        "carbonIntensity": 42.33
+      },
+      {
+        "datetime": "2018-07-28T09:00:00Z",
+        "carbonIntensity": 42.39
+      },
+      {
+        "datetime": "2018-07-28T10:00:00Z",
+        "carbonIntensity": 43.81
+      },
+      {
+        "datetime": "2018-07-28T11:00:00Z",
+        "carbonIntensity": 42.43
+      },
+      {
+        "datetime": "2018-07-28T12:00:00Z",
+        "carbonIntensity": 41.45
+      },
+      {
+        "datetime": "2018-07-28T13:00:00Z",
+        "carbonIntensity": 40.34
+      },
+      {
+        "datetime": "2018-07-28T14:00:00Z",
+        "carbonIntensity": 39.3
+      },
+      {
+        "datetime": "2018-07-28T15:00:00Z",
+        "carbonIntensity": 39.91
+      },
+      {
+        "datetime": "2018-07-28T16:00:00Z",
+        "carbonIntensity": 41.5
+      },
+      {
+        "datetime": "2018-07-28T17:00:00Z",
+        "carbonIntensity": 43.02
+      },
+      {
+        "datetime": "2018-07-28T18:00:00Z",
+        "carbonIntensity": 43.57
+      },
+      {
+        "datetime": "2018-07-28T19:00:00Z",
+        "carbonIntensity": 44.37
+      },
+      {
+        "datetime": "2018-07-28T20:00:00Z",
+        "carbonIntensity": 47.61
+      },
+      {
+        "datetime": "2018-07-28T21:00:00Z",
+        "carbonIntensity": 48.59
+      },
+      {
+        "datetime": "2018-07-28T22:00:00Z",
+        "carbonIntensity": 44.63
+      },
+      {
+        "datetime": "2018-07-28T23:00:00Z",
+        "carbonIntensity": 41.75
+      }
+    ],
+    "updatedAt": "2018-07-25T00:00:00Z"
+  },
+  "ES": {
+    "zone": "ES",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 185.57
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 179.82
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 178.97
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 182.37
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 198.57
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 217.13
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 233.86
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 242.31
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 245.12
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 248.35
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 253.08
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 256.14
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 250.92
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 246.97
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 245.49
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 245.76
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 243.38
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 241.89
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 245.49
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 253.69
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 249.33
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 229.82
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 216.54
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 202.19
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 194.56
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 191.63
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 192.12
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 195.54
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 214.48
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 235.12
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 251.58
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 264.02
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 266.88
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 267.4
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 268.61
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 267.57
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 258.86
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 250.98
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 248.35
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 247.11
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 243.27
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 241.3
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 239.53
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 242.37
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 235.84
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 219.71
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 212.28
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 201.99
+      },
+      {
+        "datetime": "2018-07-27T00:00:00Z",
+        "carbonIntensity": 194.6
+      },
+      {
+        "datetime": "2018-07-27T01:00:00Z",
+        "carbonIntensity": 194.35
+      },
+      {
+        "datetime": "2018-07-27T02:00:00Z",
+        "carbonIntensity": 194.75
+      },
+      {
+        "datetime": "2018-07-27T03:00:00Z",
+        "carbonIntensity": 199.97
+      },
+      {
+        "datetime": "2018-07-27T04:00:00Z",
+        "carbonIntensity": 217.04
+      },
+      {
+        "datetime": "2018-07-27T05:00:00Z",
+        "carbonIntensity": 235.24
+      },
+      {
+        "datetime": "2018-07-27T06:00:00Z",
+        "carbonIntensity": 250.65
+      },
+      {
+        "datetime": "2018-07-27T07:00:00Z",
+        "carbonIntensity": 257.14
+      },
+      {
+        "datetime": "2018-07-27T08:00:00Z",
+        "carbonIntensity": 256.83
+      },
+      {
+        "datetime": "2018-07-27T09:00:00Z",
+        "carbonIntensity": 256.98
+      },
+      {
+        "datetime": "2018-07-27T10:00:00Z",
+        "carbonIntensity": 257.23
+      },
+      {
+        "datetime": "2018-07-27T11:00:00Z",
+        "carbonIntensity": 251.06
+      },
+      {
+        "datetime": "2018-07-27T12:00:00Z",
+        "carbonIntensity": 236.86
+      },
+      {
+        "datetime": "2018-07-27T13:00:00Z",
+        "carbonIntensity": 224.58
+      },
+      {
+        "datetime": "2018-07-27T14:00:00Z",
+        "carbonIntensity": 219.37
+      },
+      {
+        "datetime": "2018-07-27T15:00:00Z",
+        "carbonIntensity": 218.66
+      },
+      {
+        "datetime": "2018-07-27T16:00:00Z",
+        "carbonIntensity": 218.41
+      },
+      {
+        "datetime": "2018-07-27T17:00:00Z",
+        "carbonIntensity": 219.89
+      },
+      {
+        "datetime": "2018-07-27T18:00:00Z",
+        "carbonIntensity": 222.37
+      },
+      {
+        "datetime": "2018-07-27T19:00:00Z",
+        "carbonIntensity": 226.03
+      },
+      {
+        "datetime": "2018-07-27T20:00:00Z",
+        "carbonIntensity": 219.86
+      },
+      {
+        "datetime": "2018-07-27T21:00:00Z",
+        "carbonIntensity": 204.33
+      },
+      {
+        "datetime": "2018-07-27T22:00:00Z",
+        "carbonIntensity": 198.8
+      },
+      {
+        "datetime": "2018-07-27T23:00:00Z",
+        "carbonIntensity": 185.18
+      },
+      {
+        "datetime": "2018-07-28T00:00:00Z",
+        "carbonIntensity": 175.3
+      },
+      {
+        "datetime": "2018-07-28T01:00:00Z",
+        "carbonIntensity": 171.34
+      },
+      {
+        "datetime": "2018-07-28T02:00:00Z",
+        "carbonIntensity": 170.72
+      },
+      {
+        "datetime": "2018-07-28T03:00:00Z",
+        "carbonIntensity": 171.73
+      },
+      {
+        "datetime": "2018-07-28T04:00:00Z",
+        "carbonIntensity": 175.83
+      },
+      {
+        "datetime": "2018-07-28T05:00:00Z",
+        "carbonIntensity": 180.95
+      },
+      {
+        "datetime": "2018-07-28T06:00:00Z",
+        "carbonIntensity": 193.86
+      },
+      {
+        "datetime": "2018-07-28T07:00:00Z",
+        "carbonIntensity": 199.85
+      },
+      {
+        "datetime": "2018-07-28T08:00:00Z",
+        "carbonIntensity": 204.12
+      },
+      {
+        "datetime": "2018-07-28T09:00:00Z",
+        "carbonIntensity": 209.17
+      },
+      {
+        "datetime": "2018-07-28T10:00:00Z",
+        "carbonIntensity": 211.02
+      },
+      {
+        "datetime": "2018-07-28T11:00:00Z",
+        "carbonIntensity": 212.5
+      },
+      {
+        "datetime": "2018-07-28T12:00:00Z",
+        "carbonIntensity": 209.2
+      },
+      {
+        "datetime": "2018-07-28T13:00:00Z",
+        "carbonIntensity": 203.05
+      },
+      {
+        "datetime": "2018-07-28T14:00:00Z",
+        "carbonIntensity": 196.58
+      },
+      {
+        "datetime": "2018-07-28T15:00:00Z",
+        "carbonIntensity": 195.41
+      },
+      {
+        "datetime": "2018-07-28T16:00:00Z",
+        "carbonIntensity": 195.78
+      },
+      {
+        "datetime": "2018-07-28T17:00:00Z",
+        "carbonIntensity": 201.07
+      },
+      {
+        "datetime": "2018-07-28T18:00:00Z",
+        "carbonIntensity": 210.12
+      },
+      {
+        "datetime": "2018-07-28T19:00:00Z",
+        "carbonIntensity": 223.49
+      },
+      {
+        "datetime": "2018-07-28T20:00:00Z",
+        "carbonIntensity": 223.36
+      },
+      {
+        "datetime": "2018-07-28T21:00:00Z",
+        "carbonIntensity": 208.5
+      },
+      {
+        "datetime": "2018-07-28T22:00:00Z",
+        "carbonIntensity": 193.41
+      },
+      {
+        "datetime": "2018-07-28T23:00:00Z",
+        "carbonIntensity": 177.58
+      }
+    ],
+    "updatedAt": "2018-07-25T00:00:00Z"
+  },
+  "IT-NO": {
+    "zone": "IT-NO",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 302.77
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 300.88
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 299.84
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 311.98
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 347.02
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 394.57
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 439.28
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 445.01
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 439.12
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 434.27
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 402.43
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 414.66
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 434.91
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 448.54
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 458.06
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 454.72
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 456.68
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 461.9
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 454.58
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 447.36
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 410.65
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 374.0
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 345.9
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 327.44
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 314.91
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 308.46
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 311.86
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 321.1
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 356.23
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 404.51
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 443.66
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 450.47
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 450.97
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 447.75
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 417.35
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 424.88
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 437.66
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 457.52
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 465.85
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 463.59
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 455.91
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 448.36
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 438.87
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 431.57
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 402.18
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 364.43
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 336.94
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 318.75
+      },
+      {
+        "datetime": "2018-07-27T00:00:00Z",
+        "carbonIntensity": 308.37
+      },
+      {
+        "datetime": "2018-07-27T01:00:00Z",
+        "carbonIntensity": 305.0
+      },
+      {
+        "datetime": "2018-07-27T02:00:00Z",
+        "carbonIntensity": 304.75
+      },
+      {
+        "datetime": "2018-07-27T03:00:00Z",
+        "carbonIntensity": 317.03
+      },
+      {
+        "datetime": "2018-07-27T04:00:00Z",
+        "carbonIntensity": 351.77
+      },
+      {
+        "datetime": "2018-07-27T05:00:00Z",
+        "carbonIntensity": 400.01
+      },
+      {
+        "datetime": "2018-07-27T06:00:00Z",
+        "carbonIntensity": 433.17
+      },
+      {
+        "datetime": "2018-07-27T07:00:00Z",
+        "carbonIntensity": 436.89
+      },
+      {
+        "datetime": "2018-07-27T08:00:00Z",
+        "carbonIntensity": 427.71
+      },
+      {
+        "datetime": "2018-07-27T09:00:00Z",
+        "carbonIntensity": 422.45
+      },
+      {
+        "datetime": "2018-07-27T10:00:00Z",
+        "carbonIntensity": 395.71
+      },
+      {
+        "datetime": "2018-07-27T11:00:00Z",
+        "carbonIntensity": 401.89
+      },
+      {
+        "datetime": "2018-07-27T12:00:00Z",
+        "carbonIntensity": 416.56
+      },
+      {
+        "datetime": "2018-07-27T13:00:00Z",
+        "carbonIntensity": 428.79
+      },
+      {
+        "datetime": "2018-07-27T14:00:00Z",
+        "carbonIntensity": 439.26
+      },
+      {
+        "datetime": "2018-07-27T15:00:00Z",
+        "carbonIntensity": 442.55
+      },
+      {
+        "datetime": "2018-07-27T16:00:00Z",
+        "carbonIntensity": 446.55
+      },
+      {
+        "datetime": "2018-07-27T17:00:00Z",
+        "carbonIntensity": 448.58
+      },
+      {
+        "datetime": "2018-07-27T18:00:00Z",
+        "carbonIntensity": 435.92
+      },
+      {
+        "datetime": "2018-07-27T19:00:00Z",
+        "carbonIntensity": 429.37
+      },
+      {
+        "datetime": "2018-07-27T20:00:00Z",
+        "carbonIntensity": 393.6
+      },
+      {
+        "datetime": "2018-07-27T21:00:00Z",
+        "carbonIntensity": 364.34
+      },
+      {
+        "datetime": "2018-07-27T22:00:00Z",
+        "carbonIntensity": 337.86
+      },
+      {
+        "datetime": "2018-07-27T23:00:00Z",
+        "carbonIntensity": 324.32
+      },
+      {
+        "datetime": "2018-07-28T00:00:00Z",
+        "carbonIntensity": 310.89
+      },
+      {
+        "datetime": "2018-07-28T01:00:00Z",
+        "carbonIntensity": 302.81
+      },
+      {
+        "datetime": "2018-07-28T02:00:00Z",
+        "carbonIntensity": 298.5
+      },
+      {
+        "datetime": "2018-07-28T03:00:00Z",
+        "carbonIntensity": 296.58
+      },
+      {
+        "datetime": "2018-07-28T04:00:00Z",
+        "carbonIntensity": 301.66
+      },
+      {
+        "datetime": "2018-07-28T05:00:00Z",
+        "carbonIntensity": 321.32
+      },
+      {
+        "datetime": "2018-07-28T06:00:00Z",
+        "carbonIntensity": 333.71
+      },
+      {
+        "datetime": "2018-07-28T07:00:00Z",
+        "carbonIntensity": 334.61
+      },
+      {
+        "datetime": "2018-07-28T08:00:00Z",
+        "carbonIntensity": 325.61
+      },
+      {
+        "datetime": "2018-07-28T09:00:00Z",
+        "carbonIntensity": 317.69
+      },
+      {
+        "datetime": "2018-07-28T10:00:00Z",
+        "carbonIntensity": 293.76
+      },
+      {
+        "datetime": "2018-07-28T11:00:00Z",
+        "carbonIntensity": 283.56
+      },
+      {
+        "datetime": "2018-07-28T12:00:00Z",
+        "carbonIntensity": 289.0
+      },
+      {
+        "datetime": "2018-07-28T13:00:00Z",
+        "carbonIntensity": 301.21
+      },
+      {
+        "datetime": "2018-07-28T14:00:00Z",
+        "carbonIntensity": 318.48
+      },
+      {
+        "datetime": "2018-07-28T15:00:00Z",
+        "carbonIntensity": 335.97
+      },
+      {
+        "datetime": "2018-07-28T16:00:00Z",
+        "carbonIntensity": 354.36
+      },
+      {
+        "datetime": "2018-07-28T17:00:00Z",
+        "carbonIntensity": 363.07
+      },
+      {
+        "datetime": "2018-07-28T18:00:00Z",
+        "carbonIntensity": 353.64
+      },
+      {
+        "datetime": "2018-07-28T19:00:00Z",
+        "carbonIntensity": 356.68
+      },
+      {
+        "datetime": "2018-07-28T20:00:00Z",
+        "carbonIntensity": 337.41
+      },
+      {
+        "datetime": "2018-07-28T21:00:00Z",
+        "carbonIntensity": 313.81
+      },
+      {
+        "datetime": "2018-07-28T22:00:00Z",
+        "carbonIntensity": 290.9
+      },
+      {
+        "datetime": "2018-07-28T23:00:00Z",
+        "carbonIntensity": 275.46
+      }
+    ],
+    "updatedAt": "2018-07-25T00:00:00Z"
+  }
+}
