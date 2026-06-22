@@ -7,7 +7,8 @@ class CarbonAwarePod:
     def __init__(self, id: str, deadline_hours: float, duration: float,
                  powerConsumption: float, cpuRequest: float,
                  ramRequest: float, storageRequest: int,
-                 reference_time: datetime = None) -> None:
+                 reference_time: datetime = None,
+                 gpuRequest: int = 0, tier: Optional[str] = None) -> None:
         self.id = id
         self.deadline = self._processDeadline(deadline_hours, reference_time)
         self.deadline_hours = deadline_hours  # Store deadline hours for relative calculation
@@ -16,6 +17,8 @@ class CarbonAwarePod:
         self.cpuRequest = cpuRequest
         self.ramRequest = ramRequest
         self.storageRequest = storageRequest
+        self.gpuRequest = gpuRequest  # GPU count requested (extended resource, nvidia.com/gpu); 0 = CPU/RAM-only pod
+        self.tier = tier              # explicit firm/flexible tier (e.g. from trace job type); None -> slack-based
         self.earliest_timeslot = 0  # Default: can be scheduled from timeslot 0
         self.deadline_slot = None   # Default: no specific deadline slot (calculated later if needed)
 
@@ -47,9 +50,13 @@ class EnvironmentalFlavor:
         totalStorage: float,
         forecast: Dict[int, float],
         power: Dict[str, float] = None,
+        totalGpu: int = 0,
+        gpu_power_w: float = 0.0,
+        gpu_type: str = "",
         region: str = "",
         country: str = "",
         pue: float = 1.0,
+        pue_by_slot: Optional[Dict[int, float]] = None,
         embodiedWater: float = 0.0,
         wue_by_slot: Optional[Dict[int, float]] = None,
         ewif_by_slot: Optional[Dict[int, float]] = None,
@@ -66,12 +73,16 @@ class EnvironmentalFlavor:
         self.totalCpu = totalCpu
         self.totalRam = totalRam
         self.totalStorage = totalStorage
+        self.totalGpu = totalGpu            # GPU count on the node (extended resource); 0 = no GPUs
+        self.gpu_power_w = gpu_power_w       # per-GPU board power (W) at load, e.g. A100~400, H100~700
+        self.gpu_type = gpu_type
         self.forecast = forecast
         self.power = power or {"idle": 100.0, "active": 200.0, "max": 400.0}
 
         self.region = region
         self.country = country
         self.pue = pue
+        self.pue_by_slot = pue_by_slot or {}
         self.embodiedWater = embodiedWater
         self.wue_by_slot = wue_by_slot or {}
         self.ewif_by_slot = ewif_by_slot or {}

@@ -984,6 +984,7 @@ def _build_feasible_candidates(
     embodied_allocation_mode: str = "proportional",
 ) -> List[CandidatePlacement]:
     candidates: List[CandidatePlacement] = []
+    _debug = logging.getLogger().isEnabledFor(logging.DEBUG)
 
     # Prefer lower-carbon hours first across nodes (best-effort)
     try:
@@ -996,7 +997,8 @@ def _build_feasible_candidates(
 
     for ts in ordered_timeslots:
         if not is_timeslot_valid(ts, pod):
-            logging.debug(f"[find_best_node_and_timeslot] Skipping timeslot={ts.id}, not valid for pod={pod.id}")
+            if _debug:
+                logging.debug(f"[find_best_node_and_timeslot] Skipping timeslot={ts.id}, not valid for pod={pod.id}")
             continue
 
         for flv in flavours:
@@ -1005,17 +1007,19 @@ def _build_feasible_candidates(
                 current_slot = ts.id + slot_offset
                 if current_slot >= max_time_slots:
                     duration_feasible = False
-                    logging.debug(f"[find_best_node_and_timeslot] Slot {ts.id}+{slot_offset}={current_slot} exceeds tracking window for pod={pod.id}")
+                    if _debug:
+                        logging.debug(f"[find_best_node_and_timeslot] Slot {ts.id}+{slot_offset}={current_slot} exceeds tracking window for pod={pod.id}")
                     break
 
                 if (leftover_cpu[flv.id][current_slot] < pod.cpuRequest or
                     leftover_ram[flv.id][current_slot] < pod.ramRequest):
                     duration_feasible = False
-                    logging.debug(
-                        f"[find_best_node_and_timeslot] Slot {current_slot} on {flv.id} doesn't have enough resources for pod={pod.id}: " +
-                        f"CPU {leftover_cpu[flv.id][current_slot]:.2f}/{pod.cpuRequest:.2f}, " +
-                        f"RAM {leftover_ram[flv.id][current_slot]:.0f}/{pod.ramRequest:.0f}"
-                    )
+                    if _debug:
+                        logging.debug(
+                            f"[find_best_node_and_timeslot] Slot {current_slot} on {flv.id} doesn't have enough resources for pod={pod.id}: " +
+                            f"CPU {leftover_cpu[flv.id][current_slot]:.2f}/{pod.cpuRequest:.2f}, " +
+                            f"RAM {leftover_ram[flv.id][current_slot]:.0f}/{pod.ramRequest:.0f}"
+                        )
                     break
 
             if duration_feasible:

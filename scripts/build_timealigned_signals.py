@@ -62,7 +62,23 @@ def hybrid_wue(T, Tw):
 # high water; dry/closed-loop = high energy / ~zero water; hybrid in between. PUE
 # and WUE are COUPLED so dry cooling is never free -- it trades carbon for water.
 KAPPA = {"FR": "evaporative", "DE": "dry", "ES": "dry", "IT-NO": "hybrid"}
+# Design-point (T_ref) PUE per cooling architecture: evaporative/water-cooled ~1.10
+# (hyperscale, e.g. Google/Meta), air-cooled/dry ~1.30, hybrid in between (Shehabi 2016;
+# Lei & Masanet 2022; ASHRAE). T-sensitivity below is the chiller/condenser efficiency
+# loss with rising ambient -- steepest for dry cooling -- which couples carbon to heat.
 PUE_BY_KAPPA = {"evaporative": 1.10, "hybrid": 1.16, "dry": 1.30}
+PUE_T_REF = 20.0  # design-point dry-bulb (C) at which PUE = base
+PUE_T_SLOPE = {"evaporative": 0.004, "hybrid": 0.010, "dry": 0.018}  # PUE rise per C above T_ref
+PUE_CAP = {"evaporative": 1.25, "hybrid": 1.45, "dry": 1.70}
+
+
+def pue_for_kappa(T, kappa):
+    """Temperature-dependent PUE (L. Berkeley/ASHRAE): facility overhead rises with ambient
+    dry-bulb as chiller/condenser efficiency drops; the slope is steepest for dry/air cooling
+    and mildest for evaporative/water cooling. Flat below the design point T_ref."""
+    base = PUE_BY_KAPPA[kappa]
+    rise = PUE_T_SLOPE.get(kappa, 0.010) * np.clip(np.asarray(T, float) - PUE_T_REF, 0.0, None)
+    return np.clip(base + rise, base, PUE_CAP.get(kappa, 1.6))
 
 
 def wue_for_kappa(T, Tw, kappa):
@@ -90,9 +106,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--start", default="2018-07-25T00:00:00Z", help="window start (UTC, documented 2018 heatwave)")
     ap.add_argument("--slots", type=int, default=48, help="number of hourly slots (superset; pilot reads first max_timeslots)")
+    ap.add_argument("--out-dir", default=None, help="output dir (default pkg/.../data/timealigned); set to build a separate year/window without overwriting")
     args = ap.parse_args()
     start = pd.Timestamp(args.start)
     n = args.slots
+    OUT = Path(args.out_dir).resolve() if args.out_dir else (REPO / "pkg" / "carbon-aware" / "data" / "timealigned")
     OUT.mkdir(parents=True, exist_ok=True)
     hours = pd.date_range(start, periods=n, freq="h", tz="UTC")
 
@@ -120,7 +138,7 @@ def main() -> int:
         w = weather(s["lat"], s["lon"], start, n).reindex(hours).interpolate().bfill().ffill()
         Tw = wet_bulb(w["T"], w["RH"]).values
         kappa = KAPPA.get(reg, "hybrid")
-        pue = PUE_BY_KAPPA[kappa]
+        pue = pue_for_kappa(w["T"].values, kappa)  # per-slot, temperature-dependent
         wue = wue_for_kappa(w["T"].values, Tw, kappa)
         ci = s["ci_base"] * np.clip(rs.values / zmean, 0.3, 2.0)
         fc = []
@@ -133,8 +151,8 @@ def main() -> int:
             wue_rows.append(dict(region=reg, slot_index=k, weather_time_utc=tss,
                                  wet_bulb_c=round(float(Tw[k]), 3),
                                  direct_wue_l_per_kwh=round(float(wue[k]), 4),
-                                 pue=pue, cooling_kappa=kappa,
-                                 model="open-meteo archive + fixed-kappa cooling"))
+                                 pue=round(float(pue[k]), 4), cooling_kappa=kappa,
+                                 model="open-meteo archive + fixed-kappa cooling, T-dependent PUE"))
             fc.append(dict(datetime=tss, carbonIntensity=round(float(ci[k]), 2)))
         forecasts[reg] = dict(zone=reg, forecast=fc, updatedAt=start.strftime("%Y-%m-%dT%H:%M:%SZ"))
 

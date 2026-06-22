@@ -146,12 +146,27 @@ def compute_footprint_vector(
     embodied_carbon_per_hour = compute_embodied_per_hour_g(flavour)
     embodied_water_per_hour = compute_embodied_water_per_hour(flavour)
 
+    direct_cf_scalar = float(getattr(flavour, "water_scarcity_direct_cf", 1.0) or 1.0)
+    indirect_cf_scalar = float(getattr(flavour, "water_scarcity_indirect_cf", 1.0) or 1.0)
+    embodied_cf = float(getattr(flavour, "water_scarcity_embodied_cf", 1.0) or 1.0)
+
     result = FootprintVector(
-        _direct_cf=float(getattr(flavour, "water_scarcity_direct_cf", 1.0) or 1.0),
-        _indirect_cf=float(getattr(flavour, "water_scarcity_indirect_cf", 1.0) or 1.0),
-        _embodied_cf=float(getattr(flavour, "water_scarcity_embodied_cf", 1.0) or 1.0),
+        _direct_cf=direct_cf_scalar,
+        _indirect_cf=indirect_cf_scalar,
+        _embodied_cf=embodied_cf,
         _criticality=float(getattr(flavour, "water_criticality", 1.0) or 1.0),
     )
+
+    # Resolve per-slot lookup tables once. _slot_value/_slot_cf_value return the
+    # scalar fallback when the by-slot dict is empty; in that (common) case we hoist
+    # the constant out of the per-slot loop. Behaviour is identical to per-slot calls.
+    idle_power_w = flavour.power["idle"]
+    pue = float(getattr(flavour, "pue", 1.0) or 1.0)
+    pue_by_slot = getattr(flavour, "pue_by_slot", {}) or {}  # temperature-dependent facility overhead
+    wue_by_slot = getattr(flavour, "wue_by_slot", {}) or {}
+    ewif_by_slot = getattr(flavour, "ewif_by_slot", {}) or {}
+    direct_cf_by_slot = getattr(flavour, "water_scarcity_direct_cf_by_slot", {}) or {}
+    indirect_cf_by_slot = getattr(flavour, "water_scarcity_indirect_cf_by_slot", {}) or {}
 
     for offset in range(_hours(pod.duration)):
         slot = start_slot + offset
@@ -161,37 +176,29 @@ def compute_footprint_vector(
         total_cpu_ratio_before = used_before / total_cpu
 
         if use_pod_power_only:
-            delta_power_w = flavour.power["idle"] + dynamic_k * pod_cpu_ratio
+            delta_power_w = idle_power_w + dynamic_k * pod_cpu_ratio
         else:
             delta_power_w = 0.0
             if total_cpu_ratio_before <= 0.0 and pod_cpu_ratio > 0.0:
-                delta_power_w += flavour.power["idle"]
+                delta_power_w += idle_power_w
             delta_power_w += dynamic_k * pod_cpu_ratio
 
-        energy_kwh = delta_power_w / 1000.0
+        it_energy_kwh = delta_power_w / 1000.0
+        # Facility (grid-drawn) energy = IT energy x PUE. PUE may be temperature-dependent
+        # (per-slot) so hotter hours raise cooling overhead. This is what the grid, the
+        # carbon account, and the power-plant water account all see.
+        pue_slot = (_slot_value(pue_by_slot, slot, pue) if pue_by_slot else pue)
+        facility_energy_kwh = it_energy_kwh * pue_slot
         carbon_intensity = get_carbon_intensity(flavour, slot)
-        wue = _slot_value(getattr(flavour, "wue_by_slot", {}) or {}, slot, 0.0)
-        ewif = _slot_value(getattr(flavour, "ewif_by_slot", {}) or {}, slot, 0.0)
-        direct_cf = _slot_cf_value(
-            flavour,
-            slot,
-            "water_scarcity_direct_cf_by_slot",
-            "water_scarcity_direct_cf",
-            1.0,
-        )
-        indirect_cf = _slot_cf_value(
-            flavour,
-            slot,
-            "water_scarcity_indirect_cf_by_slot",
-            "water_scarcity_indirect_cf",
-            1.0,
-        )
-        embodied_cf = float(getattr(flavour, "water_scarcity_embodied_cf", 1.0) or 1.0)
+        wue = _slot_value(wue_by_slot, slot, 0.0) if wue_by_slot else 0.0
+        ewif = _slot_value(ewif_by_slot, slot, 0.0) if ewif_by_slot else 0.0
+        direct_cf = _slot_value(direct_cf_by_slot, slot, direct_cf_scalar) if direct_cf_by_slot else direct_cf_scalar
+        indirect_cf = _slot_value(indirect_cf_by_slot, slot, indirect_cf_scalar) if indirect_cf_by_slot else indirect_cf_scalar
 
-        result.operational_energy_kwh += energy_kwh
-        result.operational_carbon_g += carbon_intensity * energy_kwh
-        direct_water = energy_kwh * wue
-        indirect_water = energy_kwh * float(getattr(flavour, "pue", 1.0) or 1.0) * ewif
+        result.operational_energy_kwh += facility_energy_kwh
+        result.operational_carbon_g += carbon_intensity * facility_energy_kwh
+        direct_water = it_energy_kwh * wue          # on-site cooling water (WUE per IT kWh)
+        indirect_water = facility_energy_kwh * ewif  # power-plant water for total grid draw
         result.direct_water_l += direct_water
         result.indirect_water_l += indirect_water
         result.scarcity_characterized_water += direct_water * direct_cf + indirect_water * indirect_cf

@@ -546,22 +546,23 @@ def is_timeslot_valid(ts: CarbonAwareTimeslot, pod: CarbonAwarePod) -> bool:
     
     meets_earliest_constraint = ts.id >= pod.earliest_timeslot  # 🔒 Check earliest_timeslot constraint
     valid = not_past_end and not_in_past and before_deadline and meets_earliest_constraint
-    
-    if not valid:
-        if not not_past_end:
-            logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: end time {ts.getEnd()} already passed current time {now}")
-        if not not_in_past:
-            logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: start hour {ts_date_hour} is in the past (current hour: {now_date_hour})")
-        if not before_deadline:
-            logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: starts at {ts.getStart()} which is after deadline {pod.deadline}")
-        if not meets_earliest_constraint:
-            logging.debug(f"[is_timeslot_valid] 🔒 Timeslot {ts.id} invalid: timeslot before pod's earliest_timeslot={pod.earliest_timeslot}")
 
-    logging.debug(
-        f"[is_timeslot_valid] Timeslot {ts.id}: start={ts.getStart()}, "
-        f"end={ts.getEnd()}, now={now}, pod_deadline={pod.deadline}, "
-        f"earliest_ts={pod.earliest_timeslot}, valid={valid}"
-    )
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        if not valid:
+            if not not_past_end:
+                logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: end time {ts.getEnd()} already passed current time {now}")
+            if not not_in_past:
+                logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: start hour {ts_date_hour} is in the past (current hour: {now_date_hour})")
+            if not before_deadline:
+                logging.debug(f"[is_timeslot_valid] Timeslot {ts.id} invalid: starts at {ts.getStart()} which is after deadline {pod.deadline}")
+            if not meets_earliest_constraint:
+                logging.debug(f"[is_timeslot_valid] 🔒 Timeslot {ts.id} invalid: timeslot before pod's earliest_timeslot={pod.earliest_timeslot}")
+
+        logging.debug(
+            f"[is_timeslot_valid] Timeslot {ts.id}: start={ts.getStart()}, "
+            f"end={ts.getEnd()}, now={now}, pod_deadline={pod.deadline}, "
+            f"earliest_ts={pod.earliest_timeslot}, valid={valid}"
+        )
     return valid
 
 

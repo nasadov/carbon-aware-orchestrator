@@ -19,7 +19,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from carbon_aware.algorithms.heuristic import CandidatePlacement, _candidate_water_value, find_ranked_candidates
+from carbon_aware.algorithms.heuristic import (
+    CandidatePlacement,
+    _build_feasible_candidates,
+    _candidate_water_value,
+    _rank_candidates,
+    find_ranked_candidates,
+)
 from carbon_aware.models import CarbonAwarePod, CarbonAwareTimeslot, EnvironmentalFlavor
 from carbon_aware.precompute_heuristic import _extract_pods_from_yaml, _load_nodes_from_yaml
 from carbon_aware.utils import build_timeslots, load_carbon_intensity_data
@@ -85,6 +91,13 @@ class PilotConfig:
     wue_csv: Optional[Path] = None  # override the scenario WUE table (e.g. a time-aligned real window)
     forecast_noise: float = 0.0  # RQ3: stdev of multiplicative carbon-forecast error used for DECISIONS
     forecast_seed: int = 0
+    # RQ3 robust guard: assumed carbon-forecast-error fraction. Each accepted move adds its
+    # forecast-error EXPOSURE (robust_buffer x the OPERATIONAL carbon it relocates) to a
+    # cumulative worst-case carbon accumulator that the no-harm guard keeps under baseline,
+    # so realized carbon stays <= baseline even when the forecast is wrong. Applied to the
+    # CARBON guard only (water is decided on OBSERVED wet-bulb -> no forecast error).
+    # Default 0.0 -> identical to the plain forecast guard (bit-identical).
+    robust_buffer: float = 0.0
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -185,6 +198,9 @@ def apply_pilot_scenario_to_flavours(flavours: Sequence[EnvironmentalFlavor], co
     """
     wue_rows = _read_region_slot_csv(scenario_wue_path(config))
     aware_rows = _read_aware_rows(_water_data_path(config.repo_root, "aware20_country_nonagri_factors.csv"))
+    # Indirect (power-plant) water: EWIF per kWh of grid electricity, from a flow-traced
+    # generation mix x literature water-consumption factors (Macknick 2012; Spang 2014).
+    ewif_rows = _read_region_slot_csv(_water_data_path(config.repo_root, "ewif_region_slot.csv"))
 
     for flavour in flavours:
         region = (getattr(flavour, "region", "") or "").upper()
@@ -196,16 +212,28 @@ def apply_pilot_scenario_to_flavours(flavours: Sequence[EnvironmentalFlavor], co
         if wue_by_slot:
             flavour.wue_by_slot = wue_by_slot
 
-        # Step 4: fixed per-site cooling architecture. If the WUE table carries a
-        # per-region PUE (time-aligned kappa tables), couple it so dry cooling costs
-        # energy/carbon while saving water. Legacy tables omit it -> PUE unchanged.
-        region_pue = next(
-            (_as_float(row.get("pue")) for (row_region, _), row in wue_rows.items()
-             if row_region == region and _as_float(row.get("pue")) > 0),
-            None,
-        )
-        if region_pue:
-            flavour.pue = region_pue
+        # Step 4 / T6: fixed per-site cooling architecture (kappa) with a temperature-
+        # dependent PUE. The time-aligned tables carry a per-SLOT pue so dry cooling costs
+        # energy -> carbon (facility energy = IT x PUE in the footprint) while saving water;
+        # hotter hours raise dry-cooling PUE (the heatwave carbon<->water coupling). Legacy
+        # tables (constant pue) still work -> pue_by_slot is constant.
+        pue_by_slot = {
+            slot: _as_float(row.get("pue"))
+            for (row_region, slot), row in wue_rows.items()
+            if row_region == region and _as_float(row.get("pue")) > 0
+        }
+        if pue_by_slot:
+            flavour.pue_by_slot = pue_by_slot
+            flavour.pue = max(pue_by_slot.values())  # scalar fallback = peak overhead
+
+        # Indirect-water EWIF per slot (power-plant freshwater for the grid electricity drawn).
+        ewif_by_slot = {
+            slot: _as_float(row.get("ewif_l_per_kwh"))
+            for (row_region, slot), row in ewif_rows.items()
+            if row_region == region and _as_float(row.get("ewif_l_per_kwh")) > 0
+        }
+        if ewif_by_slot:
+            flavour.ewif_by_slot = ewif_by_slot
 
         if config.scenario == "heatwave-drought":
             country = _country_for_region(region)
@@ -645,85 +673,151 @@ def repair_schedule_no_harm(
     repairs = 0
     timeslots: List[CarbonAwareTimeslot] = build_timeslots(config.max_timeslots)
 
+    # --- Incremental caching (bit-identical with the naive full rescan) ---------
+    # The naive loop recomputed find_ranked_candidates for every flexible pod on
+    # every outer iteration, even though a single repair only changes the resource
+    # state of two flavours (the source and destination of the moved pod). We cache,
+    # per pod, the feasible candidates grouped by flavour, plus each candidate's
+    # move-invariant deltas/score, and recompute only what an applied move dirties.
+    flavours_list = list(flavours)
+    flavour_by_id = {flv.id: flv for flv in flavours_list}
+    # Pre-sort order used inside _build_feasible_candidates (forecast is static here).
+    try:
+        ordered_ts = sorted(timeslots, key=lambda t: min(flv.forecast.get(t.id, 200.0) for flv in flavours_list))
+    except Exception:
+        ordered_ts = list(timeslots)
+
+    margin = config.regret_margin
+    robust_buffer = config.robust_buffer
+    applied_unc_carbon = 0.0  # cumulative worst-case carbon-forecast exposure of applied moves
+    lever_mode = config.lever_mode
+    flavour_version: Dict[str, int] = {flv.id: 0 for flv in flavours_list}
+    flav_cache: Dict[int, Dict[str, Dict[int, CandidatePlacement]]] = {}
+    built_ver: Dict[int, Dict[str, int]] = {}
+    ranked_cache: Dict[int, List[CandidatePlacement]] = {}
+    delta_dirty: Dict[int, bool] = {}
+
+    def _compute_nh(placement: Placement, old_candidate: CandidatePlacement, candidate: CandidatePlacement) -> None:
+        """Attach the move-invariant deltas/score to the candidate (recomputed only
+        when the pod's own placement changed or the candidate's footprint was rebuilt)."""
+        is_self = (
+            candidate.flavour.id == old_candidate.flavour.id
+            and candidate.timeslot.id == old_candidate.timeslot.id
+        )
+        lever_skip = (
+            (lever_mode == "temporal" and candidate.flavour.id != old_candidate.flavour.id)
+            or (lever_mode == "spatial" and candidate.timeslot.id != old_candidate.timeslot.id)
+        )
+        d_carbon = candidate.footprint.total_carbon_kg - old_candidate.footprint.total_carbon_kg
+        d_scarcity = candidate.footprint.scarcity_characterized_water - old_candidate.footprint.scarcity_characterized_water
+        carbon_regret = d_carbon if d_carbon > 0.0 else 0.0
+        scarcity_regret = d_scarcity if d_scarcity > 0.0 else 0.0
+        signal_delta = _move_signal_delta(placement, candidate, signals)
+        carbon_saved = -d_carbon
+        water_saved = -d_scarcity
+        if score_mode == "search_control":
+            score = (
+                carbon_saved,
+                water_saved,
+                -abs(signal_delta["stress_kwh"]),
+                -candidate.timeslot.id,
+            )
+        else:
+            score = (
+                -signal_delta["weighted_stress_kwh"] + 0.5 * signal_delta["headroom_kwh"],
+                -signal_delta["stress_kwh"],
+                -signal_delta["drought_scarcity_water"],
+                water_saved,
+                carbon_saved,
+            )
+        candidate._nh = (
+            is_self,
+            lever_skip,
+            d_carbon,
+            d_scarcity,
+            carbon_regret,
+            scarcity_regret,
+            signal_delta["drought_scarcity_water"],
+            score,
+            # Operational carbon relocated by the move = the surface exposed to carbon-forecast
+            # error (embodied carbon is certain; only CI is forecast).
+            candidate.footprint.operational_carbon_kg + old_candidate.footprint.operational_carbon_kg,
+        )
+
     while repairs < max_repairs:
         current_totals = schedule_totals(current, signals)
         best: Optional[Tuple[Tuple[float, ...], int, CandidatePlacement]] = None
+        base_carbon = baseline_totals["carbon_kg"]
+        base_scarcity = baseline_totals["scarcity_water"]
+        cur_carbon = current_totals["carbon_kg"]
+        cur_scarcity = current_totals["scarcity_water"]
 
         for idx, placement in enumerate(current.placements):
             if placement.flexibility_class != "flexible":
                 continue
 
             old_candidate = placement.candidate
-            _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram, release=True)
-            try:
-                ranked = find_ranked_candidates(
-                    pod=placement.pod,
-                    flavours=list(flavours),
-                    timeslots=timeslots,
-                    leftover_cpu=leftover_cpu,
-                    leftover_ram=leftover_ram,
-                    max_time_slots=config.max_timeslots,
-                    objective_mode="carbon",
-                    water_metric="scarcity",
-                )
-            finally:
+            bv = built_ver.get(idx)
+            first_build = bv is None
+            if first_build:
+                dirty_fids = list(flavour_version.keys())
+            else:
+                dirty_fids = [fid for fid, ver in flavour_version.items() if bv.get(fid) != ver]
+
+            if dirty_fids:
+                # Rebuild only the dirty flavours' candidates (pod self released, as
+                # the naive path does), then reassemble + re-rank in identical order.
+                _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram, release=True)
+                cache = flav_cache.setdefault(idx, {})
+                for fid in dirty_fids:
+                    built = _build_feasible_candidates(
+                        pod=placement.pod,
+                        flavours=[flavour_by_id[fid]],
+                        timeslots=timeslots,
+                        leftover_cpu=leftover_cpu,
+                        leftover_ram=leftover_ram,
+                        max_time_slots=config.max_timeslots,
+                    )
+                    cache[fid] = {c.timeslot.id: c for c in built}
                 _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram)
+                built_ver[idx] = dict(flavour_version)
+                assembled: List[CandidatePlacement] = []
+                for ts in ordered_ts:
+                    tsid = ts.id
+                    for flv in flavours_list:
+                        c = cache[flv.id].get(tsid)
+                        if c is not None:
+                            assembled.append(c)
+                ranked_cache[idx] = _rank_candidates(
+                    assembled, objective_mode="carbon", carbon_weight=1.0, water_metric="scarcity"
+                )
+
+            ranked = ranked_cache[idx]
+            # Recompute cached deltas: all candidates if the pod's own placement changed
+            # (its old_candidate baseline moved); otherwise only freshly-rebuilt ones.
+            recompute_all = first_build or delta_dirty.get(idx, True)
+            for candidate in ranked:
+                if recompute_all or not hasattr(candidate, "_nh"):
+                    _compute_nh(placement, old_candidate, candidate)
+            delta_dirty[idx] = False
 
             for candidate in ranked:
-                if candidate.flavour.id == old_candidate.flavour.id and candidate.timeslot.id == old_candidate.timeslot.id:
+                (is_self, lever_skip, d_carbon, d_scarcity, carbon_regret, scarcity_regret,
+                 drought_delta, score, unc_carbon) = candidate._nh
+                if is_self or lever_skip:
                     continue
-                # Lever ablation: isolate the temporal vs spatial channel of flexibility.
-                if config.lever_mode == "temporal" and candidate.flavour.id != old_candidate.flavour.id:
-                    continue  # temporal-only: keep the site, shift in time
-                if config.lever_mode == "spatial" and candidate.timeslot.id != old_candidate.timeslot.id:
-                    continue  # spatial-only: keep the time, move the site
-
-                projected = _projected_totals(current_totals, placement, candidate)
-                carbon_regret = max(candidate.footprint.total_carbon_kg - old_candidate.footprint.total_carbon_kg, 0.0)
-                scarcity_regret = max(
-                    candidate.footprint.scarcity_characterized_water - old_candidate.footprint.scarcity_characterized_water,
-                    0.0,
-                )
-                carbon_guarded = projected["carbon_kg"] + config.regret_margin * carbon_regret
-                scarcity_guarded = projected["scarcity_water"] + config.regret_margin * scarcity_regret
-                if carbon_guarded > baseline_totals["carbon_kg"] + 1e-9:
+                # Carbon guard keeps the cumulative WORST-CASE realized carbon under baseline:
+                # nominal current + uncertainty already committed + this move's exposure.
+                if (cur_carbon + d_carbon + margin * carbon_regret
+                        + applied_unc_carbon + robust_buffer * unc_carbon) > base_carbon + 1e-9:
                     rejected_moves += 1
                     continue
-                if scarcity_guarded > baseline_totals["scarcity_water"] + 1e-9:
+                if cur_scarcity + d_scarcity + margin * scarcity_regret > base_scarcity + 1e-9:
                     rejected_moves += 1
                     continue
-
-                signal_delta = _move_signal_delta(placement, candidate, signals)
-                if signal_delta["drought_scarcity_water"] > 1e-9:
+                if drought_delta > 1e-9:
                     rejected_moves += 1
                     continue
-
-                carbon_saved = old_candidate.footprint.total_carbon_kg - candidate.footprint.total_carbon_kg
-                water_saved = (
-                    old_candidate.footprint.scarcity_characterized_water
-                    - candidate.footprint.scarcity_characterized_water
-                )
-                stress_reduced = -signal_delta["stress_kwh"]
-                weighted_stress_reduced = -signal_delta["weighted_stress_kwh"]
-                headroom_gain = signal_delta["headroom_kwh"]
-                drought_reduced = -signal_delta["drought_scarcity_water"]
-
-                if score_mode == "search_control":
-                    score = (
-                        carbon_saved,
-                        water_saved,
-                        -abs(signal_delta["stress_kwh"]),
-                        -candidate.timeslot.id,
-                    )
-                else:
-                    score = (
-                        weighted_stress_reduced + 0.5 * headroom_gain,
-                        stress_reduced,
-                        drought_reduced,
-                        water_saved,
-                        carbon_saved,
-                    )
-
                 if score[0] <= 1e-12:
                     continue
                 if best is None or score > best[0]:
@@ -733,10 +827,17 @@ def repair_schedule_no_harm(
             break
 
         _, placement_idx, candidate = best
+        if robust_buffer:
+            applied_unc_carbon += robust_buffer * candidate._nh[8]  # commit this move's carbon-forecast exposure
         old = current.placements[placement_idx]
+        f_old = old.candidate.flavour.id
+        f_new = candidate.flavour.id
         _apply_candidate_resources(old.pod, old.candidate, leftover_cpu, leftover_ram, release=True)
         _apply_candidate_resources(old.pod, candidate, leftover_cpu, leftover_ram)
         current.placements[placement_idx] = replace(old, candidate=candidate)
+        flavour_version[f_old] += 1
+        flavour_version[f_new] += 1
+        delta_dirty[placement_idx] = True
         repairs += 1
 
     current.repairs_applied = repairs
