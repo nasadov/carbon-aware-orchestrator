@@ -8,7 +8,7 @@ class CarbonAwarePod:
                  powerConsumption: float, cpuRequest: float,
                  ramRequest: float, storageRequest: int,
                  reference_time: datetime = None,
-                 gpuRequest: int = 0, tier: Optional[str] = None) -> None:
+                 gpuRequest: float = 0.0, tier: Optional[str] = None) -> None:
         self.id = id
         self.deadline = self._processDeadline(deadline_hours, reference_time)
         self.deadline_hours = deadline_hours  # Store deadline hours for relative calculation
@@ -50,9 +50,11 @@ class EnvironmentalFlavor:
         totalStorage: float,
         forecast: Dict[int, float],
         power: Dict[str, float] = None,
-        totalGpu: int = 0,
+        totalGpu: float = 0,
         gpu_power_w: float = 0.0,
         gpu_type: str = "",
+        gpu_embodied_carbon: float = 0.0,  # per-GPU embodied carbon (gCO2e); NVIDIA H100 PCF + ACT/LLMCarbon
+        gpu_embodied_water: float = 0.0,   # per-GPU embodied water (L); fab disclosures (low/base/high)
         region: str = "",
         country: str = "",
         pue: float = 1.0,
@@ -73,9 +75,11 @@ class EnvironmentalFlavor:
         self.totalCpu = totalCpu
         self.totalRam = totalRam
         self.totalStorage = totalStorage
-        self.totalGpu = totalGpu            # GPU count on the node (extended resource); 0 = no GPUs
-        self.gpu_power_w = gpu_power_w       # per-GPU board power (W) at load, e.g. A100~400, H100~700
+        self.totalGpu = totalGpu            # GPU count on the node (extended resource, fractional-capable); 0 = no GPUs
+        self.gpu_power_w = gpu_power_w       # per-GPU effective load power (W), e.g. A100~400, H100~700
         self.gpu_type = gpu_type
+        self.gpu_embodied_carbon = gpu_embodied_carbon  # per-GPU embodied carbon (gCO2e)
+        self.gpu_embodied_water = gpu_embodied_water    # per-GPU embodied water (L)
         self.forecast = forecast
         self.power = power or {"idle": 100.0, "active": 200.0, "max": 400.0}
 

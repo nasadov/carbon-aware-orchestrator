@@ -17,3 +17,4 @@ dram_server_gb,GB,0.250000,0.350000,0.500000,boaviztaRam;gcc2021,Server DRAM pro
 ssd_server_tb,TB,8.000000,12.000000,16.000000,boaviztaSsd;tannu2022ssd,Server SSD storage block aligned with storage embodied-carbon literature.
 board_assembly_server,device,280.000000,400.000000,560.000000,boaviztaServer;gcc2021,Server motherboard chassis electronics and assembly block.
 peripheral_server,device,120.000000,174.976000,260.000000,boaviztaServer;gcc2021,Residual PSU fan enclosure and auxiliary server hardware block.
+accelerator_gpu_h100,device,130.000000,164.000000,250.000000,nvidia2023h100pcf;faiz2024llmcarbon;gupta2022act,Datacenter GPU board (logic die + HBM + CoWoS packaging); base = NVIDIA H100 product carbon footprint per card (~164 kgCO2e; HBM ~42% of material impact); low/high from ACT/LLMCarbon die-area+HBM scaling.

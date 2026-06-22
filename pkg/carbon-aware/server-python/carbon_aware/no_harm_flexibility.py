@@ -339,14 +339,22 @@ def order_pods_for_pilot(pods: Sequence[CarbonAwarePod]) -> List[CarbonAwarePod]
 
 
 def classify_pod(pod: CarbonAwarePod, slack_threshold_hours: float) -> str:
+    # Honour an explicit firm/flexible tier when the trace provides one (e.g. Alibaba GPU
+    # job roles: training=flexible, inference/serving=firm); otherwise fall back to slack.
+    tier = getattr(pod, "tier", None)
+    if tier == "flexible":
+        return "flexible"
+    if tier in ("firm", "protected"):
+        return "protected"
     slack = float(getattr(pod, "deadline_hours", 0.0)) - float(getattr(pod, "duration", 0.0))
     return "flexible" if slack >= slack_threshold_hours else "protected"
 
 
-def _init_resources(flavours: Sequence[EnvironmentalFlavor], max_timeslots: int) -> Tuple[Dict[str, Dict[int, float]], Dict[str, Dict[int, float]]]:
+def _init_resources(flavours: Sequence[EnvironmentalFlavor], max_timeslots: int) -> Tuple[Dict[str, Dict[int, float]], Dict[str, Dict[int, float]], Dict[str, Dict[int, float]]]:
     leftover_cpu = {flv.id: {slot: flv.totalCpu for slot in range(max_timeslots)} for flv in flavours}
     leftover_ram = {flv.id: {slot: flv.totalRam for slot in range(max_timeslots)} for flv in flavours}
-    return leftover_cpu, leftover_ram
+    leftover_gpu = {flv.id: {slot: float(getattr(flv, "totalGpu", 0) or 0) for slot in range(max_timeslots)} for flv in flavours}
+    return leftover_cpu, leftover_ram, leftover_gpu
 
 
 def _apply_candidate_resources(
@@ -354,14 +362,18 @@ def _apply_candidate_resources(
     candidate: CandidatePlacement,
     leftover_cpu: Dict[str, Dict[int, float]],
     leftover_ram: Dict[str, Dict[int, float]],
+    leftover_gpu: Optional[Dict[str, Dict[int, float]]] = None,
     *,
     release: bool = False,
 ) -> None:
     sign = 1.0 if release else -1.0
+    gpu_req = float(getattr(pod, "gpuRequest", 0) or 0)
     for offset in range(int(pod.duration)):
         slot = candidate.timeslot.id + offset
         leftover_cpu[candidate.flavour.id][slot] += sign * pod.cpuRequest
         leftover_ram[candidate.flavour.id][slot] += sign * pod.ramRequest
+        if leftover_gpu is not None and gpu_req:
+            leftover_gpu[candidate.flavour.id][slot] += sign * gpu_req
 
 
 def _candidate_sort_key(candidate: CandidatePlacement, method_key: str) -> Tuple[float, ...]:
@@ -396,7 +408,7 @@ def build_greedy_schedule(
     config: PilotConfig,
 ) -> Tuple[ScheduleResult, Dict[str, Dict[int, float]], Dict[str, Dict[int, float]]]:
     start = time.perf_counter()
-    leftover_cpu, leftover_ram = _init_resources(flavours, config.max_timeslots)
+    leftover_cpu, leftover_ram, leftover_gpu = _init_resources(flavours, config.max_timeslots)
     placements: List[Placement] = []
     unplaced: List[CarbonAwarePod] = []
     timeslots = build_timeslots(config.max_timeslots)
@@ -411,13 +423,14 @@ def build_greedy_schedule(
             max_time_slots=config.max_timeslots,
             objective_mode="carbon",
             water_metric="scarcity",
+            leftover_gpu=leftover_gpu,
         )
         if not ranked:
             unplaced.append(pod)
             continue
 
         candidate = sorted(ranked, key=lambda item: _candidate_sort_key(item, method_key))[0]
-        _apply_candidate_resources(pod, candidate, leftover_cpu, leftover_ram)
+        _apply_candidate_resources(pod, candidate, leftover_cpu, leftover_ram, leftover_gpu)
         placements.append(
             Placement(
                 pod=pod,
@@ -656,9 +669,9 @@ def repair_schedule_no_harm(
 ) -> ScheduleResult:
     start = time.perf_counter()
     placements = [replace(placement) for placement in baseline.placements]
-    leftover_cpu, leftover_ram = _init_resources(flavours, config.max_timeslots)
+    leftover_cpu, leftover_ram, leftover_gpu = _init_resources(flavours, config.max_timeslots)
     for placement in placements:
-        _apply_candidate_resources(placement.pod, placement.candidate, leftover_cpu, leftover_ram)
+        _apply_candidate_resources(placement.pod, placement.candidate, leftover_cpu, leftover_ram, leftover_gpu)
 
     baseline_result = ScheduleResult(
         method_key=baseline.method_key,
@@ -767,7 +780,7 @@ def repair_schedule_no_harm(
             if dirty_fids:
                 # Rebuild only the dirty flavours' candidates (pod self released, as
                 # the naive path does), then reassemble + re-rank in identical order.
-                _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram, release=True)
+                _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram, leftover_gpu, release=True)
                 cache = flav_cache.setdefault(idx, {})
                 for fid in dirty_fids:
                     built = _build_feasible_candidates(
@@ -777,9 +790,10 @@ def repair_schedule_no_harm(
                         leftover_cpu=leftover_cpu,
                         leftover_ram=leftover_ram,
                         max_time_slots=config.max_timeslots,
+                        leftover_gpu=leftover_gpu,
                     )
                     cache[fid] = {c.timeslot.id: c for c in built}
-                _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram)
+                _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram, leftover_gpu)
                 built_ver[idx] = dict(flavour_version)
                 assembled: List[CandidatePlacement] = []
                 for ts in ordered_ts:
@@ -832,8 +846,8 @@ def repair_schedule_no_harm(
         old = current.placements[placement_idx]
         f_old = old.candidate.flavour.id
         f_new = candidate.flavour.id
-        _apply_candidate_resources(old.pod, old.candidate, leftover_cpu, leftover_ram, release=True)
-        _apply_candidate_resources(old.pod, candidate, leftover_cpu, leftover_ram)
+        _apply_candidate_resources(old.pod, old.candidate, leftover_cpu, leftover_ram, leftover_gpu, release=True)
+        _apply_candidate_resources(old.pod, candidate, leftover_cpu, leftover_ram, leftover_gpu)
         current.placements[placement_idx] = replace(old, candidate=candidate)
         flavour_version[f_old] += 1
         flavour_version[f_new] += 1
@@ -962,7 +976,7 @@ def _rematerialize_under_realized(result: ScheduleResult, realized_flavours: Seq
     """Replace each placement's (forecast) footprint with the realized footprint at the
     SAME (site, timeslot), so the no-harm certificate is verified on realized signals."""
     timeslots = build_timeslots(config.max_timeslots)
-    leftover_cpu, leftover_ram = _init_resources(realized_flavours, config.max_timeslots)
+    leftover_cpu, leftover_ram, leftover_gpu = _init_resources(realized_flavours, config.max_timeslots)
     for placement in result.placements:
         ranked = find_ranked_candidates(
             pod=placement.pod,
@@ -973,6 +987,7 @@ def _rematerialize_under_realized(result: ScheduleResult, realized_flavours: Seq
             max_time_slots=config.max_timeslots,
             objective_mode="carbon",
             water_metric="scarcity",
+            leftover_gpu=leftover_gpu,
         )
         match = next(
             (c for c in ranked

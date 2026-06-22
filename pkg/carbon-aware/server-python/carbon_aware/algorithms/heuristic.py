@@ -982,9 +982,11 @@ def _build_feasible_candidates(
     max_time_slots: int = 48,
     operational_only: bool = False,
     embodied_allocation_mode: str = "proportional",
+    leftover_gpu: Optional[Dict[str, Dict[int, float]]] = None,
 ) -> List[CandidatePlacement]:
     candidates: List[CandidatePlacement] = []
     _debug = logging.getLogger().isEnabledFor(logging.DEBUG)
+    gpu_req = float(getattr(pod, "gpuRequest", 0) or 0)  # GPU feasibility checked only when requested
 
     # Prefer lower-carbon hours first across nodes (best-effort)
     try:
@@ -1021,6 +1023,13 @@ def _build_feasible_candidates(
                             f"RAM {leftover_ram[flv.id][current_slot]:.0f}/{pod.ramRequest:.0f}"
                         )
                     break
+
+                # GPU extended-resource feasibility (only when the pod requests GPU and a
+                # leftover_gpu map is supplied; otherwise this is a no-op for CPU/RAM pods).
+                if gpu_req > 0.0 and leftover_gpu is not None:
+                    if leftover_gpu.get(flv.id, {}).get(current_slot, 0.0) < gpu_req:
+                        duration_feasible = False
+                        break
 
             if duration_feasible:
                 # Pre-compute packing slacks for tie-breaker
@@ -1077,6 +1086,7 @@ def find_ranked_candidates(
     water_budget_remaining: Optional[float] = None,
     remaining_pods: Optional[int] = None,
     budget_pressure_weight: float = 1.0,
+    leftover_gpu: Optional[Dict[str, Dict[int, float]]] = None,
 ) -> List[CandidatePlacement]:
     candidates = _build_feasible_candidates(
         pod=pod,
@@ -1087,6 +1097,7 @@ def find_ranked_candidates(
         max_time_slots=max_time_slots,
         operational_only=operational_only,
         embodied_allocation_mode=embodied_allocation_mode,
+        leftover_gpu=leftover_gpu,
     )
     return _rank_candidates(
         candidates,

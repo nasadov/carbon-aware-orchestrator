@@ -97,8 +97,12 @@ def _compute_embodied_share(
     if embodied_allocation_mode == "uniform":
         return 1.0 if total_cpu_ratio_before <= 0.0 else 0.0
 
-    denom = max(total_cpu_ratio_before + pod_cpu_ratio, 1e-6)
-    return pod_cpu_ratio / denom
+    # Conserving, order-independent, utilization-based capacity share (SCI TE x TS x RS,
+    # RS = request/capacity). The pod is charged its own capacity fraction of the device's
+    # time-amortized embodied; concurrent pods' shares sum to <= 1 (unused capacity is
+    # stranded), and the result does not depend on placement order. This replaces the
+    # earlier marginal share pod/(used_before+pod), which over-counted and was order-dependent.
+    return pod_cpu_ratio
 
 
 def compute_embodied_water_per_hour(flavour: EnvironmentalFlavor) -> float:
@@ -146,6 +150,16 @@ def compute_footprint_vector(
     embodied_carbon_per_hour = compute_embodied_per_hour_g(flavour)
     embodied_water_per_hour = compute_embodied_water_per_hour(flavour)
 
+    # GPU extended resource (fractional-capable). Operational power adds to IT energy;
+    # embodied is allocated by GPU usage with the same conserving, time-amortized rule as
+    # CPU/RAM. All terms are 0 when the pod requests no GPU (gpuRequest=0) -> CPU/RAM path
+    # is unchanged. Note: GPU embodied amortizes over the same device lifetime as the node.
+    gpu_request = float(getattr(pod, "gpuRequest", 0) or 0)
+    gpu_power_w = float(getattr(flavour, "gpu_power_w", 0) or 0)
+    _gpu_lifetime = flavour.lifetime if getattr(flavour, "lifetime", 0) and flavour.lifetime > 0 else 1e-6
+    gpu_embodied_carbon_per_hour = float(getattr(flavour, "gpu_embodied_carbon", 0) or 0) / _gpu_lifetime
+    gpu_embodied_water_per_hour = float(getattr(flavour, "gpu_embodied_water", 0) or 0) / _gpu_lifetime
+
     direct_cf_scalar = float(getattr(flavour, "water_scarcity_direct_cf", 1.0) or 1.0)
     indirect_cf_scalar = float(getattr(flavour, "water_scarcity_indirect_cf", 1.0) or 1.0)
     embodied_cf = float(getattr(flavour, "water_scarcity_embodied_cf", 1.0) or 1.0)
@@ -183,6 +197,9 @@ def compute_footprint_vector(
                 delta_power_w += idle_power_w
             delta_power_w += dynamic_k * pod_cpu_ratio
 
+        # GPU load power scales with the (fractional) GPU count requested.
+        delta_power_w += gpu_request * gpu_power_w
+
         it_energy_kwh = delta_power_w / 1000.0
         # Facility (grid-drawn) energy = IT energy x PUE. PUE may be temperature-dependent
         # (per-slot) so hotter hours raise cooling overhead. This is what the grid, the
@@ -209,8 +226,14 @@ def compute_footprint_vector(
                 pod_cpu_ratio=pod_cpu_ratio,
                 embodied_allocation_mode=embodied_allocation_mode,
             )
-            result.embodied_carbon_g += embodied_carbon_per_hour * embodied_share
+            embodied_carbon = embodied_carbon_per_hour * embodied_share
             embodied_water = embodied_water_per_hour * embodied_share
+            # GPU board embodied: conserving GPU-usage share (gpuRequest GPUs of the device's
+            # per-GPU embodied, time-amortized), same philosophy as the CPU/RAM term.
+            if gpu_request > 0.0:
+                embodied_carbon += gpu_embodied_carbon_per_hour * gpu_request
+                embodied_water += gpu_embodied_water_per_hour * gpu_request
+            result.embodied_carbon_g += embodied_carbon
             result.embodied_water_l += embodied_water
             result.scarcity_characterized_water += embodied_water * embodied_cf
 

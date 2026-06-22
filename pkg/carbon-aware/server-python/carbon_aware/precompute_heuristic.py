@@ -642,6 +642,18 @@ def _extract_pods_from_yaml(yaml_file: str) -> List[CarbonAwarePod]:
             # Parse into CarbonAwarePod
             try:
                 pod = parse_microservice(microservice)
+                # GPU extended resource + explicit firm/flexible tier (e.g. from real GPU traces).
+                # Read from the k8s GPU request or trace annotations; absent -> CPU/RAM-only pod.
+                ann = metadata.get('annotations', {}) or {}
+                gpu_val = requests.get('nvidia.com/gpu') or ann.get('trace/gpu_request') or ann.get('trace/gpu')
+                if gpu_val is not None:
+                    try:
+                        pod.gpuRequest = float(gpu_val)
+                    except (TypeError, ValueError):
+                        pass
+                tier = ann.get('trace/tier')
+                if tier:
+                    pod.tier = tier
                 pods.append(pod)
             except Exception as e:
                 logging.warning(f"Failed to parse pod {pod_name}: {e}")
@@ -755,6 +767,25 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[EnvironmentalFlavor]:
                 
                 hardware_subcategory = node.get("metadata", {}).get("labels", {}).get("hardware.carbon/subcategory", "")
 
+                # GPU node attributes (optional; absent -> CPU/RAM-only node, totalGpu=0).
+                try:
+                    total_gpu = float(annotations.get("hardware.gpu/count", "0"))
+                except ValueError:
+                    total_gpu = 0.0
+                try:
+                    gpu_power_w = float(annotations.get("hardware.gpu/power_watts", "0"))
+                except ValueError:
+                    gpu_power_w = 0.0
+                try:
+                    gpu_embodied_carbon = float(annotations.get("hardware.gpu/embodied_emissions", "0")) * 1000.0  # kg -> g
+                except ValueError:
+                    gpu_embodied_carbon = 0.0
+                try:
+                    gpu_embodied_water = float(annotations.get("hardware.gpu/embodied_water", "0"))  # L per GPU
+                except ValueError:
+                    gpu_embodied_water = 0.0
+                gpu_type = annotations.get("hardware.gpu/type", "")
+
                 flavour = EnvironmentalFlavor(
                     id=node_id,
                     embodiedCarbon=embodied_carbon,
@@ -763,7 +794,12 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[EnvironmentalFlavor]:
                     totalRam=total_ram,
                     totalStorage=1000 * 1024 * 1024 * 1024,  # Default 1TB
                     forecast={},  # Empty forecast, will be filled later
-                    power=power_settings
+                    power=power_settings,
+                    totalGpu=total_gpu,
+                    gpu_power_w=gpu_power_w,
+                    gpu_type=gpu_type,
+                    gpu_embodied_carbon=gpu_embodied_carbon,
+                    gpu_embodied_water=gpu_embodied_water,
                 )
                 attach_water_metadata(
                     flavour,
