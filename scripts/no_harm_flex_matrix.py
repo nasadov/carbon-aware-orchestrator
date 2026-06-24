@@ -76,6 +76,7 @@ def _generate_case_inputs(
     config_file: Path,
     deadline_flex_hours: Optional[int] = None,
     nodes_per_region: int = 1,
+    server_only: bool = False,
 ) -> Dict[str, Path]:
     input_dir.mkdir(parents=True, exist_ok=True)
     nodes_file = input_dir / "nodes.yaml"
@@ -86,6 +87,15 @@ def _generate_case_inputs(
     nodes_cfg["_base_dir"] = config_file.parent
     nodes_cfg["filename"] = str(nodes_file)
     nodes_cfg["random_seed"] = seed
+    if server_only:
+        # Paper-3 is a DATA-CENTER grid-flexibility study, and PUE/WUE are facility metrics:
+        # they only make sense where a cooling facility exists. So the testbed is multi-region
+        # DC servers (the edge classes IoT/Smartphone/Laptop are dropped), while per-region
+        # cooling kappa / PUE / WUE diversity is preserved. See cooling_physics_note.md.
+        _regions = list(nodes_cfg.get("regions", {}).get("region_counts", {}).keys())
+        nodes_cfg["explicit_assignments"] = {r: {"Server": 1} for r in _regions}
+        nodes_cfg["hardware_assignment"] = {"hardware_counts": {"Server": 1}}
+        nodes_cfg["hardware_assignment_method"] = "exact_counts"
     if nodes_per_region and nodes_per_region > 1:
         # Scale the fleet: M nodes per region (same region->hardware mapping).
         m = int(nodes_per_region)

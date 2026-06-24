@@ -56,6 +56,7 @@ def main() -> int:
         base_config=base_config, generate_nodes_file=gen_nodes, generate_timeslot_files=gen_ts,
         input_dir=fleet_dir, pod_count=4, seed=args.fleet_seed, timeslots=12,
         config_file=config_file, deadline_flex_hours=24, nodes_per_region=args.nodes_per_region,
+        server_only=True,
     )
 
     pc = PilotConfig(

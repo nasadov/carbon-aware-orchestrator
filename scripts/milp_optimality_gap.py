@@ -178,7 +178,7 @@ def main() -> int:
         paths = _generate_case_inputs(base_config=base_config, generate_nodes_file=gn,
             generate_timeslot_files=gt, input_dir=REPO / "experiments" / "flexibility" / "t8_milp" / f"s{seed}",
             pod_count=args.pods, seed=seed, timeslots=args.max_timeslots, config_file=config_file,
-            deadline_flex_hours=args.max_timeslots, nodes_per_region=args.nodes_per_region)
+            deadline_flex_hours=args.max_timeslots, nodes_per_region=args.nodes_per_region, server_only=True)
         cfg = PilotConfig(repo_root=REPO, nodes_file=paths["nodes_file"], workloads_dir=paths["workloads_dir"],
             forecasts_file=TA / "forecasts.json", config_file=config_file,
             output_dir=REPO / "experiments" / "flexibility" / "t8_milp" / "out",

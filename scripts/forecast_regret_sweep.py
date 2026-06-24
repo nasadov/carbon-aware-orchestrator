@@ -72,6 +72,7 @@ def run(args) -> Path:
             base_config=base_config, generate_nodes_file=gen_nodes, generate_timeslot_files=gen_ts,
             input_dir=case, pod_count=args.pods, seed=seed, timeslots=args.timeslots,
             config_file=config_file, deadline_flex_hours=args.horizon, nodes_per_region=args.nodes_per_region,
+            server_only=True,
         )
 
     # One knob at a time: (regret, robust) with at most one non-zero (plus the 0,0 cell).

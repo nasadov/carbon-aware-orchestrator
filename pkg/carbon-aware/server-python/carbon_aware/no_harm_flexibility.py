@@ -98,6 +98,11 @@ class PilotConfig:
     # CARBON guard only (water is decided on OBSERVED wet-bulb -> no forecast error).
     # Default 0.0 -> identical to the plain forecast guard (bit-identical).
     robust_buffer: float = 0.0
+    # WaterWise-style scalarized co-optimizer baseline (method_key="waterwise"): the
+    # weight on max-normalized carbon in the per-pod scalar objective; the water weight
+    # is (1 - this). Default 0.5 = WaterWise's equal-weight setting. Sweeping this traces
+    # the co-optimizer's carbon-water frontier. Affects ONLY the "waterwise" baseline.
+    waterwise_carbon_weight: float = 0.5
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -400,6 +405,41 @@ def _candidate_sort_key(candidate: CandidatePlacement, method_key: str) -> Tuple
     )
 
 
+def _select_waterwise_candidate(
+    ranked: Sequence[CandidatePlacement], carbon_weight: float
+) -> CandidatePlacement:
+    """WaterWise-style scalarized choice (Jiang et al. 2025): minimise a weighted
+    sum of per-pod max-normalised carbon and scarcity-weighted water over the pod's
+    feasible placements, with equal default weights. Unlike the single-objective
+    carbon/water-greedy baselines, this *co-optimises* both axes -- and, like any
+    weighted sum, it will accept a carbon increase when water falls enough (and vice
+    versa), so it tolerates residual harm on an axis by construction. It is therefore
+    the fair state-of-the-art comparator for the no-harm certificate, not a strawman.
+    """
+    carbon_weight = min(max(float(carbon_weight), 0.0), 1.0)
+    water_weight = 1.0 - carbon_weight
+    carbons = [c.footprint.total_carbon_g for c in ranked]
+    waters = [_candidate_water_value(c.footprint, "scarcity") for c in ranked]
+    # Min-max normalisation per pod (matching the codebase's weighted-sum heuristic,
+    # `_normalize_to_unit_interval`): maps each axis's best feasible candidate to 0 and
+    # worst to 1, so both axes get equal leverage regardless of their absolute ranges.
+    # (Dividing by the max alone lets a compressed water range wash out and collapses
+    # the equal-weight choice onto carbon-greedy.)
+    c_min, c_max = min(carbons), max(carbons)
+    w_min, w_max = min(waters), max(waters)
+
+    def _score(candidate: CandidatePlacement) -> Tuple[float, ...]:
+        water_value = _candidate_water_value(candidate.footprint, "scarcity")
+        c_norm = (candidate.footprint.total_carbon_g - c_min) / (c_max - c_min) if c_max > c_min + 1e-12 else 0.0
+        w_norm = (water_value - w_min) / (w_max - w_min) if w_max > w_min + 1e-12 else 0.0
+        scalar = carbon_weight * c_norm + water_weight * w_norm
+        # Deterministic tie-breaks, mirroring the other methods' secondary ordering.
+        return (scalar, candidate.footprint.total_carbon_g, water_value,
+                candidate.pack_score, candidate.timeslot.id)
+
+    return min(ranked, key=_score)
+
+
 def build_greedy_schedule(
     *,
     method_key: str,
@@ -429,7 +469,10 @@ def build_greedy_schedule(
             unplaced.append(pod)
             continue
 
-        candidate = sorted(ranked, key=lambda item: _candidate_sort_key(item, method_key))[0]
+        if method_key == "waterwise":
+            candidate = _select_waterwise_candidate(ranked, config.waterwise_carbon_weight)
+        else:
+            candidate = sorted(ranked, key=lambda item: _candidate_sort_key(item, method_key))[0]
         _apply_candidate_resources(pod, candidate, leftover_cpu, leftover_ram, leftover_gpu)
         placements.append(
             Placement(
@@ -595,6 +638,14 @@ def summarize_against_reference(
             totals["placed_pods"] >= reference_totals["placed_pods"]
             and totals["unplaced_pods"] <= reference_totals["unplaced_pods"]
         ),
+        # SLO axis = deadline-feasible admission. Infeasible (past-deadline) placements are never
+        # generated (is_timeslot_valid enforces finish<=deadline), so a pod is either admitted
+        # on time or unplaced -- there is no "late" state. Deadline attainment is thus the
+        # admitted share; late_pods is 0 by construction (reported for transparency).
+        "deadline_attainment_pct": (
+            100.0 * totals["placed_pods"] / max(totals["placed_pods"] + totals["unplaced_pods"], 1.0)
+        ),
+        "late_pods": 0,
         "placed_pods": int(totals["placed_pods"]),
         "unplaced_pods": int(totals["unplaced_pods"]),
         "common_pods": len(common_pods),
@@ -1019,6 +1070,9 @@ def run_no_harm_flexibility_pilot(config: PilotConfig) -> Dict[str, Any]:
     packing, _, _ = build_greedy_schedule(method_key="packing", pods=pods, flavours=decision_flavours, config=config)
     carbon, _, _ = build_greedy_schedule(method_key="carbon", pods=pods, flavours=decision_flavours, config=config)
     water, _, _ = build_greedy_schedule(method_key="water_scarcity", pods=pods, flavours=decision_flavours, config=config)
+    # WaterWise-style scalarized co-optimizer: the fair SOTA comparator (carbon+water
+    # weighted sum), which tolerates residual harm by construction and so cannot certify.
+    waterwise, _, _ = build_greedy_schedule(method_key="waterwise", pods=pods, flavours=decision_flavours, config=config)
     no_harm_flex = repair_schedule_no_harm(
         method_key="no_harm_flex",
         baseline=packing,
@@ -1039,7 +1093,7 @@ def run_no_harm_flexibility_pilot(config: PilotConfig) -> Dict[str, Any]:
         score_mode="search_control",
     )
 
-    results = [packing, carbon, water, search_control, no_harm_flex]
+    results = [packing, carbon, water, waterwise, search_control, no_harm_flex]
     if use_forecast:
         # Verify the forecast-chosen schedules on the realized world.
         for result in results:

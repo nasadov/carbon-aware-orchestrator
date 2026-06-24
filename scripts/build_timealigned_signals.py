@@ -102,11 +102,75 @@ def weather(lat, lon, start, n):
                          "RH": np.array(h["relative_humidity_2m"], float)}).set_index("ts")
 
 
+# Lifecycle CO2-eq emission factors (gCO2eq/kWh) keyed by Energy-Charts production type.
+# Medians from IPCC AR5 WG3 Annex III (Schlomer et al. 2014); lignite/oil/waste from the
+# IPCC/UNECE ranges. Used to build a real generation-mix carbon intensity
+# CI = sum(gen_type * EF_type) / sum(gen_type) -- the measured-mix alternative to the
+# residual-load-scaled proxy.
+LIFECYCLE_EF = {
+    "Nuclear": 12.0, "Hydro Run-of-River": 24.0, "Hydro water reservoir": 24.0,
+    "Hydro pumped storage": 24.0, "Biomass": 230.0, "Geothermal": 38.0,
+    "Wind onshore": 11.0, "Wind offshore": 12.0, "Solar": 48.0,
+    "Fossil gas": 490.0, "Fossil hard coal": 820.0, "Fossil oil": 650.0,
+    "Fossil brown coal / lignite": 1054.0, "Fossil coal-derived gas": 820.0,
+    "Waste": 580.0,
+    # "Others"/"Other" is unclassified (in IT, predominantly thermal/fossil): use the
+    # Electricity-Maps "unknown" default of ~700 gCO2eq/kWh rather than drop it (dropping
+    # would implicitly assume it equals the renewables-inclusive known mix). Tiny (<1%)
+    # in DE/ES/FR; ~22% in IT, where it is fossil-dominated.
+    "Others": 700.0, "Other": 700.0, "Other renewables": 30.0,
+}
+# Accounting/aggregate series in the Energy-Charts payload -- never part of the mix.
+EC_NON_GENERATION = {
+    "Load", "Residual load", "Renewable share of load", "Renewable share of generation",
+    "Cross border electricity trading", "Hydro pumped storage consumption",
+}
+EC_COUNTRY = {"DE": "de", "FR": "fr", "ES": "es", "IT-NO": "it"}
+
+
+def real_ci_hourly(reg, start, hours):
+    """Real hourly grid carbon intensity (gCO2eq/kWh) from the measured generation mix
+    (Energy-Charts / ENTSO-E) x lifecycle emission factors, resampled onto `hours`.
+    Production-based (excludes cross-border trade). IT-NO is approximated by country IT."""
+    cc = EC_COUNTRY.get(reg, reg.lower())
+    s0 = start if start.tzinfo else start.tz_localize("UTC")
+    end = (s0 + pd.Timedelta(hours=len(hours)) + pd.Timedelta(days=1)).date().isoformat()
+    url = (f"https://api.energy-charts.info/public_power?country={cc}"
+           f"&start={s0.date().isoformat()}&end={end}")
+    with urllib.request.urlopen(url, timeout=120) as r:
+        payload = json.loads(r.read().decode())
+    idx = pd.to_datetime(payload["unix_seconds"], unit="s", utc=True)
+    num = pd.Series(0.0, index=idx)
+    den = pd.Series(0.0, index=idx)
+    matched, skipped, skipped_mwh = [], [], 0.0
+    for series in payload.get("production_types", []):
+        name = series.get("name", "")
+        if name in EC_NON_GENERATION:
+            continue
+        vals = pd.Series(series.get("data", []), index=idx).astype(float).clip(lower=0).fillna(0.0)
+        ef = LIFECYCLE_EF.get(name)
+        if ef is None:
+            if float(vals.sum()) > 0:
+                skipped.append(name); skipped_mwh += float(vals.sum())
+            continue
+        matched.append(name); num = num + vals * ef; den = den + vals
+    den_sum = float(den.sum())
+    excl = 100.0 * skipped_mwh / (den_sum + skipped_mwh) if (den_sum + skipped_mwh) > 0 else 0.0
+    ci = num / den.replace(0.0, np.nan)
+    ci_h = ci.resample("h").mean().reindex(hours).interpolate().bfill().ffill()
+    print(f"    [real CI] {reg}->{cc}: {len(matched)} gen types, {excl:.1f}% generation excluded"
+          + (f" (unmatched: {skipped})" if skipped else ""))
+    return ci_h.values
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--start", default="2018-07-25T00:00:00Z", help="window start (UTC, documented 2018 heatwave)")
     ap.add_argument("--slots", type=int, default=48, help="number of hourly slots (superset; pilot reads first max_timeslots)")
     ap.add_argument("--out-dir", default=None, help="output dir (default pkg/.../data/timealigned); set to build a separate year/window without overwriting")
+    ap.add_argument("--carbon-source", choices=["proxy", "real"], default="proxy",
+                    help="proxy = residual-scaled country-average ci_base (default, bit-identical); "
+                         "real = measured generation-mix CI (Energy-Charts + IPCC AR5 lifecycle EFs)")
     args = ap.parse_args()
     start = pd.Timestamp(args.start)
     n = args.slots
@@ -140,7 +204,12 @@ def main() -> int:
         kappa = KAPPA.get(reg, "hybrid")
         pue = pue_for_kappa(w["T"].values, kappa)  # per-slot, temperature-dependent
         wue = wue_for_kappa(w["T"].values, Tw, kappa)
-        ci = s["ci_base"] * np.clip(rs.values / zmean, 0.3, 2.0)
+        if args.carbon_source == "real":
+            ci = real_ci_hourly(reg, start, hours)
+            ci_model = "energy_charts_generation_mix_x_ipcc_ar5_lifecycle_ef"
+        else:
+            ci = s["ci_base"] * np.clip(rs.values / zmean, 0.3, 2.0)
+            ci_model = "residual_load_scaled_country_average"
         fc = []
         for k in range(n):
             tss = (start + pd.Timedelta(hours=k)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -154,7 +223,7 @@ def main() -> int:
                                  pue=round(float(pue[k]), 4), cooling_kappa=kappa,
                                  model="open-meteo archive + fixed-kappa cooling, T-dependent PUE"))
             fc.append(dict(datetime=tss, carbonIntensity=round(float(ci[k]), 2)))
-        forecasts[reg] = dict(zone=reg, forecast=fc, updatedAt=start.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        forecasts[reg] = dict(zone=reg, forecast=fc, ci_model=ci_model, updatedAt=start.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
     pd.DataFrame(grid_rows).to_csv(OUT / "grid_residual_region_slot.csv", index=False)
     pd.DataFrame(wue_rows).to_csv(OUT / "wue_region_slot.csv", index=False)

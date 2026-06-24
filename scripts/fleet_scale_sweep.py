@@ -78,7 +78,7 @@ def run(args) -> Path:
                 generate_timeslot_files=gen_ts, input_dir=case,
                 pod_count=pods, seed=seed, timeslots=args.timeslots,
                 config_file=config_file, deadline_flex_hours=args.horizon,
-                nodes_per_region=npr,
+                nodes_per_region=npr, server_only=True,
             )
             pc = PilotConfig(
                 repo_root=REPO_ROOT, nodes_file=paths["nodes_file"],
