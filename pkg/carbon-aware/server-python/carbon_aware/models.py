@@ -8,7 +8,8 @@ class CarbonAwarePod:
                  powerConsumption: float, cpuRequest: float,
                  ramRequest: float, storageRequest: int,
                  reference_time: datetime = None,
-                 gpuRequest: float = 0.0, tier: Optional[str] = None) -> None:
+                 gpuRequest: float = 0.0, tier: Optional[str] = None,
+                 cpu_util_ratio: float = 1.0, gpu_util_ratio: float = 1.0) -> None:
         self.id = id
         self.deadline = self._processDeadline(deadline_hours, reference_time)
         self.deadline_hours = deadline_hours  # Store deadline hours for relative calculation
@@ -19,6 +20,11 @@ class CarbonAwarePod:
         self.storageRequest = storageRequest
         self.gpuRequest = gpuRequest  # GPU count requested (extended resource, nvidia.com/gpu); 0 = CPU/RAM-only pod
         self.tier = tier              # explicit firm/flexible tier (e.g. from trace job type); None -> slack-based
+        # Measured utilization as a fraction of the request/allocation (from a trace's sensor
+        # data, e.g. Alibaba gpu_wrk_util/cpu_usage). Scales DYNAMIC power only; allocation/idle
+        # and embodied stay request-based. Default 1.0 -> request-driven (bit-identical to legacy).
+        self.cpu_util_ratio = cpu_util_ratio
+        self.gpu_util_ratio = gpu_util_ratio
         self.earliest_timeslot = 0  # Default: can be scheduled from timeslot 0
         self.deadline_slot = None   # Default: no specific deadline slot (calculated later if needed)
 
@@ -52,6 +58,7 @@ class EnvironmentalFlavor:
         power: Dict[str, float] = None,
         totalGpu: float = 0,
         gpu_power_w: float = 0.0,
+        gpu_idle_w: float = 0.0,  # per-GPU idle/baseline power (W); a held GPU draws this even at 0% util (V100~50). Default 0 -> legacy peak-only model.
         gpu_type: str = "",
         gpu_embodied_carbon: float = 0.0,  # per-GPU embodied carbon (gCO2e); NVIDIA H100 PCF + ACT/LLMCarbon
         gpu_embodied_water: float = 0.0,   # per-GPU embodied water (L); fab disclosures (low/base/high)
@@ -76,7 +83,8 @@ class EnvironmentalFlavor:
         self.totalRam = totalRam
         self.totalStorage = totalStorage
         self.totalGpu = totalGpu            # GPU count on the node (extended resource, fractional-capable); 0 = no GPUs
-        self.gpu_power_w = gpu_power_w       # per-GPU effective load power (W), e.g. A100~400, H100~700
+        self.gpu_power_w = gpu_power_w       # per-GPU peak load power (W), e.g. V100~300, A100~400
+        self.gpu_idle_w = gpu_idle_w        # per-GPU idle power (W); held-but-underutilized GPUs still draw this
         self.gpu_type = gpu_type
         self.gpu_embodied_carbon = gpu_embodied_carbon  # per-GPU embodied carbon (gCO2e)
         self.gpu_embodied_water = gpu_embodied_water    # per-GPU embodied water (L)

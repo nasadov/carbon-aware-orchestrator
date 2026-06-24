@@ -120,6 +120,23 @@ LIFECYCLE_EF = {
     # in DE/ES/FR; ~22% in IT, where it is fossil-dominated.
     "Others": 700.0, "Other": 700.0, "Other renewables": 30.0,
 }
+# Per-fuel OPERATIONAL water-CONSUMPTION factors (L/kWh) keyed by Energy-Charts production type,
+# from Macknick et al. 2012 (NREL) medians [macknick2012]. Used to build a real off-site
+# (generation) water intensity EWIF = sum(gen_type * WF_type)/sum(gen_type) from the SAME measured
+# fuel mix as the real CI -- removing the static-EWIF asymmetry (W1). Consumption (not withdrawal),
+# the scarcity-relevant term. NOTE (flagged for review): reservoir-hydro evaporation is the dominant
+# uncertainty -- estimates span ~0 (run-of-river) to ~17 L/kWh (gross reservoir evaporation, often
+# excluded from operational accounting); we use a CONSERVATIVE operational value below and will
+# sensitivity-test it. Geothermal also high/variable.
+WATER_FACTOR_L_PER_KWH = {
+    "Nuclear": 2.5, "Fossil hard coal": 2.6, "Fossil brown coal / lignite": 2.6,
+    "Fossil coal-derived gas": 2.6, "Fossil gas": 0.75, "Fossil oil": 1.1,
+    "Biomass": 2.1, "Waste": 2.1, "Geothermal": 4.0,
+    "Wind onshore": 0.004, "Wind offshore": 0.0, "Solar": 0.1,
+    "Hydro Run-of-River": 0.0, "Hydro pumped storage": 0.0,
+    "Hydro water reservoir": 2.0,   # CONSERVATIVE (gross evaporation est. up to ~17; flagged)
+    "Others": 2.0, "Other": 2.0, "Other renewables": 0.1,
+}
 # Accounting/aggregate series in the Energy-Charts payload -- never part of the mix.
 EC_NON_GENERATION = {
     "Load", "Residual load", "Renewable share of load", "Renewable share of generation",

@@ -66,6 +66,21 @@ def _hours(duration_hours: float) -> int:
     return max(int(duration_hours), 0)
 
 
+def _duration_slot_fractions(start_slot: int, duration_hours: float):
+    """Yield (slot, fraction) over the hourly slots a job spans, weighting energy by the
+    fraction of each hour it actually runs. Integer durations yield all-1.0 fractions
+    (bit-identical to range(int(duration))); a fractional/sub-hour job adds a partial last
+    slot (e.g. 2.5h -> 1,1,0.5; 0.4h -> 0.4) so its energy is conserved rather than floored
+    to zero (the legacy `int()` behaviour) or rounded up to a full hour."""
+    dur = max(float(duration_hours), 0.0)
+    full = int(dur)
+    for i in range(full):
+        yield start_slot + i, 1.0
+    frac = dur - full
+    if frac > 1e-9:
+        yield start_slot + full, frac
+
+
 def _slot_value(values: Dict[int, float], slot: int, default: float = 0.0) -> float:
     if slot in values:
         return float(values[slot])
@@ -159,6 +174,13 @@ def compute_footprint_vector(
     _gpu_lifetime = flavour.lifetime if getattr(flavour, "lifetime", 0) and flavour.lifetime > 0 else 1e-6
     gpu_embodied_carbon_per_hour = float(getattr(flavour, "gpu_embodied_carbon", 0) or 0) / _gpu_lifetime
     gpu_embodied_water_per_hour = float(getattr(flavour, "gpu_embodied_water", 0) or 0) / _gpu_lifetime
+    gpu_idle_w = float(getattr(flavour, "gpu_idle_w", 0.0) or 0.0)
+
+    # Measured utilization (fraction of the request/allocation). Scales DYNAMIC power only;
+    # idle/allocation and embodied stay request-based. Default 1.0 -> request-driven power
+    # (bit-identical to the legacy model: gpu peak-only, cpu dynamic = full request share).
+    cpu_util_ratio = float(getattr(pod, "cpu_util_ratio", 1.0) or 1.0)
+    gpu_util_ratio = float(getattr(pod, "gpu_util_ratio", 1.0) or 1.0)
 
     direct_cf_scalar = float(getattr(flavour, "water_scarcity_direct_cf", 1.0) or 1.0)
     indirect_cf_scalar = float(getattr(flavour, "water_scarcity_indirect_cf", 1.0) or 1.0)
@@ -182,25 +204,27 @@ def compute_footprint_vector(
     direct_cf_by_slot = getattr(flavour, "water_scarcity_direct_cf_by_slot", {}) or {}
     indirect_cf_by_slot = getattr(flavour, "water_scarcity_indirect_cf_by_slot", {}) or {}
 
-    for offset in range(_hours(pod.duration)):
-        slot = start_slot + offset
+    for slot, frac in _duration_slot_fractions(start_slot, pod.duration):
         used_before = 0.0
         if used_cpu_before_by_slot is not None:
             used_before = used_cpu_before_by_slot.get(slot, 0.0)
         total_cpu_ratio_before = used_before / total_cpu
 
         if use_pod_power_only:
-            delta_power_w = idle_power_w + dynamic_k * pod_cpu_ratio
+            delta_power_w = idle_power_w + dynamic_k * pod_cpu_ratio * cpu_util_ratio
         else:
             delta_power_w = 0.0
             if total_cpu_ratio_before <= 0.0 and pod_cpu_ratio > 0.0:
                 delta_power_w += idle_power_w
-            delta_power_w += dynamic_k * pod_cpu_ratio
+            delta_power_w += dynamic_k * pod_cpu_ratio * cpu_util_ratio
 
-        # GPU load power scales with the (fractional) GPU count requested.
-        delta_power_w += gpu_request * gpu_power_w
+        # GPU power: each allocated (fractional) GPU draws idle + dynamic*util. Default
+        # gpu_idle_w=0 and gpu_util_ratio=1 -> gpu_request*gpu_power_w (legacy peak-only).
+        delta_power_w += gpu_request * (gpu_idle_w + (gpu_power_w - gpu_idle_w) * gpu_util_ratio)
 
-        it_energy_kwh = delta_power_w / 1000.0
+        # Weight by the fraction of the hour the job runs in this slot (1.0 for whole-hour
+        # slots; <1.0 only on a partial last slot / sub-hour job -> conserves energy).
+        it_energy_kwh = (delta_power_w / 1000.0) * frac
         # Facility (grid-drawn) energy = IT energy x PUE. PUE may be temperature-dependent
         # (per-slot) so hotter hours raise cooling overhead. This is what the grid, the
         # carbon account, and the power-plant water account all see.
@@ -226,13 +250,13 @@ def compute_footprint_vector(
                 pod_cpu_ratio=pod_cpu_ratio,
                 embodied_allocation_mode=embodied_allocation_mode,
             )
-            embodied_carbon = embodied_carbon_per_hour * embodied_share
-            embodied_water = embodied_water_per_hour * embodied_share
+            embodied_carbon = embodied_carbon_per_hour * embodied_share * frac
+            embodied_water = embodied_water_per_hour * embodied_share * frac
             # GPU board embodied: conserving GPU-usage share (gpuRequest GPUs of the device's
             # per-GPU embodied, time-amortized), same philosophy as the CPU/RAM term.
             if gpu_request > 0.0:
-                embodied_carbon += gpu_embodied_carbon_per_hour * gpu_request
-                embodied_water += gpu_embodied_water_per_hour * gpu_request
+                embodied_carbon += gpu_embodied_carbon_per_hour * gpu_request * frac
+                embodied_water += gpu_embodied_water_per_hour * gpu_request * frac
             result.embodied_carbon_g += embodied_carbon
             result.embodied_water_l += embodied_water
             result.scarcity_characterized_water += embodied_water * embodied_cf

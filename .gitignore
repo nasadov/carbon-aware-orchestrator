@@ -74,6 +74,9 @@ docs/paper-two/Schemes/**/__pycache__/
 docs/paper-two/Schemes/**/*.aux
 docs/paper-two/Schemes/**/*.log
 
+# Raw third-party trace data (large; not redistributed — fetched/extracted locally)
+external/real-traces/raw/
+
 # Generated experiment results
 **/experiment_results/
 **/experiments/*/

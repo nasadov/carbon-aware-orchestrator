@@ -76,14 +76,14 @@ nodes:
         active: 40.0
         max: 150.0
     Server:
-      cpu: '16'
-      memory: 16Gi
-      embodied_carbon: 1230.656
-      lifetime: 3.87
+      cpu: '192'
+      memory: 768Gi
+      embodied_carbon: 2000.0
+      lifetime: 5.0
       power:
-        idle: 100.0
-        active: 200.0
-        max: 400.0
+        idle: 200.0
+        active: 700.0
+        max: 1200.0
   random_seed: 44
 water:
   enabled: true

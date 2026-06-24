@@ -654,6 +654,16 @@ def _extract_pods_from_yaml(yaml_file: str) -> List[CarbonAwarePod]:
                 tier = ann.get('trace/tier')
                 if tier:
                     pod.tier = tier
+                # Measured utilization (fraction of request/allocation) from a trace's sensor
+                # data; scales dynamic power only. Absent -> 1.0 (request-driven, legacy).
+                for ann_key, attr in (("trace/cpu_util_ratio", "cpu_util_ratio"),
+                                      ("trace/gpu_util_ratio", "gpu_util_ratio")):
+                    v = ann.get(ann_key)
+                    if v is not None:
+                        try:
+                            setattr(pod, attr, float(v))
+                        except (TypeError, ValueError):
+                            pass
                 pods.append(pod)
             except Exception as e:
                 logging.warning(f"Failed to parse pod {pod_name}: {e}")
@@ -777,6 +787,10 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[EnvironmentalFlavor]:
                 except ValueError:
                     gpu_power_w = 0.0
                 try:
+                    gpu_idle_w = float(annotations.get("hardware.gpu/idle_watts", "0"))
+                except ValueError:
+                    gpu_idle_w = 0.0
+                try:
                     gpu_embodied_carbon = float(annotations.get("hardware.gpu/embodied_emissions", "0")) * 1000.0  # kg -> g
                 except ValueError:
                     gpu_embodied_carbon = 0.0
@@ -797,6 +811,7 @@ def _load_nodes_from_yaml(nodes_file: str) -> List[EnvironmentalFlavor]:
                     power=power_settings,
                     totalGpu=total_gpu,
                     gpu_power_w=gpu_power_w,
+                    gpu_idle_w=gpu_idle_w,
                     gpu_type=gpu_type,
                     gpu_embodied_carbon=gpu_embodied_carbon,
                     gpu_embodied_water=gpu_embodied_water,

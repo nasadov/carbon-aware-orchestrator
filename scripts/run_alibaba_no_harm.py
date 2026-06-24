@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """T12-P7b — run the no-harm pilot on a real Alibaba GPU (PAI) trace window.
 
-Generates a regionful GPU fleet (DE/FR/ES/IT-NO with per-site cooling kappa and H100-class
-GPU nodes: power + embodied from NVIDIA H100 PCF / ACT-LLMCarbon and fab-water estimates),
+Generates a regionful GPU fleet (DE/FR/ES/IT-NO with per-site cooling kappa and V100-class
+DGX-1 nodes, period-accurate for the v2020 trace; idle-inclusive GPU power + measured utilization),
 points the no-harm pilot at a converted Alibaba GPU window, and reports the no-harm certificate,
 carbon/water deltas (operational + embodied, GPU-aware), grid-stress relief, and the firm/flexible
 share (from trace task roles). Reported beside the Azure (CPU/RAM) result as the generalization.
@@ -25,17 +25,18 @@ from carbon_aware.no_harm_flexibility import PilotConfig, load_pods, run_no_harm
 
 TIMEALIGNED = REPO_ROOT / "pkg" / "carbon-aware" / "data" / "timealigned"
 REGIONS = ["DE", "FR", "ES", "IT-NO"]
-# H100-class GPU node, embodied sourced through the SAME Boavizta-aligned pipeline as the CPU
-# testbed (no parallel hardcoding):
-#   * host (GPU-less server) = Boavizta "Server" subcategory anchor 1230.656 kgCO2e
-#     (data/carbon/embodied_carbon_anchors.csv) + Server embodied water via attach_water_metadata
-#     (subcategory="Server" label below).
-#   * per-GPU board = the accelerator_gpu_h100 component block added to the carbon/water inventories:
-#     164 kgCO2e/GPU (NVIDIA H100 PCF; base) and 2000 L/GPU (fab/HBM estimate; least-certain term).
-# Power: NVIDIA datasheet H100 700 W effective load.
-GPU_NODE = dict(gpu_count=8, gpu_power_w=700.0, gpu_embodied_kg=164.0, gpu_embodied_water_l=2000.0,
-                gpu_type="H100", chassis_embodied_kg=1230.656, lifetime_years=3,
-                idle_w=400.0, max_w=1200.0, cpu_cores=96, mem_gi=768)
+# V100-class GPU node (DGX-1 V100), PERIOD-ACCURATE for the Alibaba GPU v2020 trace: the trace's
+# gpu_type is V100/P100/T4 (NO A100), so V100 is the realistic card. Magnitudes:
+#   * per-GPU board: NVIDIA V100 SXM2 ~300 W peak / ~50 W idle (datasheet); a held-but-idle GPU still
+#     draws idle -> with the idle-inclusive power model, low-util jobs aren't free. Embodied ~120 kg
+#     CO2e (estimated from the A100 cradle-to-grave LCA [arXiv:2509.00093] scaled to V100 die+HBM2;
+#     LEAST-CERTAIN, no dedicated V100 LCA); per-GPU embodied water ~2000 L (fab/HBM estimate).
+#   * host (DGX-1 V100, non-GPU): 2x Xeon (40 cores) + ~512 GiB DDR -> ~1500 kgCO2e embodied; host
+#     power ~0.7 kW idle / ~1.1 kW max. The 8 GPUs add on top -> ~3.5 kW system (DGX-1 datasheet max).
+# Energy is driven by MEASURED utilization (gpu_wrk_util/cpu_usage) per pod, not requests (R2).
+GPU_NODE = dict(gpu_count=8, gpu_power_w=300.0, gpu_idle_w=50.0, gpu_embodied_kg=120.0,
+                gpu_embodied_water_l=2000.0, gpu_type="V100", chassis_embodied_kg=1500.0,
+                lifetime_years=4, idle_w=700.0, max_w=1100.0, cpu_cores=40, mem_gi=512)
 
 
 def write_gpu_fleet(path: Path, nodes_per_region: int) -> int:
@@ -59,6 +60,7 @@ def write_gpu_fleet(path: Path, nodes_per_region: int) -> int:
                         "hardware.power/max_watts": str(g["max_w"]),
                         "hardware.gpu/count": str(g["gpu_count"]),
                         "hardware.gpu/power_watts": str(g["gpu_power_w"]),
+                        "hardware.gpu/idle_watts": str(g["gpu_idle_w"]),
                         "hardware.gpu/embodied_emissions": str(g["gpu_embodied_kg"]),  # kg per GPU
                         "hardware.gpu/embodied_water": str(g["gpu_embodied_water_l"]),  # L per GPU
                         "hardware.gpu/type": g["gpu_type"],
