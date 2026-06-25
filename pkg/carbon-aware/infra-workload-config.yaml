@@ -90,6 +90,9 @@ water:
   operational_scarcity_temporal_resolution: monthly
   data_sources:
     aware_country_factors_csv: data/water/aware20_country_nonagri_factors.csv
+    # Basin-scale AWARE CFs (region-keyed); only consumed when
+    # operational_scarcity_spatial_resolution: basin (default country = legacy, bit-identical).
+    aware_basin_factors_csv: data/water/aware20_basin_nonagri_factors.csv
     grid_water_factors_csv: data/water/wri_country_grid_water_factors.csv
     wue_region_slot_csv: data/water/wue_region_slot_base.csv
     ewif_region_slot_csv: data/water/ewif_region_slot.csv

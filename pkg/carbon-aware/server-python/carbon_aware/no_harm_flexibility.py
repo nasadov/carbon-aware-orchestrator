@@ -103,6 +103,17 @@ class PilotConfig:
     # is (1 - this). Default 0.5 = WaterWise's equal-weight setting. Sweeping this traces
     # the co-optimizer's carbon-water frontier. Affects ONLY the "waterwise" baseline.
     waterwise_carbon_weight: float = 0.5
+    # Independent verification signal set: decisions are made on the observable decision-time CI
+    # (forecasts_file, e.g. the residual-load-scaled proxy), but the no-harm certificate is
+    # re-evaluated against THIS carbon-intensity set (e.g. real generation-mix CI). Default None ->
+    # verify on the decision-time signals (bit-identical). This breaks the decide/verify circularity
+    # of accounting carbon with the same residual-load signal the scheduler optimised.
+    verify_forecasts_file: Optional[Path] = None
+    # Independent verification of the WATER/scarcity side: decisions use the decision-time water config
+    # (config_file, e.g. country-level AWARE CFs), but the certificate is re-evaluated against this
+    # config (e.g. basin-resolution CFs). Default None -> verify on the decision-time config. Lets us
+    # test whether a country-scarcity-decided schedule still does no harm at basin resolution.
+    verify_config_file: Optional[Path] = None
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -808,13 +819,15 @@ def repair_schedule_no_harm(
             candidate.footprint.operational_carbon_kg + old_candidate.footprint.operational_carbon_kg,
         )
 
+    base_carbon = baseline_totals["carbon_kg"]
+    base_scarcity = baseline_totals["scarcity_water"]
+    # Running totals maintained from CORRECT per-move deltas (idle re-attributed via the rebuilt
+    # self-candidate as the removal baseline), so the guard checks the true current footprint rather
+    # than a stale sum of per-pod footprints that loses a node's idle when its idle-bearer moves.
+    cur_carbon = base_carbon
+    cur_scarcity = base_scarcity
     while repairs < max_repairs:
-        current_totals = schedule_totals(current, signals)
         best: Optional[Tuple[Tuple[float, ...], int, CandidatePlacement]] = None
-        base_carbon = baseline_totals["carbon_kg"]
-        base_scarcity = baseline_totals["scarcity_water"]
-        cur_carbon = current_totals["carbon_kg"]
-        cur_scarcity = current_totals["scarcity_water"]
 
         for idx, placement in enumerate(current.placements):
             if placement.flexibility_class != "flexible":
@@ -858,12 +871,21 @@ def repair_schedule_no_harm(
                 )
 
             ranked = ranked_cache[idx]
+            # Removal baseline = the pod's footprint at its CURRENT location recomputed against CURRENT
+            # occupancy (the rebuilt self-candidate), NOT the stale stored candidate. This makes the
+            # per-move delta correct: a node's idle is credited on removal only if the pod is still its
+            # sole occupant (otherwise the idle stays with a remaining co-tenant).
+            remove_baseline = next(
+                (c for c in ranked
+                 if c.flavour.id == old_candidate.flavour.id and c.timeslot.id == old_candidate.timeslot.id),
+                old_candidate,
+            )
             # Recompute cached deltas: all candidates if the pod's own placement changed
-            # (its old_candidate baseline moved); otherwise only freshly-rebuilt ones.
+            # (its removal baseline moved); otherwise only freshly-rebuilt ones.
             recompute_all = first_build or delta_dirty.get(idx, True)
             for candidate in ranked:
                 if recompute_all or not hasattr(candidate, "_nh"):
-                    _compute_nh(placement, old_candidate, candidate)
+                    _compute_nh(placement, remove_baseline, candidate)
             delta_dirty[idx] = False
 
             for candidate in ranked:
@@ -892,6 +914,9 @@ def repair_schedule_no_harm(
             break
 
         _, placement_idx, candidate = best
+        # Commit this move's CORRECT marginal footprint to the running totals the guard checks.
+        cur_carbon += candidate._nh[2]
+        cur_scarcity += candidate._nh[3]
         if robust_buffer:
             applied_unc_carbon += robust_buffer * candidate._nh[8]  # commit this move's carbon-forecast exposure
         old = current.placements[placement_idx]
@@ -1047,6 +1072,10 @@ def _rematerialize_under_realized(result: ScheduleResult, realized_flavours: Seq
         )
         if match is not None:
             placement.candidate = match
+            # Apply the matched candidate's resources so the NEXT pod on this node-slot sees the
+            # occupancy: node idle power is charged once (to the first pod), not to every pod.
+            # Without this, every pod is scored against empty capacity -> idle massively over-counted.
+            _apply_candidate_resources(placement.pod, match, leftover_cpu, leftover_ram, leftover_gpu)
 
 
 def run_no_harm_flexibility_pilot(config: PilotConfig) -> Dict[str, Any]:
@@ -1066,6 +1095,19 @@ def run_no_harm_flexibility_pilot(config: PilotConfig) -> Dict[str, Any]:
         if use_forecast else realized_flavours
     )
     decision_signals = build_action_signals(decision_flavours, config) if use_forecast else realized_signals
+    # Independent verification: if a separate CI set is given (e.g. real generation-mix), re-evaluate
+    # the certificate against it; decisions stay on the decision-time signals above. Else verify on them.
+    verify_active = bool(config.verify_forecasts_file or config.verify_config_file)
+    if verify_active:
+        verify_flavours = load_flavours_for_pilot(replace(
+            config,
+            forecasts_file=config.verify_forecasts_file or config.forecasts_file,
+            config_file=config.verify_config_file or config.config_file,
+        ))
+        verify_signals = build_action_signals(verify_flavours, config)
+    else:
+        verify_flavours = realized_flavours
+        verify_signals = realized_signals
 
     packing, _, _ = build_greedy_schedule(method_key="packing", pods=pods, flavours=decision_flavours, config=config)
     carbon, _, _ = build_greedy_schedule(method_key="carbon", pods=pods, flavours=decision_flavours, config=config)
@@ -1094,12 +1136,18 @@ def run_no_harm_flexibility_pilot(config: PilotConfig) -> Dict[str, Any]:
     )
 
     results = [packing, carbon, water, waterwise, search_control, no_harm_flex]
-    if use_forecast:
-        # Verify the forecast-chosen schedules on the realized world.
-        for result in results:
-            _rematerialize_under_realized(result, realized_flavours, config)
+    # Re-evaluate footprints + certificate against the verification world: an independent CI set if
+    # provided (decide-on-proxy / verify-on-real-CI), else the realized (un-noised) signals for RQ3.
+    # ALWAYS re-materialize footprints under the verification flavours, so the reported totals and
+    # the certificate use CORRECT occupancy-based accounting (idle charged once per active node-slot),
+    # not the in-place repair's stale per-pod footprints (which lose a node's idle when its idle-bearing
+    # pod moves -> spurious carbon/water "savings"). verify_flavours defaults to the realized
+    # (decision-time) signals, so for the headline this is an honest recompute on the same signals;
+    # under RQ3 it is the realized world; under a verify_* override it is the independent CI/config set.
+    for result in results:
+        _rematerialize_under_realized(result, verify_flavours, config)
 
-    signals = realized_signals
+    signals = verify_signals
     for result in results:
         write_placements_csv(config.output_dir / f"placements_{result.method_key}.csv", result, signals)
     write_signal_csv(config.output_dir / "actionable_signals.csv", signals)

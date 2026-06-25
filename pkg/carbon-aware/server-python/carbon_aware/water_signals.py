@@ -35,6 +35,7 @@ def _default_water_config() -> Dict[str, Any]:
         "enabled": True,
         "data_sources": {
             "aware_country_factors_csv": "",
+            "aware_basin_factors_csv": "",
             "grid_water_factors_csv": "",
             "wue_region_slot_csv": "",
             "ewif_region_slot_csv": "",
@@ -53,6 +54,9 @@ def _default_water_config() -> Dict[str, Any]:
             "criticality": 1.0,
         },
         "operational_scarcity_temporal_resolution": "monthly",
+        # "country" (default) reproduces the legacy country-CF behaviour exactly; "basin" overrides
+        # the country AWARE CF with the region's watershed CF (aware_basin_factors_csv) where present.
+        "operational_scarcity_spatial_resolution": "country",
         "region_to_country": {},
         "by_region": {},
         "by_country": {},
@@ -81,6 +85,12 @@ def load_water_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         water.get(
             "operational_scarcity_temporal_resolution",
             merged["operational_scarcity_temporal_resolution"],
+        )
+    ).strip().lower()
+    merged["operational_scarcity_spatial_resolution"] = str(
+        water.get(
+            "operational_scarcity_spatial_resolution",
+            merged["operational_scarcity_spatial_resolution"],
         )
     ).strip().lower()
     merged["region_to_country"].update(water.get("region_to_country", {}) or {})
@@ -154,6 +164,23 @@ def _load_country_rows(csv_path: Optional[Path]) -> Dict[str, Dict[str, str]]:
             country_code = (row.get("country_code") or "").strip().upper()
             if country_code:
                 result[country_code] = row
+    return result
+
+
+def _load_region_rows(csv_path: Optional[Path]) -> Dict[str, Dict[str, str]]:
+    """Region-keyed CF rows (e.g. basin-scale AWARE factors): same column schema as the country
+    file (annual_cf, jan_cf..dec_cf) but keyed by `region` instead of `country_code`."""
+    if csv_path is None:
+        return {}
+    if not csv_path.exists():
+        logging.warning("Water dataset %s does not exist; skipping", csv_path)
+        return {}
+    result: Dict[str, Dict[str, str]] = {}
+    with csv_path.open("r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            region = (row.get("region") or "").strip()
+            if region:
+                result[region] = row
     return result
 
 
@@ -231,22 +258,32 @@ def _apply_operational_scarcity_by_slot(
     water_config: Dict[str, Any],
     aware_rows: Dict[str, Dict[str, str]],
     region_slot_rows: Dict[str, Dict[int, Dict[str, str]]],
+    basin_rows: Optional[Dict[str, Dict[str, str]]] = None,
+    spatial_resolution: str = "country",
 ) -> None:
     if not region_slot_rows:
         return
 
+    use_basin = spatial_resolution == "basin" and bool(basin_rows)
     for region, rows_by_slot in region_slot_rows.items():
         country_code = _resolve_country(region, water_config)
         country_entry = water_config.setdefault("by_country", {}).setdefault(country_code, {})
-        annual_cf = _as_float(country_entry.get("direct_scarcity_cf"), 1.0)
-        aware_row = aware_rows.get(country_code, {})
+        # Scarcity source: basin (region-keyed watershed CF) overrides the country CF when enabled
+        # and present for this region; otherwise the legacy country AWARE row (bit-identical).
+        basin_row = basin_rows.get(region) if use_basin else None
+        if basin_row is not None:
+            scarcity_row = basin_row
+            annual_cf = _as_float(basin_row.get("annual_cf"), 1.0)
+        else:
+            scarcity_row = aware_rows.get(country_code, {})
+            annual_cf = _as_float(country_entry.get("direct_scarcity_cf"), 1.0)
         region_entry = water_config.setdefault("by_region", {}).setdefault(region, {})
         direct_map = region_entry.setdefault("direct_scarcity_cf_by_slot", {})
         indirect_map = region_entry.setdefault("indirect_scarcity_cf_by_slot", {})
 
         for slot, row in rows_by_slot.items():
             slot_month = _slot_month_from_row(row)
-            month_cf = _country_cf_for_month(aware_row, slot_month, annual_cf)
+            month_cf = _country_cf_for_month(scarcity_row, slot_month, annual_cf)
             direct_map.setdefault(slot, month_cf)
             indirect_map.setdefault(slot, month_cf)
 
@@ -265,6 +302,13 @@ def _hydrate_dataset_backed_defaults(water_config: Dict[str, Any], base_dir: Pat
     operational_scarcity_temporal_resolution = str(
         water_config.get("operational_scarcity_temporal_resolution", "monthly")
     ).strip().lower()
+    operational_scarcity_spatial_resolution = str(
+        water_config.get("operational_scarcity_spatial_resolution", "country")
+    ).strip().lower()
+    basin_rows = (
+        _load_region_rows(_resolve_data_path(data_sources.get("aware_basin_factors_csv"), base_dir))
+        if operational_scarcity_spatial_resolution == "basin" else {}
+    )
 
     grid_rows = _load_country_rows(_resolve_data_path(data_sources.get("grid_water_factors_csv"), base_dir))
     for country_code, row in grid_rows.items():
@@ -273,7 +317,8 @@ def _hydrate_dataset_backed_defaults(water_config: Dict[str, Any], base_dir: Pat
 
     region_wue_rows = _load_region_slot_rows(_resolve_data_path(data_sources.get("wue_region_slot_csv"), base_dir))
     if operational_scarcity_temporal_resolution == "monthly":
-        _apply_operational_scarcity_by_slot(water_config, aware_rows, region_wue_rows)
+        _apply_operational_scarcity_by_slot(water_config, aware_rows, region_wue_rows,
+                                            basin_rows, operational_scarcity_spatial_resolution)
     for region, rows_by_slot in region_wue_rows.items():
         region_entry = water_config.setdefault("by_region", {}).setdefault(region, {})
         slot_map = region_entry.setdefault("wue_by_slot", {})
@@ -283,7 +328,8 @@ def _hydrate_dataset_backed_defaults(water_config: Dict[str, Any], base_dir: Pat
 
     region_ewif_rows = _load_region_slot_rows(_resolve_data_path(data_sources.get("ewif_region_slot_csv"), base_dir))
     if operational_scarcity_temporal_resolution == "monthly":
-        _apply_operational_scarcity_by_slot(water_config, aware_rows, region_ewif_rows)
+        _apply_operational_scarcity_by_slot(water_config, aware_rows, region_ewif_rows,
+                                            basin_rows, operational_scarcity_spatial_resolution)
     for region, rows_by_slot in region_ewif_rows.items():
         region_entry = water_config.setdefault("by_region", {}).setdefault(region, {})
         slot_map = region_entry.setdefault("ewif_by_slot", {})

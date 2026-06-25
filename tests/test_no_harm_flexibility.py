@@ -12,8 +12,13 @@ if str(SERVER_PYTHON_ROOT) not in sys.path:
 from carbon_aware.no_harm_flexibility import (  # noqa: E402
     PilotConfig,
     build_action_signals,
+    build_greedy_schedule,
     load_flavours_for_pilot,
+    load_pods,
+    repair_schedule_no_harm,
     run_no_harm_flexibility_pilot,
+    schedule_totals,
+    _rematerialize_under_realized,
 )
 
 
@@ -69,3 +74,34 @@ def test_no_harm_flexibility_pilot_writes_certificate_and_improves_stress(tmp_pa
     assert flex["stress_kwh_avoided"] > 0.0
     assert flex["stress_kwh_avoided"] >= search_control["stress_kwh_avoided"] - 1e-12
     assert flex["weighted_stress_kwh"] <= search_control["weighted_stress_kwh"] + 1e-12
+
+
+def test_footprint_accounting_is_idle_consistent_after_repair(tmp_path: Path) -> None:
+    """Regression guard for the idle-attribution bug: node idle power must be charged exactly once
+    per active node-slot, even after the repair moves pods. We assert (a) re-materialization is
+    idempotent (the accounting has reached an occupancy-consistent fixed point, not stale per-pod
+    footprints that lose a node's idle when its idle-bearer moves), and (b) the certificate is sound
+    (the repaired+rematerialized flex never exceeds the packing baseline on carbon or scarcity)."""
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours = load_flavours_for_pilot(config)
+    signals = build_action_signals(flavours, config)
+    pods = load_pods(config.workloads_dir, max_pods=config.max_pods)
+
+    packing, _, _ = build_greedy_schedule(method_key="packing", pods=pods, flavours=flavours, config=config)
+    flex = repair_schedule_no_harm(
+        method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+        signals=signals, config=config, score_mode="flexibility",
+    )
+
+    _rematerialize_under_realized(flex, flavours, config)
+    t1 = schedule_totals(flex, signals)
+    _rematerialize_under_realized(flex, flavours, config)
+    t2 = schedule_totals(flex, signals)
+
+    # (a) idempotent => idle counted once per active node-slot (no stale per-pod idle to re-shuffle).
+    assert abs(t1["carbon_kg"] - t2["carbon_kg"]) < 1e-6
+    assert abs(t1["scarcity_water"] - t2["scarcity_water"]) < 1e-6
+    # (b) sound certificate on correct accounting: flex must not exceed the baseline on either axis.
+    base = schedule_totals(packing, signals)
+    assert t1["carbon_kg"] <= base["carbon_kg"] + 1e-6
+    assert t1["scarcity_water"] <= base["scarcity_water"] + 1e-6
