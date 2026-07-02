@@ -1,0 +1,1772 @@
+{
+  "DE": {
+    "zone": "DE",
+    "forecast": [
+      {
+        "datetime": "2022-08-01T00:00:00Z",
+        "carbonIntensity": 497.62
+      },
+      {
+        "datetime": "2022-08-01T01:00:00Z",
+        "carbonIntensity": 499.26
+      },
+      {
+        "datetime": "2022-08-01T02:00:00Z",
+        "carbonIntensity": 507.0
+      },
+      {
+        "datetime": "2022-08-01T03:00:00Z",
+        "carbonIntensity": 517.23
+      },
+      {
+        "datetime": "2022-08-01T04:00:00Z",
+        "carbonIntensity": 506.14
+      },
+      {
+        "datetime": "2022-08-01T05:00:00Z",
+        "carbonIntensity": 483.1
+      },
+      {
+        "datetime": "2022-08-01T06:00:00Z",
+        "carbonIntensity": 430.82
+      },
+      {
+        "datetime": "2022-08-01T07:00:00Z",
+        "carbonIntensity": 404.87
+      },
+      {
+        "datetime": "2022-08-01T08:00:00Z",
+        "carbonIntensity": 382.15
+      },
+      {
+        "datetime": "2022-08-01T09:00:00Z",
+        "carbonIntensity": 368.07
+      },
+      {
+        "datetime": "2022-08-01T10:00:00Z",
+        "carbonIntensity": 358.27
+      },
+      {
+        "datetime": "2022-08-01T11:00:00Z",
+        "carbonIntensity": 354.09
+      },
+      {
+        "datetime": "2022-08-01T12:00:00Z",
+        "carbonIntensity": 357.18
+      },
+      {
+        "datetime": "2022-08-01T13:00:00Z",
+        "carbonIntensity": 365.82
+      },
+      {
+        "datetime": "2022-08-01T14:00:00Z",
+        "carbonIntensity": 388.74
+      },
+      {
+        "datetime": "2022-08-01T15:00:00Z",
+        "carbonIntensity": 431.81
+      },
+      {
+        "datetime": "2022-08-01T16:00:00Z",
+        "carbonIntensity": 468.61
+      },
+      {
+        "datetime": "2022-08-01T17:00:00Z",
+        "carbonIntensity": 500.67
+      },
+      {
+        "datetime": "2022-08-01T18:00:00Z",
+        "carbonIntensity": 519.38
+      },
+      {
+        "datetime": "2022-08-01T19:00:00Z",
+        "carbonIntensity": 541.3
+      },
+      {
+        "datetime": "2022-08-01T20:00:00Z",
+        "carbonIntensity": 565.15
+      },
+      {
+        "datetime": "2022-08-01T21:00:00Z",
+        "carbonIntensity": 604.94
+      },
+      {
+        "datetime": "2022-08-01T22:00:00Z",
+        "carbonIntensity": 626.14
+      },
+      {
+        "datetime": "2022-08-01T23:00:00Z",
+        "carbonIntensity": 638.64
+      },
+      {
+        "datetime": "2022-08-02T00:00:00Z",
+        "carbonIntensity": 644.0
+      },
+      {
+        "datetime": "2022-08-02T01:00:00Z",
+        "carbonIntensity": 643.13
+      },
+      {
+        "datetime": "2022-08-02T02:00:00Z",
+        "carbonIntensity": 633.79
+      },
+      {
+        "datetime": "2022-08-02T03:00:00Z",
+        "carbonIntensity": 617.08
+      },
+      {
+        "datetime": "2022-08-02T04:00:00Z",
+        "carbonIntensity": 582.56
+      },
+      {
+        "datetime": "2022-08-02T05:00:00Z",
+        "carbonIntensity": 510.61
+      },
+      {
+        "datetime": "2022-08-02T06:00:00Z",
+        "carbonIntensity": 458.35
+      },
+      {
+        "datetime": "2022-08-02T07:00:00Z",
+        "carbonIntensity": 400.62
+      },
+      {
+        "datetime": "2022-08-02T08:00:00Z",
+        "carbonIntensity": 349.1
+      },
+      {
+        "datetime": "2022-08-02T09:00:00Z",
+        "carbonIntensity": 310.61
+      },
+      {
+        "datetime": "2022-08-02T10:00:00Z",
+        "carbonIntensity": 301.36
+      },
+      {
+        "datetime": "2022-08-02T11:00:00Z",
+        "carbonIntensity": 295.31
+      },
+      {
+        "datetime": "2022-08-02T12:00:00Z",
+        "carbonIntensity": 293.78
+      },
+      {
+        "datetime": "2022-08-02T13:00:00Z",
+        "carbonIntensity": 311.38
+      },
+      {
+        "datetime": "2022-08-02T14:00:00Z",
+        "carbonIntensity": 353.82
+      },
+      {
+        "datetime": "2022-08-02T15:00:00Z",
+        "carbonIntensity": 403.63
+      },
+      {
+        "datetime": "2022-08-02T16:00:00Z",
+        "carbonIntensity": 451.86
+      },
+      {
+        "datetime": "2022-08-02T17:00:00Z",
+        "carbonIntensity": 476.89
+      },
+      {
+        "datetime": "2022-08-02T18:00:00Z",
+        "carbonIntensity": 500.42
+      },
+      {
+        "datetime": "2022-08-02T19:00:00Z",
+        "carbonIntensity": 514.94
+      },
+      {
+        "datetime": "2022-08-02T20:00:00Z",
+        "carbonIntensity": 530.46
+      },
+      {
+        "datetime": "2022-08-02T21:00:00Z",
+        "carbonIntensity": 554.22
+      },
+      {
+        "datetime": "2022-08-02T22:00:00Z",
+        "carbonIntensity": 572.54
+      },
+      {
+        "datetime": "2022-08-02T23:00:00Z",
+        "carbonIntensity": 566.88
+      },
+      {
+        "datetime": "2022-08-03T00:00:00Z",
+        "carbonIntensity": 562.03
+      },
+      {
+        "datetime": "2022-08-03T01:00:00Z",
+        "carbonIntensity": 553.68
+      },
+      {
+        "datetime": "2022-08-03T02:00:00Z",
+        "carbonIntensity": 543.22
+      },
+      {
+        "datetime": "2022-08-03T03:00:00Z",
+        "carbonIntensity": 527.91
+      },
+      {
+        "datetime": "2022-08-03T04:00:00Z",
+        "carbonIntensity": 501.56
+      },
+      {
+        "datetime": "2022-08-03T05:00:00Z",
+        "carbonIntensity": 459.54
+      },
+      {
+        "datetime": "2022-08-03T06:00:00Z",
+        "carbonIntensity": 415.99
+      },
+      {
+        "datetime": "2022-08-03T07:00:00Z",
+        "carbonIntensity": 381.02
+      },
+      {
+        "datetime": "2022-08-03T08:00:00Z",
+        "carbonIntensity": 346.19
+      },
+      {
+        "datetime": "2022-08-03T09:00:00Z",
+        "carbonIntensity": 317.51
+      },
+      {
+        "datetime": "2022-08-03T10:00:00Z",
+        "carbonIntensity": 299.68
+      },
+      {
+        "datetime": "2022-08-03T11:00:00Z",
+        "carbonIntensity": 295.01
+      },
+      {
+        "datetime": "2022-08-03T12:00:00Z",
+        "carbonIntensity": 306.19
+      },
+      {
+        "datetime": "2022-08-03T13:00:00Z",
+        "carbonIntensity": 328.02
+      },
+      {
+        "datetime": "2022-08-03T14:00:00Z",
+        "carbonIntensity": 365.9
+      },
+      {
+        "datetime": "2022-08-03T15:00:00Z",
+        "carbonIntensity": 405.08
+      },
+      {
+        "datetime": "2022-08-03T16:00:00Z",
+        "carbonIntensity": 454.37
+      },
+      {
+        "datetime": "2022-08-03T17:00:00Z",
+        "carbonIntensity": 484.76
+      },
+      {
+        "datetime": "2022-08-03T18:00:00Z",
+        "carbonIntensity": 523.63
+      },
+      {
+        "datetime": "2022-08-03T19:00:00Z",
+        "carbonIntensity": 538.26
+      },
+      {
+        "datetime": "2022-08-03T20:00:00Z",
+        "carbonIntensity": 567.95
+      },
+      {
+        "datetime": "2022-08-03T21:00:00Z",
+        "carbonIntensity": 596.55
+      },
+      {
+        "datetime": "2022-08-03T22:00:00Z",
+        "carbonIntensity": 612.59
+      },
+      {
+        "datetime": "2022-08-03T23:00:00Z",
+        "carbonIntensity": 597.91
+      }
+    ],
+    "ci_model": "energy_charts_generation_mix_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2022-08-01T00:00:00Z"
+  },
+  "FR": {
+    "zone": "FR",
+    "forecast": [
+      {
+        "datetime": "2022-08-01T00:00:00Z",
+        "carbonIntensity": 80.14
+      },
+      {
+        "datetime": "2022-08-01T01:00:00Z",
+        "carbonIntensity": 82.06
+      },
+      {
+        "datetime": "2022-08-01T02:00:00Z",
+        "carbonIntensity": 80.8
+      },
+      {
+        "datetime": "2022-08-01T03:00:00Z",
+        "carbonIntensity": 79.73
+      },
+      {
+        "datetime": "2022-08-01T04:00:00Z",
+        "carbonIntensity": 79.4
+      },
+      {
+        "datetime": "2022-08-01T05:00:00Z",
+        "carbonIntensity": 75.41
+      },
+      {
+        "datetime": "2022-08-01T06:00:00Z",
+        "carbonIntensity": 75.83
+      },
+      {
+        "datetime": "2022-08-01T07:00:00Z",
+        "carbonIntensity": 71.86
+      },
+      {
+        "datetime": "2022-08-01T08:00:00Z",
+        "carbonIntensity": 71.38
+      },
+      {
+        "datetime": "2022-08-01T09:00:00Z",
+        "carbonIntensity": 69.51
+      },
+      {
+        "datetime": "2022-08-01T10:00:00Z",
+        "carbonIntensity": 68.75
+      },
+      {
+        "datetime": "2022-08-01T11:00:00Z",
+        "carbonIntensity": 70.61
+      },
+      {
+        "datetime": "2022-08-01T12:00:00Z",
+        "carbonIntensity": 69.32
+      },
+      {
+        "datetime": "2022-08-01T13:00:00Z",
+        "carbonIntensity": 68.82
+      },
+      {
+        "datetime": "2022-08-01T14:00:00Z",
+        "carbonIntensity": 69.4
+      },
+      {
+        "datetime": "2022-08-01T15:00:00Z",
+        "carbonIntensity": 69.51
+      },
+      {
+        "datetime": "2022-08-01T16:00:00Z",
+        "carbonIntensity": 69.41
+      },
+      {
+        "datetime": "2022-08-01T17:00:00Z",
+        "carbonIntensity": 71.59
+      },
+      {
+        "datetime": "2022-08-01T18:00:00Z",
+        "carbonIntensity": 73.47
+      },
+      {
+        "datetime": "2022-08-01T19:00:00Z",
+        "carbonIntensity": 74.5
+      },
+      {
+        "datetime": "2022-08-01T20:00:00Z",
+        "carbonIntensity": 73.58
+      },
+      {
+        "datetime": "2022-08-01T21:00:00Z",
+        "carbonIntensity": 72.96
+      },
+      {
+        "datetime": "2022-08-01T22:00:00Z",
+        "carbonIntensity": 73.43
+      },
+      {
+        "datetime": "2022-08-01T23:00:00Z",
+        "carbonIntensity": 74.5
+      },
+      {
+        "datetime": "2022-08-02T00:00:00Z",
+        "carbonIntensity": 76.05
+      },
+      {
+        "datetime": "2022-08-02T01:00:00Z",
+        "carbonIntensity": 78.19
+      },
+      {
+        "datetime": "2022-08-02T02:00:00Z",
+        "carbonIntensity": 78.17
+      },
+      {
+        "datetime": "2022-08-02T03:00:00Z",
+        "carbonIntensity": 70.32
+      },
+      {
+        "datetime": "2022-08-02T04:00:00Z",
+        "carbonIntensity": 69.67
+      },
+      {
+        "datetime": "2022-08-02T05:00:00Z",
+        "carbonIntensity": 68.11
+      },
+      {
+        "datetime": "2022-08-02T06:00:00Z",
+        "carbonIntensity": 69.04
+      },
+      {
+        "datetime": "2022-08-02T07:00:00Z",
+        "carbonIntensity": 67.23
+      },
+      {
+        "datetime": "2022-08-02T08:00:00Z",
+        "carbonIntensity": 61.55
+      },
+      {
+        "datetime": "2022-08-02T09:00:00Z",
+        "carbonIntensity": 60.97
+      },
+      {
+        "datetime": "2022-08-02T10:00:00Z",
+        "carbonIntensity": 64.79
+      },
+      {
+        "datetime": "2022-08-02T11:00:00Z",
+        "carbonIntensity": 62.29
+      },
+      {
+        "datetime": "2022-08-02T12:00:00Z",
+        "carbonIntensity": 66.75
+      },
+      {
+        "datetime": "2022-08-02T13:00:00Z",
+        "carbonIntensity": 68.44
+      },
+      {
+        "datetime": "2022-08-02T14:00:00Z",
+        "carbonIntensity": 67.88
+      },
+      {
+        "datetime": "2022-08-02T15:00:00Z",
+        "carbonIntensity": 67.68
+      },
+      {
+        "datetime": "2022-08-02T16:00:00Z",
+        "carbonIntensity": 67.95
+      },
+      {
+        "datetime": "2022-08-02T17:00:00Z",
+        "carbonIntensity": 68.65
+      },
+      {
+        "datetime": "2022-08-02T18:00:00Z",
+        "carbonIntensity": 69.92
+      },
+      {
+        "datetime": "2022-08-02T19:00:00Z",
+        "carbonIntensity": 72.19
+      },
+      {
+        "datetime": "2022-08-02T20:00:00Z",
+        "carbonIntensity": 72.4
+      },
+      {
+        "datetime": "2022-08-02T21:00:00Z",
+        "carbonIntensity": 72.92
+      },
+      {
+        "datetime": "2022-08-02T22:00:00Z",
+        "carbonIntensity": 71.68
+      },
+      {
+        "datetime": "2022-08-02T23:00:00Z",
+        "carbonIntensity": 72.08
+      },
+      {
+        "datetime": "2022-08-03T00:00:00Z",
+        "carbonIntensity": 72.88
+      },
+      {
+        "datetime": "2022-08-03T01:00:00Z",
+        "carbonIntensity": 72.49
+      },
+      {
+        "datetime": "2022-08-03T02:00:00Z",
+        "carbonIntensity": 72.7
+      },
+      {
+        "datetime": "2022-08-03T03:00:00Z",
+        "carbonIntensity": 73.01
+      },
+      {
+        "datetime": "2022-08-03T04:00:00Z",
+        "carbonIntensity": 71.54
+      },
+      {
+        "datetime": "2022-08-03T05:00:00Z",
+        "carbonIntensity": 71.05
+      },
+      {
+        "datetime": "2022-08-03T06:00:00Z",
+        "carbonIntensity": 71.48
+      },
+      {
+        "datetime": "2022-08-03T07:00:00Z",
+        "carbonIntensity": 69.78
+      },
+      {
+        "datetime": "2022-08-03T08:00:00Z",
+        "carbonIntensity": 69.0
+      },
+      {
+        "datetime": "2022-08-03T09:00:00Z",
+        "carbonIntensity": 67.98
+      },
+      {
+        "datetime": "2022-08-03T10:00:00Z",
+        "carbonIntensity": 66.76
+      },
+      {
+        "datetime": "2022-08-03T11:00:00Z",
+        "carbonIntensity": 65.66
+      },
+      {
+        "datetime": "2022-08-03T12:00:00Z",
+        "carbonIntensity": 68.49
+      },
+      {
+        "datetime": "2022-08-03T13:00:00Z",
+        "carbonIntensity": 69.98
+      },
+      {
+        "datetime": "2022-08-03T14:00:00Z",
+        "carbonIntensity": 70.54
+      },
+      {
+        "datetime": "2022-08-03T15:00:00Z",
+        "carbonIntensity": 70.01
+      },
+      {
+        "datetime": "2022-08-03T16:00:00Z",
+        "carbonIntensity": 70.0
+      },
+      {
+        "datetime": "2022-08-03T17:00:00Z",
+        "carbonIntensity": 72.38
+      },
+      {
+        "datetime": "2022-08-03T18:00:00Z",
+        "carbonIntensity": 74.76
+      },
+      {
+        "datetime": "2022-08-03T19:00:00Z",
+        "carbonIntensity": 75.81
+      },
+      {
+        "datetime": "2022-08-03T20:00:00Z",
+        "carbonIntensity": 76.19
+      },
+      {
+        "datetime": "2022-08-03T21:00:00Z",
+        "carbonIntensity": 74.22
+      },
+      {
+        "datetime": "2022-08-03T22:00:00Z",
+        "carbonIntensity": 74.0
+      },
+      {
+        "datetime": "2022-08-03T23:00:00Z",
+        "carbonIntensity": 74.12
+      }
+    ],
+    "ci_model": "energy_charts_generation_mix_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2022-08-01T00:00:00Z"
+  },
+  "ES": {
+    "zone": "ES",
+    "forecast": [
+      {
+        "datetime": "2022-08-01T00:00:00Z",
+        "carbonIntensity": 237.3
+      },
+      {
+        "datetime": "2022-08-01T01:00:00Z",
+        "carbonIntensity": 240.88
+      },
+      {
+        "datetime": "2022-08-01T02:00:00Z",
+        "carbonIntensity": 242.65
+      },
+      {
+        "datetime": "2022-08-01T03:00:00Z",
+        "carbonIntensity": 248.45
+      },
+      {
+        "datetime": "2022-08-01T04:00:00Z",
+        "carbonIntensity": 255.29
+      },
+      {
+        "datetime": "2022-08-01T05:00:00Z",
+        "carbonIntensity": 268.48
+      },
+      {
+        "datetime": "2022-08-01T06:00:00Z",
+        "carbonIntensity": 275.19
+      },
+      {
+        "datetime": "2022-08-01T07:00:00Z",
+        "carbonIntensity": 256.95
+      },
+      {
+        "datetime": "2022-08-01T08:00:00Z",
+        "carbonIntensity": 229.58
+      },
+      {
+        "datetime": "2022-08-01T09:00:00Z",
+        "carbonIntensity": 224.49
+      },
+      {
+        "datetime": "2022-08-01T10:00:00Z",
+        "carbonIntensity": 221.18
+      },
+      {
+        "datetime": "2022-08-01T11:00:00Z",
+        "carbonIntensity": 218.31
+      },
+      {
+        "datetime": "2022-08-01T12:00:00Z",
+        "carbonIntensity": 214.49
+      },
+      {
+        "datetime": "2022-08-01T13:00:00Z",
+        "carbonIntensity": 215.87
+      },
+      {
+        "datetime": "2022-08-01T14:00:00Z",
+        "carbonIntensity": 215.01
+      },
+      {
+        "datetime": "2022-08-01T15:00:00Z",
+        "carbonIntensity": 216.02
+      },
+      {
+        "datetime": "2022-08-01T16:00:00Z",
+        "carbonIntensity": 219.17
+      },
+      {
+        "datetime": "2022-08-01T17:00:00Z",
+        "carbonIntensity": 224.96
+      },
+      {
+        "datetime": "2022-08-01T18:00:00Z",
+        "carbonIntensity": 241.94
+      },
+      {
+        "datetime": "2022-08-01T19:00:00Z",
+        "carbonIntensity": 258.68
+      },
+      {
+        "datetime": "2022-08-01T20:00:00Z",
+        "carbonIntensity": 261.27
+      },
+      {
+        "datetime": "2022-08-01T21:00:00Z",
+        "carbonIntensity": 256.27
+      },
+      {
+        "datetime": "2022-08-01T22:00:00Z",
+        "carbonIntensity": 251.68
+      },
+      {
+        "datetime": "2022-08-01T23:00:00Z",
+        "carbonIntensity": 257.4
+      },
+      {
+        "datetime": "2022-08-02T00:00:00Z",
+        "carbonIntensity": 258.1
+      },
+      {
+        "datetime": "2022-08-02T01:00:00Z",
+        "carbonIntensity": 264.61
+      },
+      {
+        "datetime": "2022-08-02T02:00:00Z",
+        "carbonIntensity": 270.01
+      },
+      {
+        "datetime": "2022-08-02T03:00:00Z",
+        "carbonIntensity": 280.21
+      },
+      {
+        "datetime": "2022-08-02T04:00:00Z",
+        "carbonIntensity": 288.28
+      },
+      {
+        "datetime": "2022-08-02T05:00:00Z",
+        "carbonIntensity": 297.08
+      },
+      {
+        "datetime": "2022-08-02T06:00:00Z",
+        "carbonIntensity": 291.24
+      },
+      {
+        "datetime": "2022-08-02T07:00:00Z",
+        "carbonIntensity": 264.11
+      },
+      {
+        "datetime": "2022-08-02T08:00:00Z",
+        "carbonIntensity": 246.45
+      },
+      {
+        "datetime": "2022-08-02T09:00:00Z",
+        "carbonIntensity": 236.74
+      },
+      {
+        "datetime": "2022-08-02T10:00:00Z",
+        "carbonIntensity": 232.79
+      },
+      {
+        "datetime": "2022-08-02T11:00:00Z",
+        "carbonIntensity": 231.91
+      },
+      {
+        "datetime": "2022-08-02T12:00:00Z",
+        "carbonIntensity": 228.1
+      },
+      {
+        "datetime": "2022-08-02T13:00:00Z",
+        "carbonIntensity": 228.81
+      },
+      {
+        "datetime": "2022-08-02T14:00:00Z",
+        "carbonIntensity": 227.03
+      },
+      {
+        "datetime": "2022-08-02T15:00:00Z",
+        "carbonIntensity": 229.98
+      },
+      {
+        "datetime": "2022-08-02T16:00:00Z",
+        "carbonIntensity": 236.17
+      },
+      {
+        "datetime": "2022-08-02T17:00:00Z",
+        "carbonIntensity": 244.93
+      },
+      {
+        "datetime": "2022-08-02T18:00:00Z",
+        "carbonIntensity": 262.62
+      },
+      {
+        "datetime": "2022-08-02T19:00:00Z",
+        "carbonIntensity": 276.99
+      },
+      {
+        "datetime": "2022-08-02T20:00:00Z",
+        "carbonIntensity": 280.7
+      },
+      {
+        "datetime": "2022-08-02T21:00:00Z",
+        "carbonIntensity": 277.6
+      },
+      {
+        "datetime": "2022-08-02T22:00:00Z",
+        "carbonIntensity": 275.24
+      },
+      {
+        "datetime": "2022-08-02T23:00:00Z",
+        "carbonIntensity": 270.76
+      },
+      {
+        "datetime": "2022-08-03T00:00:00Z",
+        "carbonIntensity": 268.72
+      },
+      {
+        "datetime": "2022-08-03T01:00:00Z",
+        "carbonIntensity": 275.93
+      },
+      {
+        "datetime": "2022-08-03T02:00:00Z",
+        "carbonIntensity": 274.43
+      },
+      {
+        "datetime": "2022-08-03T03:00:00Z",
+        "carbonIntensity": 273.19
+      },
+      {
+        "datetime": "2022-08-03T04:00:00Z",
+        "carbonIntensity": 277.09
+      },
+      {
+        "datetime": "2022-08-03T05:00:00Z",
+        "carbonIntensity": 287.36
+      },
+      {
+        "datetime": "2022-08-03T06:00:00Z",
+        "carbonIntensity": 282.05
+      },
+      {
+        "datetime": "2022-08-03T07:00:00Z",
+        "carbonIntensity": 257.06
+      },
+      {
+        "datetime": "2022-08-03T08:00:00Z",
+        "carbonIntensity": 233.69
+      },
+      {
+        "datetime": "2022-08-03T09:00:00Z",
+        "carbonIntensity": 219.94
+      },
+      {
+        "datetime": "2022-08-03T10:00:00Z",
+        "carbonIntensity": 223.37
+      },
+      {
+        "datetime": "2022-08-03T11:00:00Z",
+        "carbonIntensity": 224.2
+      },
+      {
+        "datetime": "2022-08-03T12:00:00Z",
+        "carbonIntensity": 217.48
+      },
+      {
+        "datetime": "2022-08-03T13:00:00Z",
+        "carbonIntensity": 213.13
+      },
+      {
+        "datetime": "2022-08-03T14:00:00Z",
+        "carbonIntensity": 219.39
+      },
+      {
+        "datetime": "2022-08-03T15:00:00Z",
+        "carbonIntensity": 214.28
+      },
+      {
+        "datetime": "2022-08-03T16:00:00Z",
+        "carbonIntensity": 215.17
+      },
+      {
+        "datetime": "2022-08-03T17:00:00Z",
+        "carbonIntensity": 215.02
+      },
+      {
+        "datetime": "2022-08-03T18:00:00Z",
+        "carbonIntensity": 234.49
+      },
+      {
+        "datetime": "2022-08-03T19:00:00Z",
+        "carbonIntensity": 257.03
+      },
+      {
+        "datetime": "2022-08-03T20:00:00Z",
+        "carbonIntensity": 256.78
+      },
+      {
+        "datetime": "2022-08-03T21:00:00Z",
+        "carbonIntensity": 252.12
+      },
+      {
+        "datetime": "2022-08-03T22:00:00Z",
+        "carbonIntensity": 243.31
+      },
+      {
+        "datetime": "2022-08-03T23:00:00Z",
+        "carbonIntensity": 243.51
+      }
+    ],
+    "ci_model": "energy_charts_generation_mix_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2022-08-01T00:00:00Z"
+  },
+  "IT-NO": {
+    "zone": "IT-NO",
+    "forecast": [
+      {
+        "datetime": "2022-08-01T00:00:00Z",
+        "carbonIntensity": 439.88
+      },
+      {
+        "datetime": "2022-08-01T01:00:00Z",
+        "carbonIntensity": 437.77
+      },
+      {
+        "datetime": "2022-08-01T02:00:00Z",
+        "carbonIntensity": 435.37
+      },
+      {
+        "datetime": "2022-08-01T03:00:00Z",
+        "carbonIntensity": 440.92
+      },
+      {
+        "datetime": "2022-08-01T04:00:00Z",
+        "carbonIntensity": 451.88
+      },
+      {
+        "datetime": "2022-08-01T05:00:00Z",
+        "carbonIntensity": 433.76
+      },
+      {
+        "datetime": "2022-08-01T06:00:00Z",
+        "carbonIntensity": 382.76
+      },
+      {
+        "datetime": "2022-08-01T07:00:00Z",
+        "carbonIntensity": 361.03
+      },
+      {
+        "datetime": "2022-08-01T08:00:00Z",
+        "carbonIntensity": 347.96
+      },
+      {
+        "datetime": "2022-08-01T09:00:00Z",
+        "carbonIntensity": 334.42
+      },
+      {
+        "datetime": "2022-08-01T10:00:00Z",
+        "carbonIntensity": 325.29
+      },
+      {
+        "datetime": "2022-08-01T11:00:00Z",
+        "carbonIntensity": 319.81
+      },
+      {
+        "datetime": "2022-08-01T12:00:00Z",
+        "carbonIntensity": 319.19
+      },
+      {
+        "datetime": "2022-08-01T13:00:00Z",
+        "carbonIntensity": 327.54
+      },
+      {
+        "datetime": "2022-08-01T14:00:00Z",
+        "carbonIntensity": 339.22
+      },
+      {
+        "datetime": "2022-08-01T15:00:00Z",
+        "carbonIntensity": 353.21
+      },
+      {
+        "datetime": "2022-08-01T16:00:00Z",
+        "carbonIntensity": 365.08
+      },
+      {
+        "datetime": "2022-08-01T17:00:00Z",
+        "carbonIntensity": 386.13
+      },
+      {
+        "datetime": "2022-08-01T18:00:00Z",
+        "carbonIntensity": 411.52
+      },
+      {
+        "datetime": "2022-08-01T19:00:00Z",
+        "carbonIntensity": 429.91
+      },
+      {
+        "datetime": "2022-08-01T20:00:00Z",
+        "carbonIntensity": 442.56
+      },
+      {
+        "datetime": "2022-08-01T21:00:00Z",
+        "carbonIntensity": 449.98
+      },
+      {
+        "datetime": "2022-08-01T22:00:00Z",
+        "carbonIntensity": 458.3
+      },
+      {
+        "datetime": "2022-08-01T23:00:00Z",
+        "carbonIntensity": 455.02
+      },
+      {
+        "datetime": "2022-08-02T00:00:00Z",
+        "carbonIntensity": 454.67
+      },
+      {
+        "datetime": "2022-08-02T01:00:00Z",
+        "carbonIntensity": 458.55
+      },
+      {
+        "datetime": "2022-08-02T02:00:00Z",
+        "carbonIntensity": 463.82
+      },
+      {
+        "datetime": "2022-08-02T03:00:00Z",
+        "carbonIntensity": 465.59
+      },
+      {
+        "datetime": "2022-08-02T04:00:00Z",
+        "carbonIntensity": 452.01
+      },
+      {
+        "datetime": "2022-08-02T05:00:00Z",
+        "carbonIntensity": 417.51
+      },
+      {
+        "datetime": "2022-08-02T06:00:00Z",
+        "carbonIntensity": 374.49
+      },
+      {
+        "datetime": "2022-08-02T07:00:00Z",
+        "carbonIntensity": 358.32
+      },
+      {
+        "datetime": "2022-08-02T08:00:00Z",
+        "carbonIntensity": 355.71
+      },
+      {
+        "datetime": "2022-08-02T09:00:00Z",
+        "carbonIntensity": 352.9
+      },
+      {
+        "datetime": "2022-08-02T10:00:00Z",
+        "carbonIntensity": 349.79
+      },
+      {
+        "datetime": "2022-08-02T11:00:00Z",
+        "carbonIntensity": 341.62
+      },
+      {
+        "datetime": "2022-08-02T12:00:00Z",
+        "carbonIntensity": 338.77
+      },
+      {
+        "datetime": "2022-08-02T13:00:00Z",
+        "carbonIntensity": 341.41
+      },
+      {
+        "datetime": "2022-08-02T14:00:00Z",
+        "carbonIntensity": 353.24
+      },
+      {
+        "datetime": "2022-08-02T15:00:00Z",
+        "carbonIntensity": 368.37
+      },
+      {
+        "datetime": "2022-08-02T16:00:00Z",
+        "carbonIntensity": 378.31
+      },
+      {
+        "datetime": "2022-08-02T17:00:00Z",
+        "carbonIntensity": 378.71
+      },
+      {
+        "datetime": "2022-08-02T18:00:00Z",
+        "carbonIntensity": 397.32
+      },
+      {
+        "datetime": "2022-08-02T19:00:00Z",
+        "carbonIntensity": 412.48
+      },
+      {
+        "datetime": "2022-08-02T20:00:00Z",
+        "carbonIntensity": 438.58
+      },
+      {
+        "datetime": "2022-08-02T21:00:00Z",
+        "carbonIntensity": 452.01
+      },
+      {
+        "datetime": "2022-08-02T22:00:00Z",
+        "carbonIntensity": 458.61
+      },
+      {
+        "datetime": "2022-08-02T23:00:00Z",
+        "carbonIntensity": 452.92
+      },
+      {
+        "datetime": "2022-08-03T00:00:00Z",
+        "carbonIntensity": 450.73
+      },
+      {
+        "datetime": "2022-08-03T01:00:00Z",
+        "carbonIntensity": 446.31
+      },
+      {
+        "datetime": "2022-08-03T02:00:00Z",
+        "carbonIntensity": 444.93
+      },
+      {
+        "datetime": "2022-08-03T03:00:00Z",
+        "carbonIntensity": 448.37
+      },
+      {
+        "datetime": "2022-08-03T04:00:00Z",
+        "carbonIntensity": 450.53
+      },
+      {
+        "datetime": "2022-08-03T05:00:00Z",
+        "carbonIntensity": 421.1
+      },
+      {
+        "datetime": "2022-08-03T06:00:00Z",
+        "carbonIntensity": 372.81
+      },
+      {
+        "datetime": "2022-08-03T07:00:00Z",
+        "carbonIntensity": 361.17
+      },
+      {
+        "datetime": "2022-08-03T08:00:00Z",
+        "carbonIntensity": 355.18
+      },
+      {
+        "datetime": "2022-08-03T09:00:00Z",
+        "carbonIntensity": 351.36
+      },
+      {
+        "datetime": "2022-08-03T10:00:00Z",
+        "carbonIntensity": 348.79
+      },
+      {
+        "datetime": "2022-08-03T11:00:00Z",
+        "carbonIntensity": 345.12
+      },
+      {
+        "datetime": "2022-08-03T12:00:00Z",
+        "carbonIntensity": 348.68
+      },
+      {
+        "datetime": "2022-08-03T13:00:00Z",
+        "carbonIntensity": 354.93
+      },
+      {
+        "datetime": "2022-08-03T14:00:00Z",
+        "carbonIntensity": 367.72
+      },
+      {
+        "datetime": "2022-08-03T15:00:00Z",
+        "carbonIntensity": 372.75
+      },
+      {
+        "datetime": "2022-08-03T16:00:00Z",
+        "carbonIntensity": 378.05
+      },
+      {
+        "datetime": "2022-08-03T17:00:00Z",
+        "carbonIntensity": 378.35
+      },
+      {
+        "datetime": "2022-08-03T18:00:00Z",
+        "carbonIntensity": 387.27
+      },
+      {
+        "datetime": "2022-08-03T19:00:00Z",
+        "carbonIntensity": 408.66
+      },
+      {
+        "datetime": "2022-08-03T20:00:00Z",
+        "carbonIntensity": 425.39
+      },
+      {
+        "datetime": "2022-08-03T21:00:00Z",
+        "carbonIntensity": 438.44
+      },
+      {
+        "datetime": "2022-08-03T22:00:00Z",
+        "carbonIntensity": 474.59
+      },
+      {
+        "datetime": "2022-08-03T23:00:00Z",
+        "carbonIntensity": 479.37
+      }
+    ],
+    "ci_model": "energy_charts_generation_mix_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2022-08-01T00:00:00Z"
+  },
+  "SE": {
+    "zone": "SE",
+    "forecast": [
+      {
+        "datetime": "2022-08-01T00:00:00Z",
+        "carbonIntensity": 34.62
+      },
+      {
+        "datetime": "2022-08-01T01:00:00Z",
+        "carbonIntensity": 35.12
+      },
+      {
+        "datetime": "2022-08-01T02:00:00Z",
+        "carbonIntensity": 35.47
+      },
+      {
+        "datetime": "2022-08-01T03:00:00Z",
+        "carbonIntensity": 35.42
+      },
+      {
+        "datetime": "2022-08-01T04:00:00Z",
+        "carbonIntensity": 35.37
+      },
+      {
+        "datetime": "2022-08-01T05:00:00Z",
+        "carbonIntensity": 35.71
+      },
+      {
+        "datetime": "2022-08-01T06:00:00Z",
+        "carbonIntensity": 36.4
+      },
+      {
+        "datetime": "2022-08-01T07:00:00Z",
+        "carbonIntensity": 36.97
+      },
+      {
+        "datetime": "2022-08-01T08:00:00Z",
+        "carbonIntensity": 37.41
+      },
+      {
+        "datetime": "2022-08-01T09:00:00Z",
+        "carbonIntensity": 37.85
+      },
+      {
+        "datetime": "2022-08-01T10:00:00Z",
+        "carbonIntensity": 37.2
+      },
+      {
+        "datetime": "2022-08-01T11:00:00Z",
+        "carbonIntensity": 37.09
+      },
+      {
+        "datetime": "2022-08-01T12:00:00Z",
+        "carbonIntensity": 36.47
+      },
+      {
+        "datetime": "2022-08-01T13:00:00Z",
+        "carbonIntensity": 36.34
+      },
+      {
+        "datetime": "2022-08-01T14:00:00Z",
+        "carbonIntensity": 35.42
+      },
+      {
+        "datetime": "2022-08-01T15:00:00Z",
+        "carbonIntensity": 34.69
+      },
+      {
+        "datetime": "2022-08-01T16:00:00Z",
+        "carbonIntensity": 33.53
+      },
+      {
+        "datetime": "2022-08-01T17:00:00Z",
+        "carbonIntensity": 32.94
+      },
+      {
+        "datetime": "2022-08-01T18:00:00Z",
+        "carbonIntensity": 32.6
+      },
+      {
+        "datetime": "2022-08-01T19:00:00Z",
+        "carbonIntensity": 31.09
+      },
+      {
+        "datetime": "2022-08-01T20:00:00Z",
+        "carbonIntensity": 30.77
+      },
+      {
+        "datetime": "2022-08-01T21:00:00Z",
+        "carbonIntensity": 30.7
+      },
+      {
+        "datetime": "2022-08-01T22:00:00Z",
+        "carbonIntensity": 29.37
+      },
+      {
+        "datetime": "2022-08-01T23:00:00Z",
+        "carbonIntensity": 29.5
+      },
+      {
+        "datetime": "2022-08-02T00:00:00Z",
+        "carbonIntensity": 29.41
+      },
+      {
+        "datetime": "2022-08-02T01:00:00Z",
+        "carbonIntensity": 29.83
+      },
+      {
+        "datetime": "2022-08-02T02:00:00Z",
+        "carbonIntensity": 29.82
+      },
+      {
+        "datetime": "2022-08-02T03:00:00Z",
+        "carbonIntensity": 29.93
+      },
+      {
+        "datetime": "2022-08-02T04:00:00Z",
+        "carbonIntensity": 30.85
+      },
+      {
+        "datetime": "2022-08-02T05:00:00Z",
+        "carbonIntensity": 31.86
+      },
+      {
+        "datetime": "2022-08-02T06:00:00Z",
+        "carbonIntensity": 33.73
+      },
+      {
+        "datetime": "2022-08-02T07:00:00Z",
+        "carbonIntensity": 34.97
+      },
+      {
+        "datetime": "2022-08-02T08:00:00Z",
+        "carbonIntensity": 36.15
+      },
+      {
+        "datetime": "2022-08-02T09:00:00Z",
+        "carbonIntensity": 35.42
+      },
+      {
+        "datetime": "2022-08-02T10:00:00Z",
+        "carbonIntensity": 35.07
+      },
+      {
+        "datetime": "2022-08-02T11:00:00Z",
+        "carbonIntensity": 34.82
+      },
+      {
+        "datetime": "2022-08-02T12:00:00Z",
+        "carbonIntensity": 33.79
+      },
+      {
+        "datetime": "2022-08-02T13:00:00Z",
+        "carbonIntensity": 32.01
+      },
+      {
+        "datetime": "2022-08-02T14:00:00Z",
+        "carbonIntensity": 31.17
+      },
+      {
+        "datetime": "2022-08-02T15:00:00Z",
+        "carbonIntensity": 30.22
+      },
+      {
+        "datetime": "2022-08-02T16:00:00Z",
+        "carbonIntensity": 30.1
+      },
+      {
+        "datetime": "2022-08-02T17:00:00Z",
+        "carbonIntensity": 29.33
+      },
+      {
+        "datetime": "2022-08-02T18:00:00Z",
+        "carbonIntensity": 28.77
+      },
+      {
+        "datetime": "2022-08-02T19:00:00Z",
+        "carbonIntensity": 28.34
+      },
+      {
+        "datetime": "2022-08-02T20:00:00Z",
+        "carbonIntensity": 28.0
+      },
+      {
+        "datetime": "2022-08-02T21:00:00Z",
+        "carbonIntensity": 28.5
+      },
+      {
+        "datetime": "2022-08-02T22:00:00Z",
+        "carbonIntensity": 28.66
+      },
+      {
+        "datetime": "2022-08-02T23:00:00Z",
+        "carbonIntensity": 29.19
+      },
+      {
+        "datetime": "2022-08-03T00:00:00Z",
+        "carbonIntensity": 29.14
+      },
+      {
+        "datetime": "2022-08-03T01:00:00Z",
+        "carbonIntensity": 29.36
+      },
+      {
+        "datetime": "2022-08-03T02:00:00Z",
+        "carbonIntensity": 29.94
+      },
+      {
+        "datetime": "2022-08-03T03:00:00Z",
+        "carbonIntensity": 29.94
+      },
+      {
+        "datetime": "2022-08-03T04:00:00Z",
+        "carbonIntensity": 31.86
+      },
+      {
+        "datetime": "2022-08-03T05:00:00Z",
+        "carbonIntensity": 32.28
+      },
+      {
+        "datetime": "2022-08-03T06:00:00Z",
+        "carbonIntensity": 32.88
+      },
+      {
+        "datetime": "2022-08-03T07:00:00Z",
+        "carbonIntensity": 33.42
+      },
+      {
+        "datetime": "2022-08-03T08:00:00Z",
+        "carbonIntensity": 33.53
+      },
+      {
+        "datetime": "2022-08-03T09:00:00Z",
+        "carbonIntensity": 33.54
+      },
+      {
+        "datetime": "2022-08-03T10:00:00Z",
+        "carbonIntensity": 34.21
+      },
+      {
+        "datetime": "2022-08-03T11:00:00Z",
+        "carbonIntensity": 33.45
+      },
+      {
+        "datetime": "2022-08-03T12:00:00Z",
+        "carbonIntensity": 32.05
+      },
+      {
+        "datetime": "2022-08-03T13:00:00Z",
+        "carbonIntensity": 31.59
+      },
+      {
+        "datetime": "2022-08-03T14:00:00Z",
+        "carbonIntensity": 30.94
+      },
+      {
+        "datetime": "2022-08-03T15:00:00Z",
+        "carbonIntensity": 29.58
+      },
+      {
+        "datetime": "2022-08-03T16:00:00Z",
+        "carbonIntensity": 28.86
+      },
+      {
+        "datetime": "2022-08-03T17:00:00Z",
+        "carbonIntensity": 28.54
+      },
+      {
+        "datetime": "2022-08-03T18:00:00Z",
+        "carbonIntensity": 27.64
+      },
+      {
+        "datetime": "2022-08-03T19:00:00Z",
+        "carbonIntensity": 27.73
+      },
+      {
+        "datetime": "2022-08-03T20:00:00Z",
+        "carbonIntensity": 27.83
+      },
+      {
+        "datetime": "2022-08-03T21:00:00Z",
+        "carbonIntensity": 27.68
+      },
+      {
+        "datetime": "2022-08-03T22:00:00Z",
+        "carbonIntensity": 27.04
+      },
+      {
+        "datetime": "2022-08-03T23:00:00Z",
+        "carbonIntensity": 27.31
+      }
+    ],
+    "ci_model": "energy_charts_generation_mix_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2022-08-01T00:00:00Z"
+  },
+  "PL": {
+    "zone": "PL",
+    "forecast": [
+      {
+        "datetime": "2022-08-01T00:00:00Z",
+        "carbonIntensity": 816.11
+      },
+      {
+        "datetime": "2022-08-01T01:00:00Z",
+        "carbonIntensity": 814.69
+      },
+      {
+        "datetime": "2022-08-01T02:00:00Z",
+        "carbonIntensity": 812.65
+      },
+      {
+        "datetime": "2022-08-01T03:00:00Z",
+        "carbonIntensity": 816.55
+      },
+      {
+        "datetime": "2022-08-01T04:00:00Z",
+        "carbonIntensity": 807.78
+      },
+      {
+        "datetime": "2022-08-01T05:00:00Z",
+        "carbonIntensity": 773.83
+      },
+      {
+        "datetime": "2022-08-01T06:00:00Z",
+        "carbonIntensity": 749.26
+      },
+      {
+        "datetime": "2022-08-01T07:00:00Z",
+        "carbonIntensity": 721.27
+      },
+      {
+        "datetime": "2022-08-01T08:00:00Z",
+        "carbonIntensity": 694.85
+      },
+      {
+        "datetime": "2022-08-01T09:00:00Z",
+        "carbonIntensity": 678.29
+      },
+      {
+        "datetime": "2022-08-01T10:00:00Z",
+        "carbonIntensity": 666.86
+      },
+      {
+        "datetime": "2022-08-01T11:00:00Z",
+        "carbonIntensity": 660.08
+      },
+      {
+        "datetime": "2022-08-01T12:00:00Z",
+        "carbonIntensity": 663.45
+      },
+      {
+        "datetime": "2022-08-01T13:00:00Z",
+        "carbonIntensity": 674.46
+      },
+      {
+        "datetime": "2022-08-01T14:00:00Z",
+        "carbonIntensity": 682.95
+      },
+      {
+        "datetime": "2022-08-01T15:00:00Z",
+        "carbonIntensity": 722.34
+      },
+      {
+        "datetime": "2022-08-01T16:00:00Z",
+        "carbonIntensity": 756.84
+      },
+      {
+        "datetime": "2022-08-01T17:00:00Z",
+        "carbonIntensity": 767.09
+      },
+      {
+        "datetime": "2022-08-01T18:00:00Z",
+        "carbonIntensity": 785.59
+      },
+      {
+        "datetime": "2022-08-01T19:00:00Z",
+        "carbonIntensity": 794.91
+      },
+      {
+        "datetime": "2022-08-01T20:00:00Z",
+        "carbonIntensity": 808.74
+      },
+      {
+        "datetime": "2022-08-01T21:00:00Z",
+        "carbonIntensity": 829.45
+      },
+      {
+        "datetime": "2022-08-01T22:00:00Z",
+        "carbonIntensity": 823.45
+      },
+      {
+        "datetime": "2022-08-01T23:00:00Z",
+        "carbonIntensity": 829.19
+      },
+      {
+        "datetime": "2022-08-02T00:00:00Z",
+        "carbonIntensity": 825.79
+      },
+      {
+        "datetime": "2022-08-02T01:00:00Z",
+        "carbonIntensity": 824.63
+      },
+      {
+        "datetime": "2022-08-02T02:00:00Z",
+        "carbonIntensity": 839.84
+      },
+      {
+        "datetime": "2022-08-02T03:00:00Z",
+        "carbonIntensity": 837.89
+      },
+      {
+        "datetime": "2022-08-02T04:00:00Z",
+        "carbonIntensity": 828.8
+      },
+      {
+        "datetime": "2022-08-02T05:00:00Z",
+        "carbonIntensity": 804.76
+      },
+      {
+        "datetime": "2022-08-02T06:00:00Z",
+        "carbonIntensity": 756.2
+      },
+      {
+        "datetime": "2022-08-02T07:00:00Z",
+        "carbonIntensity": 718.26
+      },
+      {
+        "datetime": "2022-08-02T08:00:00Z",
+        "carbonIntensity": 676.55
+      },
+      {
+        "datetime": "2022-08-02T09:00:00Z",
+        "carbonIntensity": 653.9
+      },
+      {
+        "datetime": "2022-08-02T10:00:00Z",
+        "carbonIntensity": 654.57
+      },
+      {
+        "datetime": "2022-08-02T11:00:00Z",
+        "carbonIntensity": 651.66
+      },
+      {
+        "datetime": "2022-08-02T12:00:00Z",
+        "carbonIntensity": 653.45
+      },
+      {
+        "datetime": "2022-08-02T13:00:00Z",
+        "carbonIntensity": 668.03
+      },
+      {
+        "datetime": "2022-08-02T14:00:00Z",
+        "carbonIntensity": 701.62
+      },
+      {
+        "datetime": "2022-08-02T15:00:00Z",
+        "carbonIntensity": 745.18
+      },
+      {
+        "datetime": "2022-08-02T16:00:00Z",
+        "carbonIntensity": 803.15
+      },
+      {
+        "datetime": "2022-08-02T17:00:00Z",
+        "carbonIntensity": 820.92
+      },
+      {
+        "datetime": "2022-08-02T18:00:00Z",
+        "carbonIntensity": 830.78
+      },
+      {
+        "datetime": "2022-08-02T19:00:00Z",
+        "carbonIntensity": 830.06
+      },
+      {
+        "datetime": "2022-08-02T20:00:00Z",
+        "carbonIntensity": 846.89
+      },
+      {
+        "datetime": "2022-08-02T21:00:00Z",
+        "carbonIntensity": 845.59
+      },
+      {
+        "datetime": "2022-08-02T22:00:00Z",
+        "carbonIntensity": 836.9
+      },
+      {
+        "datetime": "2022-08-02T23:00:00Z",
+        "carbonIntensity": 830.85
+      },
+      {
+        "datetime": "2022-08-03T00:00:00Z",
+        "carbonIntensity": 833.22
+      },
+      {
+        "datetime": "2022-08-03T01:00:00Z",
+        "carbonIntensity": 840.93
+      },
+      {
+        "datetime": "2022-08-03T02:00:00Z",
+        "carbonIntensity": 844.53
+      },
+      {
+        "datetime": "2022-08-03T03:00:00Z",
+        "carbonIntensity": 837.99
+      },
+      {
+        "datetime": "2022-08-03T04:00:00Z",
+        "carbonIntensity": 823.57
+      },
+      {
+        "datetime": "2022-08-03T05:00:00Z",
+        "carbonIntensity": 791.03
+      },
+      {
+        "datetime": "2022-08-03T06:00:00Z",
+        "carbonIntensity": 735.6
+      },
+      {
+        "datetime": "2022-08-03T07:00:00Z",
+        "carbonIntensity": 690.64
+      },
+      {
+        "datetime": "2022-08-03T08:00:00Z",
+        "carbonIntensity": 646.79
+      },
+      {
+        "datetime": "2022-08-03T09:00:00Z",
+        "carbonIntensity": 624.57
+      },
+      {
+        "datetime": "2022-08-03T10:00:00Z",
+        "carbonIntensity": 622.37
+      },
+      {
+        "datetime": "2022-08-03T11:00:00Z",
+        "carbonIntensity": 624.75
+      },
+      {
+        "datetime": "2022-08-03T12:00:00Z",
+        "carbonIntensity": 637.55
+      },
+      {
+        "datetime": "2022-08-03T13:00:00Z",
+        "carbonIntensity": 657.7
+      },
+      {
+        "datetime": "2022-08-03T14:00:00Z",
+        "carbonIntensity": 694.91
+      },
+      {
+        "datetime": "2022-08-03T15:00:00Z",
+        "carbonIntensity": 744.64
+      },
+      {
+        "datetime": "2022-08-03T16:00:00Z",
+        "carbonIntensity": 790.61
+      },
+      {
+        "datetime": "2022-08-03T17:00:00Z",
+        "carbonIntensity": 804.9
+      },
+      {
+        "datetime": "2022-08-03T18:00:00Z",
+        "carbonIntensity": 799.86
+      },
+      {
+        "datetime": "2022-08-03T19:00:00Z",
+        "carbonIntensity": 768.88
+      },
+      {
+        "datetime": "2022-08-03T20:00:00Z",
+        "carbonIntensity": 784.14
+      },
+      {
+        "datetime": "2022-08-03T21:00:00Z",
+        "carbonIntensity": 758.94
+      },
+      {
+        "datetime": "2022-08-03T22:00:00Z",
+        "carbonIntensity": 726.86
+      },
+      {
+        "datetime": "2022-08-03T23:00:00Z",
+        "carbonIntensity": 729.13
+      }
+    ],
+    "ci_model": "energy_charts_generation_mix_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2022-08-01T00:00:00Z"
+  }
+}

@@ -33,13 +33,15 @@ push-silly:
 build-silly-local:                 
 	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o silly pkg/silly/server-go/silly.go
 
+# NOTE: the Go/gRPC deployment half was archived to legacy/deployment/ (frozen since Mar-2025, unused
+# by the Python research codebase). The proto/build targets below are repointed there for revival.
 generate-go:
-	@rm -rf ./pkg/generated-go; mkdir ./pkg/generated-go
-	@protoc -I./pkg/idl --go_out=./pkg/generated-go --go-grpc_out=./pkg/generated-go ./pkg/idl/idl.proto
+	@rm -rf ./legacy/deployment/generated-go; mkdir ./legacy/deployment/generated-go
+	@protoc -I./legacy/deployment/idl --go_out=./legacy/deployment/generated-go --go-grpc_out=./legacy/deployment/generated-go ./legacy/deployment/idl/idl.proto
 
 generate-py:
 	@echo "Recall to activate the conda grpc environment otherwise the following commands will fail"
-	@python -m grpc_tools.protoc -I ./pkg/idl/ --python_out=./pkg/carbon-aware/server-python --pyi_out=./pkg/carbon-aware/server-python --grpc_python_out=./pkg/carbon-aware/server-python ./pkg/idl/idl.proto
+	@python -m grpc_tools.protoc -I ./legacy/deployment/idl/ --python_out=./pkg/carbon-aware/server-python --pyi_out=./pkg/carbon-aware/server-python --grpc_python_out=./pkg/carbon-aware/server-python ./legacy/deployment/idl/idl.proto
 
 build-carbon-aware:
 	@echo "⚠️ Make sure your conda environment is activated"
@@ -60,7 +62,7 @@ build-carbon-aware:
         --hidden-import carbon_aware.algorithms.base \
         --hidden-import carbon_aware.algorithms.heuristic \
         --add-data "$(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json:." \
-        main.py
+        $(CURDIR)/legacy/deployment/main.py
 	@echo "✅ Executable created at $(CURDIR)/bin/carbon-aware"
 	@echo "📄 Copying carbon intensity data file to bin directory for convenience..."
 	@cp $(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json $(CURDIR)/bin/

@@ -270,22 +270,28 @@ def _apply_operational_scarcity_by_slot(
         country_entry = water_config.setdefault("by_country", {}).setdefault(country_code, {})
         # Scarcity source: basin (region-keyed watershed CF) overrides the country CF when enabled
         # and present for this region; otherwise the legacy country AWARE row (bit-identical).
+        # Option A (water-rigor): direct (on-site) water is consumed AT the DC -> charge at its own
+        # watershed (basin) CF when available; indirect (power-plant) water is consumed where the grid
+        # GENERATES -- distributed across the country's fleet, not the DC basin -- so charge it at the
+        # generation-COUNTRY CF (coarse but strictly more faithful than the DC-basin CF). Resolutions
+        # legitimately differ per flow (ISO 14046 / AWARE: characterize each flow where it occurs).
+        country_row = aware_rows.get(country_code, {})
+        country_annual = _as_float(country_entry.get("direct_scarcity_cf"), 1.0)
         basin_row = basin_rows.get(region) if use_basin else None
-        if basin_row is not None:
-            scarcity_row = basin_row
-            annual_cf = _as_float(basin_row.get("annual_cf"), 1.0)
-        else:
-            scarcity_row = aware_rows.get(country_code, {})
-            annual_cf = _as_float(country_entry.get("direct_scarcity_cf"), 1.0)
+        basin_annual = _as_float(basin_row.get("annual_cf"), country_annual) if basin_row is not None else country_annual
         region_entry = water_config.setdefault("by_region", {}).setdefault(region, {})
         direct_map = region_entry.setdefault("direct_scarcity_cf_by_slot", {})
         indirect_map = region_entry.setdefault("indirect_scarcity_cf_by_slot", {})
 
         for slot, row in rows_by_slot.items():
             slot_month = _slot_month_from_row(row)
-            month_cf = _country_cf_for_month(scarcity_row, slot_month, annual_cf)
-            direct_map.setdefault(slot, month_cf)
-            indirect_map.setdefault(slot, month_cf)
+            country_month_cf = _country_cf_for_month(country_row, slot_month, country_annual)
+            direct_month_cf = (
+                _country_cf_for_month(basin_row, slot_month, basin_annual)
+                if basin_row is not None else country_month_cf
+            )
+            direct_map.setdefault(slot, direct_month_cf)   # on-site -> basin
+            indirect_map.setdefault(slot, country_month_cf)  # power-plant -> generation country
 
 
 def _hydrate_dataset_backed_defaults(water_config: Dict[str, Any], base_dir: Path) -> None:

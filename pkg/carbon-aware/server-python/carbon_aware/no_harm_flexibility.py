@@ -12,6 +12,7 @@ import copy
 import csv
 import json
 import logging
+import math
 import os
 import random
 import time
@@ -26,9 +27,10 @@ from carbon_aware.algorithms.heuristic import (
     _rank_candidates,
     find_ranked_candidates,
 )
+from carbon_aware.footprints import compute_footprint_vector
 from carbon_aware.models import CarbonAwarePod, CarbonAwareTimeslot, EnvironmentalFlavor
 from carbon_aware.precompute_heuristic import _extract_pods_from_yaml, _load_nodes_from_yaml
-from carbon_aware.utils import build_timeslots, load_carbon_intensity_data
+from carbon_aware.utils import build_timeslots, is_timeslot_valid, load_carbon_intensity_data
 
 
 RegionSlot = Tuple[str, int]
@@ -89,6 +91,8 @@ class PilotConfig:
     grid_signal_csv: Optional[Path] = None
     lever_mode: str = "both"  # both | temporal (same site, shift time) | spatial (same time, move site)
     wue_csv: Optional[Path] = None  # override the scenario WUE table (e.g. a time-aligned real window)
+    ewif_csv: Optional[Path] = None  # override the EWIF table with a time-aligned in-window one (mirrors wue_csv)
+    scenario_month: str = "jul"  # AWARE CF month column (jul default; "aug" for the Aug-2022 strong window)
     forecast_noise: float = 0.0  # RQ3: stdev of multiplicative carbon-forecast error used for DECISIONS
     forecast_seed: int = 0
     # RQ3 robust guard: assumed carbon-forecast-error fraction. Each accepted move adds its
@@ -98,11 +102,65 @@ class PilotConfig:
     # CARBON guard only (water is decided on OBSERVED wet-bulb -> no forecast error).
     # Default 0.0 -> identical to the plain forecast guard (bit-identical).
     robust_buffer: float = 0.0
+    # D2 -- safety-stock buffer scaling (default "flat" -> BIT-IDENTICAL to the legacy behaviour).
+    # The legacy ("flat") buffer charges EVERY accepted move the SAME fraction `robust_buffer` of the
+    # operational carbon it relocates and SUMS them, so the reserve grows LINEARLY in the number of
+    # moves K. That assumes per-move carbon-forecast errors are perfectly correlated and adversarial.
+    # If the per-move errors are instead independent (the realistic case: each move's slot CI is a
+    # separate forecast draw), the cumulative error POOLS -- its standard deviation grows like sqrt(K),
+    # not K -- so the principled reserve is the safety-stock formula
+    #     total_reserve = Phi^{-1}(1-eps) * rho * s * sqrt(K) * (mean operational carbon per move)
+    # i.e. the PER-MOVE buffer fraction must FALL like 1/sqrt(K). A flat fraction over-reserves at large
+    # K (erasing all grid relief) and under-reserves at small K. Set robust_buffer_mode="sqrtk" to use
+    # the pooled formula; the per-move charge then becomes
+    #     z(eps) * rho * shape / sqrt(K_est)              (z = Phi^{-1}(1-eps))
+    # applied to the SAME operational-carbon exposure the flat path uses. K_est is the decision-time
+    # movable surface (number of flexible pods) unless robust_buffer_k_override > 0. rho is the relative
+    # CI-forecast half-width measured from data (decide-CI vs realized-CI). This converts the EX-POST
+    # certificate into a PROSPECTIVE (decision-time) guarantee at target hold-rate (1-eps): pick eps,
+    # read the buffer off the formula. CARBON-ONLY (water is decided on observed wet-bulb -> no error).
+    # "flat" (legacy, bit-identical) | "sqrtk" (pooled Gaussian safety-stock) | "dro" (distribution-free).
+    # The "dro" mode (Tier-1-D) is the rigorous prospective upgrade: it replaces the untested Gaussian
+    # quantile z(eps) with the DISTRIBUTION-FREE one-sided Cantelli factor sqrt((1-eps)/eps) (no
+    # Gaussianity, no calibration sample) AND replaces the silent independence (pure sqrt(K)) pooling
+    # with an explicit Bertsimas-Sim correlation budget Gamma in [sqrt(K), K] (Gamma=sqrt(K) recovers
+    # independence; Gamma=K is the fully-correlated worst case). The per-move charge becomes
+    #     cantelli(eps) * rho * shape * Gamma / K  (summed over K -> total reserve cantelli*rho*shape*Gamma*mean)
+    # The guarantee it yields is WORST-CASE EX-POST FEASIBILITY (P(realized C > C(B)) <= eps, one-sided)
+    # under the stated mean/variance (or support) + correlation-budget assumptions on n=1 -- weaker than
+    # a finite-sample probability claim but EARNED without a calibration panel. Default unchanged ("flat").
+    robust_buffer_mode: str = "flat"
+    robust_buffer_rho: float = 0.0       # relative carbon-forecast half-width rho (measured from data)
+    robust_buffer_epsilon: float = 0.05  # target ex-post violation probability eps -> z=Phi^{-1}(1-eps)
+    robust_buffer_shape: float = 1.0     # error-shape factor s (1.0 = std-fraction; ~0.577 = uniform)
+    robust_buffer_k_override: int = 0    # override K_est (#moves); 0 -> use the flexible-pod count
+    # DRO correlation budget Gamma (used only when robust_buffer_mode == "dro").
+    #   robust_buffer_gamma_mode == "frac": robust_buffer_gamma is a correlation fraction c in [0,1],
+    #       mapped to Gamma = sqrt(K) + c*(K - sqrt(K)); c=0 -> sqrt(K) (independent), c=1 -> K (fully
+    #       correlated). Default c=0.0 reproduces the pooled (independence) scaling -- so dro with c=0
+    #       differs from sqrtk ONLY by the Cantelli-vs-Gaussian factor.
+    #   robust_buffer_gamma_mode == "abs": robust_buffer_gamma is Gamma directly (clamped to [sqrt(K),K]).
+    robust_buffer_gamma: float = 0.0
+    robust_buffer_gamma_mode: str = "frac"  # "frac" (correlation fraction c) | "abs" (Gamma directly)
+    # Symmetric WATER forecast-error buffer (carbon's counterpart). Off by default (0.0) -> the scarcity
+    # guard is byte-for-byte the legacy path. It exists because TEMPORAL shifting prices a move's water at
+    # a FUTURE slot, so the water axis is NOT forecast-free: direct cooling water depends on the wet-bulb
+    # forecast (small -- weather is highly predictable within-day) and indirect/off-site water on the
+    # grid-mix forecast (correlated with the carbon error). "flat" mode uses robust_buffer_water as the
+    # per-move fraction; "sqrtk" mode uses z(eps)*rho_water*shape/sqrt(K) with its own rho_water.
+    robust_buffer_water: float = 0.0
+    robust_buffer_water_rho: float = 0.0  # relative water-forecast half-width (direct wet-bulb + indirect mix)
     # WaterWise-style scalarized co-optimizer baseline (method_key="waterwise"): the
     # weight on max-normalized carbon in the per-pod scalar objective; the water weight
     # is (1 - this). Default 0.5 = WaterWise's equal-weight setting. Sweeping this traces
     # the co-optimizer's carbon-water frontier. Affects ONLY the "waterwise" baseline.
     waterwise_carbon_weight: float = 0.5
+    # MC1 guarded-baseline controls: seed for the deterministic per-candidate tie-break/order used by
+    # the score_mode in {"guarded_random","guarded_carbon","guarded_waterwise"}. These controls share
+    # the IDENTICAL no-harm guard with the envelope and differ ONLY in the acceptance RANKING, isolating
+    # what the lexicographic combined ranking buys over "any safe move". Unused by every other
+    # score_mode (combined/search_control/legacy) -> bit-identical when not selected.
+    repair_random_seed: int = 0
     # Independent verification signal set: decisions are made on the observable decision-time CI
     # (forecasts_file, e.g. the residual-load-scaled proxy), but the no-harm certificate is
     # re-evaluated against THIS carbon-intensity set (e.g. real generation-mix CI). Default None ->
@@ -114,6 +172,63 @@ class PilotConfig:
     # config (e.g. basin-resolution CFs). Default None -> verify on the decision-time config. Lets us
     # test whether a country-scarcity-decided schedule still does no harm at basin resolution.
     verify_config_file: Optional[Path] = None
+    # D1 -- certified atomic consolidation (default OFF, bit-identical when off). The per-move greedy
+    # guard rejects any single move onto a fresh (otherwise-empty) clean node-slot because that move
+    # pays an idle-once activation that fails the carbon guard MID-consolidation -- even though the
+    # COMPLETED consolidation (source nodes emptied -> their idle removed) net-reduces carbon. This is
+    # the myopic pointwise-safety-filtering vs set-based-filtering gap (safe-control CBFs; OR LNS /
+    # capacitated facility location with idle power = facility opening cost). When enabled, after the
+    # per-move loop converges we run an LNS-style destroy-and-recreate post-pass that evaluates a
+    # coordinated SET of moves JOINTLY against the no-harm guard using EXACT occupancy-based footprints
+    # (idle charged once on the destination, removed from any source the set fully empties), and commits
+    # the set atomically iff the completed schedule is Pareto non-degrading (carbon<=baseline,
+    # scarcity<=baseline, SLO preserved) AND strictly improves >=1 certified axis. The harmful
+    # intermediate state therefore never exists as a guard-checked state, so the certificate is intact
+    # by construction. NOVEL: existing consolidators tolerate transient SLA harm (hysteresis / global
+    # MILP) -- none check a move-SET against a no-harm certificate.
+    consolidation_pass: bool = False
+    # Bound the post-pass cost: max distinct (flavour, start-slot) destinations probed (cleanest first)
+    # and max LNS rounds. 96 covers the full clean-half of a 4-node x 48-slot horizon (probing only the
+    # cleanest third, 64, left certified carbon on the table at n>=16 because the cleanest node's later
+    # slots sit beyond the cap); 8 rounds suffices for the schedules tested. Both are tunable for larger
+    # fleets; the EXACT occupancy-order eval was narrowed to the moved node so runtime stays ~<=2s.
+    consolidation_max_destinations: int = 96
+    consolidation_max_rounds: int = 8
+    # Per-basin (per-region == per-watershed in this testbed) water non-degradation. Default False ->
+    # ONLY the aggregate scarcity guard runs (byte-identical to the legacy path). When True, the repair
+    # loop additionally rejects any move that would raise ANY basin's scarcity-characterized water above
+    # the baseline B's, i.e. enforces Delta W_b <= 0 for every basin b (strictly tighter than the
+    # aggregate sum sum_b Delta W_b <= 0). This subsumes the single-threshold drought guard (a CF>=20
+    # special case): it protects every watershed continuously rather than only those above an
+    # aggregation-inflated cutoff. The guard only ADDS rejections, so it can never create a false
+    # certificate; with the flag off no new branch executes (bit-identical).
+    per_basin_scarcity_guard: bool = False
+    # --- Ionising-radiation axis: fully opt-in so we can cleanly "go back" ---------------------
+    # MASTER SWITCH. Default OFF -> radiation is NOT attached, measured, or reported anywhere;
+    # the engine + evaluation are byte-identical to the pre-radiation system (experiments/eval/
+    # plotting unchanged). Set True to MEASURE radiation (attach the per-region CF + report deltas)
+    # without acting on it. radiation_guard implies enabled.
+    radiation_enabled: bool = False
+    # GUARD. When True, the repair also enforces operational ionising radiation <= baseline (a
+    # fourth non-degradation constraint) and the 4-axis certificate is reported. Implies the signal
+    # is attached (i.e. acts as radiation_enabled). Default OFF -> bit-identical.
+    radiation_guard: bool = False
+    radiation_csv: Optional[Path] = None  # override the per-region radiation CF table
+    # --- Electricity-cost axis (fifth axis): fully opt-in, mirrors the radiation switches -------
+    # MASTER SWITCH. Default OFF -> cost is NOT attached, measured, or reported anywhere (bit-
+    # identical off path). cost_enabled=True MEASURES cost (attach day-ahead prices + report
+    # deltas) without acting on it; cost_guard=True additionally enforces cost <= baseline in the
+    # repair (implies enabled). price_csv points at a (region, slot) day-ahead price table
+    # (price_eur_per_kwh) -- REQUIRED when the axis is on (no silent default).
+    cost_enabled: bool = False
+    cost_guard: bool = False
+    price_csv: Optional[Path] = None
+    # Exact commit-time guard mode. "node_local" re-prices only the move's source and destination
+    # nodes per commit (provably equivalent: idle-once accounting never crosses node boundaries, so
+    # a move changes footprints only on those two nodes) -- O(occupants of 2 nodes) instead of the
+    # whole schedule. "full" re-prices the entire placement set (the original path, kept for
+    # swap-and-diff validation). Both modes yield identical accepted-move decisions.
+    exact_guard_mode: str = "node_local"
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -160,6 +275,21 @@ def _read_region_slot_csv(path: Path) -> Dict[RegionSlot, Dict[str, str]]:
     return rows
 
 
+def _read_radiation_region_csv(path: Path, scenario: str = "base") -> Dict[str, float]:
+    """Per-region ionising-radiation CF (kBq U-235 eq / kWh). Best-effort: missing file -> {}."""
+    if not path.exists():
+        return {}
+    col = f"ionising_radiation_kbq_u235eq_per_kwh_{scenario}"
+    out: Dict[str, float] = {}
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            region = (row.get("region") or "").strip().upper()
+            if not region:
+                continue
+            out[region] = _as_float(row.get(col), 0.0)
+    return out
+
+
 def _read_aware_rows(path: Path) -> Dict[str, Dict[str, str]]:
     if not path.exists():
         return {}
@@ -170,6 +300,19 @@ def _read_aware_rows(path: Path) -> Dict[str, Dict[str, str]]:
             country = (row.get("country_code") or "").strip().upper()
             if country:
                 rows[country] = row
+    return rows
+
+
+def _read_basin_cf_rows(path: Path) -> Dict[str, Dict[str, str]]:
+    """AWARE CF rows keyed by REGION (the native-watershed file), for on-site/direct water."""
+    if not path.exists():
+        return {}
+    rows: Dict[str, Dict[str, str]] = {}
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            region = (row.get("region") or "").strip().upper()
+            if region:
+                rows[region] = row
     return rows
 
 
@@ -213,13 +356,46 @@ def apply_pilot_scenario_to_flavours(flavours: Sequence[EnvironmentalFlavor], co
     file itself occurred in July.
     """
     wue_rows = _read_region_slot_csv(scenario_wue_path(config))
-    aware_rows = _read_aware_rows(_water_data_path(config.repo_root, "aware20_country_nonagri_factors.csv"))
+    country_aware_rows = _read_aware_rows(_water_data_path(config.repo_root, "aware20_country_nonagri_factors.csv"))
+    basin_aware_rows = _read_basin_cf_rows(_water_data_path(config.repo_root, "aware20_basin_nonagri_factors.csv"))
+    month_col = f"{config.scenario_month}_cf"
     # Indirect (power-plant) water: EWIF per kWh of grid electricity, from a flow-traced
     # generation mix x literature water-consumption factors (Macknick 2012; Spang 2014).
-    ewif_rows = _read_region_slot_csv(_water_data_path(config.repo_root, "ewif_region_slot.csv"))
+    # Redirectable to a time-aligned in-window EWIF table (mirrors wue_csv); falls back to the bundled file.
+    ewif_rows = _read_region_slot_csv(config.ewif_csv or _water_data_path(config.repo_root, "ewif_region_slot.csv"))
+    # Per-region ionising-radiation CF (kBq U-235 eq / kWh), region-resolved (mix-average).
+    # Attached ONLY when the radiation axis is switched on (master switch / guard). When off,
+    # nothing is attached -> operational_radiation_kbq stays 0 -> the system is the pre-radiation
+    # engine. Best-effort: if the table is absent the factor stays 0.
+    radiation_on = bool(getattr(config, "radiation_enabled", False) or getattr(config, "radiation_guard", False))
+    radiation_by_region = _read_radiation_region_csv(
+        config.radiation_csv or (config.repo_root / "pkg" / "carbon-aware" / "data" / "radiation" / "radiation_region.csv")
+    ) if radiation_on else {}
+    # Electricity-cost axis (fifth axis): attach hourly day-ahead prices ONLY when switched on.
+    # No default table -- a silent 0-price would fake a free grid -- so the axis fails loudly.
+    cost_on = bool(getattr(config, "cost_enabled", False) or getattr(config, "cost_guard", False))
+    price_rows: Dict[RegionSlot, Dict[str, str]] = {}
+    if cost_on:
+        if not config.price_csv or not Path(config.price_csv).exists():
+            raise SystemExit("cost axis is on (cost_enabled/cost_guard) but price_csv is missing")
+        price_rows = _read_region_slot_csv(Path(config.price_csv))
 
     for flavour in flavours:
         region = (getattr(flavour, "region", "") or "").upper()
+        if radiation_on:
+            rad_cf = radiation_by_region.get(region)
+            if rad_cf is not None:
+                flavour.radiation_intensity = rad_cf
+                flavour.radiation_by_slot = {slot: rad_cf for slot in range(config.max_timeslots)}
+        if cost_on:
+            price_by_slot = {
+                slot: _as_float(row.get("price_eur_per_kwh"))
+                for (row_region, slot), row in price_rows.items()
+                if row_region == region
+            }
+            if price_by_slot:
+                flavour.price_by_slot = price_by_slot
+                flavour.electricity_price_eur_kwh = sum(price_by_slot.values()) / len(price_by_slot)
         wue_by_slot = {
             slot: _as_float(row.get("direct_wue_l_per_kwh"), 0.0)
             for (row_region, slot), row in wue_rows.items()
@@ -253,12 +429,21 @@ def apply_pilot_scenario_to_flavours(flavours: Sequence[EnvironmentalFlavor], co
 
         if config.scenario == "heatwave-drought":
             country = _country_for_region(region)
-            aware_row = aware_rows.get(country, {})
-            summer_cf = _as_float(aware_row.get("jul_cf"), getattr(flavour, "water_scarcity_direct_cf", 1.0))
-            flavour.water_scarcity_direct_cf = summer_cf
-            flavour.water_scarcity_indirect_cf = summer_cf
-            flavour.water_scarcity_direct_cf_by_slot = {slot: summer_cf for slot in range(config.max_timeslots)}
-            flavour.water_scarcity_indirect_cf_by_slot = {slot: summer_cf for slot in range(config.max_timeslots)}
+            country_row = country_aware_rows.get(country, {})
+            basin_row = basin_aware_rows.get(region, {})
+            prev_cf = getattr(flavour, "water_scarcity_direct_cf", 1.0)
+            country_cf = _as_float(country_row.get(month_col), prev_cf)
+            # Direct (on-site cooling) water is consumed AT the data center -> charge at its own
+            # watershed (basin) CF. Indirect (power-plant) water is consumed where the electricity is
+            # GENERATED -- distributed across the country's fleet, NOT the DC's local basin -- so absent
+            # plant-level/flow-traced origin we charge it at the generation COUNTRY's CF (a coarse
+            # domestic-generation proxy, but strictly more faithful than the DC-basin CF). [water-rigor]
+            direct_cf = _as_float(basin_row.get(month_col), country_cf)  # basin for on-site; country fallback
+            indirect_cf = country_cf
+            flavour.water_scarcity_direct_cf = direct_cf
+            flavour.water_scarcity_indirect_cf = indirect_cf
+            flavour.water_scarcity_direct_cf_by_slot = {slot: direct_cf for slot in range(config.max_timeslots)}
+            flavour.water_scarcity_indirect_cf_by_slot = {slot: indirect_cf for slot in range(config.max_timeslots)}
 
 
 def build_action_signals(flavours: Sequence[EnvironmentalFlavor], config: PilotConfig) -> Dict[RegionSlot, ActionSignal]:
@@ -480,8 +665,18 @@ def build_greedy_schedule(
             unplaced.append(pod)
             continue
 
-        if method_key == "waterwise":
-            candidate = _select_waterwise_candidate(ranked, config.waterwise_carbon_weight)
+        if method_key == "waterwise" or method_key.startswith("waterwise@"):
+            # `waterwise@<w>` keys (the published-baselines sweep) carry the weight in the suffix.
+            # The old exact-match dispatch let them FALL THROUGH to the carbon sort below, silently
+            # running carbon-greedy under a WaterWise label (the published-baselines label bug,
+            # fixed 2026-07-01). Suffix weight, when present, takes precedence over the config field.
+            weight = config.waterwise_carbon_weight
+            if "@" in method_key:
+                try:
+                    weight = float(method_key.split("@", 1)[1])
+                except ValueError:
+                    pass  # malformed suffix -> config weight
+            candidate = _select_waterwise_candidate(ranked, weight)
         else:
             candidate = sorted(ranked, key=lambda item: _candidate_sort_key(item, method_key))[0]
         _apply_candidate_resources(pod, candidate, leftover_cpu, leftover_ram, leftover_gpu)
@@ -556,6 +751,8 @@ def schedule_totals(result: ScheduleResult, signals: Mapping[RegionSlot, ActionS
         "embodied_water_l": 0.0,
         "scarcity_water": 0.0,
         "criticality_adjusted_water": 0.0,
+        "operational_radiation_kbq": 0.0,
+        "operational_cost_eur": 0.0,
         "stress_kwh": 0.0,
         "weighted_stress_kwh": 0.0,
         "headroom_kwh": 0.0,
@@ -575,6 +772,8 @@ def schedule_totals(result: ScheduleResult, signals: Mapping[RegionSlot, ActionS
         totals["embodied_water_l"] += fp.embodied_water_l
         totals["scarcity_water"] += fp.scarcity_characterized_water
         totals["criticality_adjusted_water"] += fp.criticality_adjusted_water
+        totals["operational_radiation_kbq"] += getattr(fp, "operational_radiation_kbq", 0.0)
+        totals["operational_cost_eur"] += getattr(fp, "operational_cost_eur", 0.0)
         signal_metrics = placement_signal_metrics(placement, signals)
         for key, value in signal_metrics.items():
             totals[key] += value
@@ -630,7 +829,10 @@ def summarize_against_reference(
 
     carbon_delta = totals["carbon_kg"] - reference_totals["carbon_kg"]
     scarcity_delta = totals["scarcity_water"] - reference_totals["scarcity_water"]
+    radiation_delta = totals.get("operational_radiation_kbq", 0.0) - reference_totals.get("operational_radiation_kbq", 0.0)
+    cost_delta = totals.get("operational_cost_eur", 0.0) - reference_totals.get("operational_cost_eur", 0.0)
     stress_delta = totals["stress_kwh"] - reference_totals["stress_kwh"]
+    weighted_stress_delta = totals["weighted_stress_kwh"] - reference_totals["weighted_stress_kwh"]
     headroom_delta = totals["headroom_kwh"] - reference_totals["headroom_kwh"]
     no_harm = (
         totals["placed_pods"] >= reference_totals["placed_pods"]
@@ -639,7 +841,9 @@ def summarize_against_reference(
         and scarcity_delta <= tolerance
     )
 
-    return {
+    radiation_nonincrease = bool(radiation_delta <= tolerance)
+    cost_nonincrease = bool(cost_delta <= tolerance)
+    summary = {
         "method_key": result.method_key,
         "reference_method": reference.method_key,
         "no_harm_certificate": bool(no_harm),
@@ -681,18 +885,129 @@ def summarize_against_reference(
         "stress_kwh_avoided": max(-stress_delta, 0.0),
         "stress_kwh_avoided_pct": _percent_delta(reference_totals["stress_kwh"], totals["stress_kwh"]),
         "weighted_stress_kwh": totals["weighted_stress_kwh"],
+        # Headline grid-relief metric: the *continuous* residual-load-weighted relief the objective
+        # actually optimizes. The binary stress_kwh_avoided above is a lossy projection (only counts
+        # slots that cross the binary stress quantile) and undercounts achieved relief by ~50%.
+        "weighted_stress_kwh_delta": weighted_stress_delta,
+        "weighted_stress_kwh_avoided": max(-weighted_stress_delta, 0.0),
+        "weighted_stress_kwh_avoided_pct": _percent_delta(
+            reference_totals["weighted_stress_kwh"], totals["weighted_stress_kwh"]
+        ),
         "headroom_kwh": totals["headroom_kwh"],
         "headroom_kwh_gain": max(headroom_delta, 0.0),
         "grid_stress_hours_covered": stress_hours_covered,
         "drought_direct_water_l": totals["drought_direct_water_l"],
         "drought_scarcity_water": totals["drought_scarcity_water"],
     }
+    # Ionising-radiation reporting is included ONLY when the radiation axis is actually in play
+    # (signal attached -> nonzero operational radiation on either schedule). When radiation is OFF
+    # (the radiation_enabled/radiation_guard master switches), these keys are ABSENT and the
+    # evaluation output is byte-for-byte the pre-radiation engine -> a clean "go back".
+    if (totals.get("operational_radiation_kbq", 0.0) > 0.0
+            or reference_totals.get("operational_radiation_kbq", 0.0) > 0.0):
+        summary["no_harm_certificate_with_radiation"] = bool(no_harm and radiation_nonincrease)
+        summary["radiation_nonincrease"] = radiation_nonincrease
+        summary["radiation_delta_kbq"] = radiation_delta
+        summary["radiation_delta_pct"] = _percent_delta(
+            totals.get("operational_radiation_kbq", 0.0), reference_totals.get("operational_radiation_kbq", 0.0))
+        summary["operational_radiation_kbq"] = totals.get("operational_radiation_kbq", 0.0)
+    # Electricity-cost reporting, exactly parallel: keys ABSENT when the cost axis is off, so the
+    # off path stays byte-for-byte identical to the pre-cost engine.
+    if (totals.get("operational_cost_eur", 0.0) > 0.0
+            or reference_totals.get("operational_cost_eur", 0.0) > 0.0):
+        summary["no_harm_certificate_with_cost"] = bool(no_harm and cost_nonincrease)
+        summary["cost_nonincrease"] = cost_nonincrease
+        summary["cost_delta_eur"] = cost_delta
+        summary["cost_delta_pct"] = _percent_delta(
+            totals.get("operational_cost_eur", 0.0), reference_totals.get("operational_cost_eur", 0.0))
+        summary["operational_cost_eur"] = totals.get("operational_cost_eur", 0.0)
+    return summary
 
 
 def _percent_delta(new_value: float, old_value: float) -> float:
     if abs(old_value) <= 1e-12:
         return 0.0
     return (new_value - old_value) / old_value * 100.0
+
+
+def _z_score(epsilon: float) -> float:
+    """One-sided normal quantile z = Phi^{-1}(1 - eps) for the safety-stock buffer.
+    eps is the target ex-post violation probability (e.g. 0.05 -> z~1.645 for 95% hold)."""
+    from statistics import NormalDist
+    eps = min(max(float(epsilon), 1e-9), 0.5)
+    return NormalDist().inv_cdf(1.0 - eps)
+
+
+def _cantelli_factor(epsilon: float) -> float:
+    """Distribution-free one-sided Cantelli (one-sided Chebyshev) factor k = sqrt((1-eps)/eps).
+
+    For ANY random variable X with mean mu and standard deviation sigma, Cantelli's inequality gives
+        P(X - mu >= k*sigma) <= 1/(1 + k^2).
+    Setting the right-hand side to eps and solving yields k = sqrt((1-eps)/eps). Sizing the carbon
+    reserve as k*sigma_C therefore bounds the realized one-sided overshoot probability by eps WITHOUT
+    any distributional assumption (no Gaussianity, no calibration sample) -- the honest distribution-free
+    replacement for the Gaussian quantile z = Phi^{-1}(1-eps). It is conservative: at eps=0.05 the
+    Cantelli factor is ~4.36 vs the Gaussian z~1.645 (~2.65x), the price of assumption-freedom.
+    """
+    eps = min(max(float(epsilon), 1e-9), 0.5)
+    return math.sqrt((1.0 - eps) / eps)
+
+
+def _budget_gamma(*, gamma: float, gamma_mode: str, k_moves: int) -> float:
+    """Bertsimas-Sim uncertainty budget Gamma in [sqrt(K), K] for the per-move error correlation.
+
+    The pooled (sqrtk) reserve assumes per-move CI-forecast errors are INDEPENDENT, so their
+    cumulative standard deviation grows like sqrt(K). That assumption is false: CI forecast errors are
+    AUTOCORRELATED across contiguous slots/regions (a biased-low proxy is biased low for adjacent
+    hours), so pure sqrt(K) UNDER-reserves. Bertsimas-Sim ("price of robustness") interpolates between
+    the two extremes with a single budget knob Gamma:
+        Gamma = sqrt(K)  -> independent errors (recovers the pooled sqrtk reserve);
+        Gamma = K        -> fully (adversarially) correlated worst case (the box / flat reserve).
+    A correlation fraction c in [0,1] maps to Gamma = sqrt(K) + c*(K - sqrt(K)); c=0 -> sqrt(K), c=1 -> K.
+    Returns Gamma clamped to [sqrt(K), K].
+    """
+    k = max(int(k_moves), 1)
+    sk = math.sqrt(k)
+    if gamma_mode == "frac":
+        c = min(max(float(gamma), 0.0), 1.0)
+        g = sk + c * (float(k) - sk)
+    else:  # "abs": Gamma given directly
+        g = float(gamma) if gamma > 0 else sk
+    return min(max(g, sk), float(k))
+
+
+def sqrtk_per_move_buffer(*, rho: float, epsilon: float, shape: float, k_moves: int) -> float:
+    """Pooled safety-stock PER-MOVE buffer fraction: z(eps) * rho * shape / sqrt(K).
+
+    This is the per-move multiplier the carbon guard applies to each accepted move's operational-carbon
+    exposure. Summed over K independent moves it yields the total reserve
+        z(eps) * rho * shape * sqrt(K) * (mean operational carbon per move),
+    so the reserve grows like sqrt(K) (error pooling) rather than the flat buffer's linear-in-K growth.
+    """
+    k = max(int(k_moves), 1)
+    return _z_score(epsilon) * float(rho) * float(shape) / math.sqrt(k)
+
+
+def dro_per_move_buffer(
+    *, rho: float, epsilon: float, shape: float, k_moves: int, gamma: float, gamma_mode: str
+) -> float:
+    """Distribution-free DRO PER-MOVE buffer fraction: cantelli(eps) * rho * shape * Gamma / K.
+
+    Two principled changes vs sqrtk_per_move_buffer, both flag-gated (default OFF):
+      1. The Gaussian quantile z = Phi^{-1}(1-eps) is replaced by the distribution-free one-sided
+         Cantelli factor sqrt((1-eps)/eps), which bounds the realized overshoot probability by eps for
+         ANY error distribution (no Gaussianity, no calibration sample).
+      2. The silent independence (pure sqrt(K)) pooling is replaced by an explicit Bertsimas-Sim
+         budget Gamma in [sqrt(K), K]. Summed over K moves the per-move charge cantelli*rho*shape*Gamma/K
+         yields the TOTAL reserve
+             cantelli(eps) * rho * shape * Gamma * (mean operational carbon per move),
+         so the reserve scales as Gamma: Gamma=sqrt(K) recovers the independent pooled reserve, Gamma=K
+         is the fully-correlated (adversarial) box reserve. The dependence assumption is thus STATED
+         (via Gamma) rather than hidden.
+    """
+    k = max(int(k_moves), 1)
+    g = _budget_gamma(gamma=gamma, gamma_mode=gamma_mode, k_moves=k)
+    return _cantelli_factor(epsilon) * float(rho) * float(shape) * g / float(k)
 
 
 def _projected_totals(
@@ -719,6 +1034,268 @@ def _move_signal_delta(
     return {key: new_metrics[key] - old_metrics[key] for key in old_metrics}
 
 
+def _exact_footprints_in_occupancy_order(
+    placements: Sequence[Placement],
+    flavours: Sequence[EnvironmentalFlavor],
+    config: PilotConfig,
+) -> Dict[int, CandidatePlacement]:
+    """Recompute every placement's EXACT engine footprint against the CURRENT joint occupancy of the
+    given placement set, in occupancy order (idle-once charged to the first pod that activates each
+    node-slot). Returns id(placement) -> rematerialized CandidatePlacement at the SAME (site, slot).
+
+    This is the same idle-correct accounting `_rematerialize_under_realized` performs, but it operates
+    on a HYPOTHETICAL placement list without mutating it -- so the consolidation pass can score a
+    candidate move-set's true engine carbon/scarcity before deciding whether to commit it.
+    """
+    timeslots = build_timeslots(config.max_timeslots)
+    flavour_by_id = {flv.id: flv for flv in flavours}
+    leftover_cpu, leftover_ram, leftover_gpu = _init_resources(flavours, config.max_timeslots)
+    out: Dict[int, CandidatePlacement] = {}
+    # Apply pods in a stable order (start slot, then node) so idle attribution is deterministic and
+    # matches a left-to-right fill; the TOTAL carbon/scarcity is order-invariant (idle is charged
+    # exactly once per active node-slot regardless of which co-tenant carries it).
+    ordered = sorted(
+        placements,
+        key=lambda pl: (pl.candidate.timeslot.id, pl.candidate.flavour.id, pl.pod.id),
+    )
+    for placement in ordered:
+        # Build candidates for ONLY this placement's own node (we know its (flavour, slot)); this
+        # yields the same footprint the full-fleet ranker would at that location but avoids scoring
+        # every other node-slot, which dominates the post-pass cost.
+        dest_flv = flavour_by_id.get(placement.candidate.flavour.id)
+        built = _build_feasible_candidates(
+            pod=placement.pod,
+            flavours=[dest_flv] if dest_flv is not None else list(flavours),
+            timeslots=timeslots,
+            leftover_cpu=leftover_cpu,
+            leftover_ram=leftover_ram,
+            max_time_slots=config.max_timeslots,
+            leftover_gpu=leftover_gpu,
+        )
+        match = next(
+            (c for c in built
+             if c.flavour.id == placement.candidate.flavour.id
+             and c.timeslot.id == placement.candidate.timeslot.id),
+            None,
+        )
+        if match is None:
+            # Infeasible under the joint occupancy (capacity conflict) -> signal an invalid set.
+            return {}
+        out[id(placement)] = match
+        _apply_candidate_resources(placement.pod, match, leftover_cpu, leftover_ram, leftover_gpu)
+    return out
+
+
+def _exact_carbon_scarcity(
+    placements: Sequence[Placement],
+    flavours: Sequence[EnvironmentalFlavor],
+    config: PilotConfig,
+) -> Optional[Tuple[float, float, Dict[int, CandidatePlacement]]]:
+    """Exact engine (carbon_kg, scarcity_water) for a placement set, plus the rematerialized
+    footprints (idle-once correct). Returns None if the set is infeasible under joint occupancy."""
+    remat = _exact_footprints_in_occupancy_order(placements, flavours, config)
+    if not remat and placements:
+        return None
+    carbon = sum(c.footprint.total_carbon_kg for c in remat.values())
+    scarcity = sum(c.footprint.scarcity_characterized_water for c in remat.values())
+    return carbon, scarcity, remat
+
+
+def _exact_node_totals(
+    node_placements: Sequence["Placement"],
+    flavour: EnvironmentalFlavor,
+    config: PilotConfig,
+) -> Optional[Tuple[float, float, float, float]]:
+    """Exact idle-once totals (carbon_kg, scarcity, radiation_kbq, cost_eur) for ONE node's
+    placements, replayed in the same occupancy order (timeslot, pod) the global exact evaluator
+    uses. Footprints depend only on the node's OWN per-slot occupancy -- idle-once attribution
+    never crosses node boundaries -- so the per-node replay equals the global evaluator restricted
+    to this node; summing node totals over the fleet reproduces _exact_carbon_scarcity exactly.
+    Returns None if the occupants would exceed the node's CPU capacity in any slot (infeasible)."""
+    ordered = sorted(node_placements, key=lambda pl: (pl.candidate.timeslot.id, pl.pod.id))
+    used: Dict[int, float] = {}
+    total_cpu = float(getattr(flavour, "totalCpu", 0.0) or 0.0)
+    c = w = r = cost = 0.0
+    for pl in ordered:
+        start = pl.candidate.timeslot.id
+        dur = int(pl.pod.duration)
+        used_before = {start + o: used.get(start + o, 0.0) for o in range(dur)}
+        fp = compute_footprint_vector(
+            flavour=flavour,
+            start_slot=start,
+            pod=pl.pod,
+            used_cpu_before_by_slot=used_before,
+            embodied_allocation_mode="proportional",
+            operational_only=False,
+            use_pod_power_only=False,
+        )
+        for o in range(dur):
+            s = start + o
+            used[s] = used.get(s, 0.0) + pl.pod.cpuRequest
+            if total_cpu and used[s] > total_cpu + 1e-9:
+                return None
+        c += fp.total_carbon_kg
+        w += fp.scarcity_characterized_water
+        r += fp.operational_radiation_kbq
+        cost += fp.operational_cost_eur
+    return c, w, r, cost
+
+
+def _consolidation_pass(
+    *,
+    current: ScheduleResult,
+    flavours: Sequence[EnvironmentalFlavor],
+    signals: Mapping[RegionSlot, ActionSignal],
+    config: PilotConfig,
+    base_carbon: float,
+    base_scarcity: float,
+) -> int:
+    """Certified atomic consolidation (D1). LNS destroy-and-recreate / capacitated-facility-location
+    move evaluated against the no-harm certificate as a SET.
+
+    Mechanism. For each clean, underutilized destination node-slot (cleanest first), greedily assemble
+    a SET of flexible pods -- drawn from dirtier current locations -- that fit on the destination, then
+    evaluate the COMPLETED schedule's EXACT engine carbon/scarcity (idle charged once on the destination,
+    removed from any source the set fully empties). Commit the set atomically iff the completed schedule
+    is Pareto non-degrading vs the packing baseline on carbon AND scarcity, keeps every pod placed
+    (SLO preserved), and strictly improves carbon (the consolidation payoff). The harmful intermediate
+    (a transient idle activation before the source is emptied) is never a guard-checked state, so the
+    ex-post certificate holds by construction. Mutates `current.placements` in place; returns #moves.
+
+    Returns 0 (no mutation) unless the consolidation strictly improves carbon under the certificate.
+    """
+    flavours_list = list(flavours)
+    flavour_by_id = {flv.id: flv for flv in flavours_list}
+    timeslots = build_timeslots(config.max_timeslots)
+    lever_mode = config.lever_mode
+
+    total_moves = 0
+    for _round in range(max(1, config.consolidation_max_rounds)):
+        # Exact current state (idle-correct) -- the incumbent we must not degrade.
+        cur = _exact_carbon_scarcity(current.placements, flavours_list, config)
+        if cur is None:
+            break
+        cur_carbon, cur_scarcity, cur_remat = cur
+
+        # Flexible pods are the only movable surface; index them by current location.
+        flex_idx = [
+            i for i, pl in enumerate(current.placements)
+            if pl.flexibility_class == "flexible"
+        ]
+        if not flex_idx:
+            break
+
+        # Candidate destinations = (flavour, start-slot) over the horizon, cleanest CI first. A pod's
+        # carbon is dominated by the destination's slot CI; consolidating onto the lowest-CI active or
+        # fresh node-slot is the all-or-nothing payoff the per-move guard cannot reach.
+        def _slot_ci(flv: EnvironmentalFlavor, slot: int) -> float:
+            return _as_float((getattr(flv, "forecast", {}) or {}).get(slot), 200.0)
+
+        dests: List[Tuple[float, str, int]] = []
+        for flv in flavours_list:
+            for slot in range(config.max_timeslots):
+                dests.append((_slot_ci(flv, slot), flv.id, slot))
+        dests.sort(key=lambda d: (d[0], d[1], d[2]))
+        dests = dests[: max(1, config.consolidation_max_destinations)]
+
+        committed_this_round = False
+        for _ci, dest_fid, dest_slot in dests:
+            dest_flv = flavour_by_id[dest_fid]
+
+            # Pods to (potentially) pull onto this destination: flexible pods NOT already there whose
+            # deadline window admits dest_slot and that respect the lever mode. Sort by how dirty their
+            # current slot is (dirtiest first) -- moving those yields the biggest certified carbon cut.
+            movable: List[Tuple[float, int]] = []
+            for i in flex_idx:
+                pl = current.placements[i]
+                cand = pl.candidate
+                if cand.flavour.id == dest_fid and cand.timeslot.id == dest_slot:
+                    continue
+                if lever_mode == "temporal" and dest_fid != cand.flavour.id:
+                    continue
+                if lever_mode == "spatial" and dest_slot != cand.timeslot.id:
+                    continue
+                cur_ci = _slot_ci(cand.flavour, cand.timeslot.id)
+                movable.append((cur_ci, i))
+            movable.sort(key=lambda m: (-m[0], m[1]))
+
+            if not movable:
+                continue
+
+            # Greedily grow the move-set; re-feasibility (capacity) is enforced exactly by the
+            # occupancy-order rematerialization, so we only need a cheap pre-filter here.
+            trial_placements = [replace(pl) for pl in current.placements]
+            chosen: List[int] = []
+            leftover_cpu, leftover_ram, leftover_gpu = _init_resources(flavours_list, config.max_timeslots)
+            # Seed occupancy with everything NOT being considered for the move (the firm + untouched).
+            # We rebuild occupancy from the trial set after each tentative add to test the destination
+            # fits, but capacity is ultimately validated by _exact_carbon_scarcity below.
+            for cur_ci, i in movable:
+                pod = current.placements[i].pod
+                dur = max(int(pod.duration), 1)
+                if dest_slot + dur > config.max_timeslots:
+                    continue
+                ts = next((t for t in timeslots if t.id == dest_slot), None)
+                if ts is None or not is_timeslot_valid(ts, pod):
+                    continue
+                chosen.append(i)
+
+            if not chosen:
+                continue
+
+            # Build a candidate footprint for each chosen pod at the destination, applied jointly.
+            applied: List[int] = []
+            for i in chosen:
+                pod = current.placements[i].pod
+                built = _build_feasible_candidates(
+                    pod=pod,
+                    flavours=[dest_flv],
+                    timeslots=timeslots,
+                    leftover_cpu=leftover_cpu,
+                    leftover_ram=leftover_ram,
+                    max_time_slots=config.max_timeslots,
+                    leftover_gpu=leftover_gpu,
+                )
+                new_cand = next((c for c in built if c.timeslot.id == dest_slot), None)
+                if new_cand is None:
+                    continue  # destination capacity exhausted for this pod; skip it, keep the set
+                _apply_candidate_resources(pod, new_cand, leftover_cpu, leftover_ram, leftover_gpu)
+                trial_placements[i] = replace(current.placements[i], candidate=new_cand)
+                applied.append(i)
+
+            if not applied:
+                continue
+
+            scored = _exact_carbon_scarcity(trial_placements, flavours_list, config)
+            if scored is None:
+                continue
+            new_carbon, new_scarcity, new_remat = scored
+
+            # No-harm certificate vs the packing baseline AND strict carbon improvement vs incumbent.
+            improves_carbon = new_carbon < cur_carbon - 1e-12
+            no_harm = (
+                new_carbon <= base_carbon + 1e-9
+                and new_scarcity <= base_scarcity + 1e-9
+                and len(trial_placements) == len(current.placements)
+            )
+            if improves_carbon and no_harm:
+                # Commit atomically: adopt the rematerialized (idle-correct) footprints for the WHOLE
+                # schedule so subsequent rounds and the caller's totals stay occupancy-consistent.
+                for pl in trial_placements:
+                    rc = new_remat.get(id(pl))
+                    if rc is not None:
+                        pl.candidate = rc
+                current.placements = trial_placements
+                total_moves += len(applied)
+                committed_this_round = True
+                break  # re-evaluate the incumbent before probing more destinations
+
+        if not committed_this_round:
+            break
+
+    return total_moves
+
+
 def repair_schedule_no_harm(
     *,
     method_key: str,
@@ -728,9 +1305,15 @@ def repair_schedule_no_harm(
     signals: Mapping[RegionSlot, ActionSignal],
     config: PilotConfig,
     score_mode: str,
+    start_schedule: Optional[ScheduleResult] = None,
 ) -> ScheduleResult:
     start = time.perf_counter()
-    placements = [replace(placement) for placement in baseline.placements]
+    # The no-harm REFERENCE is always `baseline` (B): the guard checks carbon/scarcity <= B's. The
+    # repair may START from a different schedule (`start_schedule`, e.g. phase-1 of the two-phase
+    # combined_v2 envelope), so phase 2 continues from phase-1's placements while still guarding vs B.
+    # Default (start_schedule=None) starts from B -> bit-identical to the single-pass behaviour.
+    start_from = start_schedule if start_schedule is not None else baseline
+    placements = [replace(placement) for placement in start_from.placements]
     leftover_cpu, leftover_ram, leftover_gpu = _init_resources(flavours, config.max_timeslots)
     for placement in placements:
         _apply_candidate_resources(placement.pod, placement.candidate, leftover_cpu, leftover_ram, leftover_gpu)
@@ -742,7 +1325,7 @@ def repair_schedule_no_harm(
         elapsed_seconds=baseline.elapsed_seconds,
     )
     baseline_totals = schedule_totals(baseline_result, signals)
-    current = ScheduleResult(method_key=method_key, placements=placements, unplaced_pods=list(baseline.unplaced_pods), elapsed_seconds=0.0)
+    current = ScheduleResult(method_key=method_key, placements=placements, unplaced_pods=list(start_from.unplaced_pods), elapsed_seconds=0.0)
     max_repairs = config.max_repairs if config.max_repairs is not None else max(1, int(baseline_totals["flexible_pods"]) * 2)
     rejected_moves = 0
     repairs = 0
@@ -763,8 +1346,58 @@ def repair_schedule_no_harm(
         ordered_ts = list(timeslots)
 
     margin = config.regret_margin
-    robust_buffer = config.robust_buffer
+    # Effective per-move carbon-forecast buffer fraction. In the default "flat" mode this is EXACTLY
+    # config.robust_buffer (bit-identical to the legacy guard). In "sqrtk" mode it is the pooled
+    # safety-stock per-move fraction z(eps)*rho*shape/sqrt(K_est), where K_est = the decision-time
+    # movable surface (#flexible pods) unless overridden. K_est is computed ONCE before the loop, so
+    # the per-move charge is constant across the loop (the guard stays monotone) while the TOTAL
+    # reserve scales as sqrt(K). When robust_buffer_mode != "sqrtk" the sqrtk branch is never taken,
+    # so the off-path behaviour is byte-for-byte the legacy path.
+    if config.robust_buffer_mode == "sqrtk":
+        k_est = (config.robust_buffer_k_override
+                 if config.robust_buffer_k_override > 0
+                 else max(1, int(baseline_totals["flexible_pods"])))
+        robust_buffer = sqrtk_per_move_buffer(
+            rho=config.robust_buffer_rho,
+            epsilon=config.robust_buffer_epsilon,
+            shape=config.robust_buffer_shape,
+            k_moves=k_est,
+        )
+        # Symmetric water reserve: same eps/K/shape, its own (smaller) rho_water.
+        robust_buffer_water = sqrtk_per_move_buffer(
+            rho=config.robust_buffer_water_rho,
+            epsilon=config.robust_buffer_epsilon,
+            shape=config.robust_buffer_shape,
+            k_moves=k_est,
+        )
+    elif config.robust_buffer_mode == "dro":
+        # Distribution-free DRO reserve (Tier-1-D): Cantelli factor sqrt((1-eps)/eps) in place of the
+        # Gaussian z(eps), and a Bertsimas-Sim correlation budget Gamma in [sqrt(K), K] in place of the
+        # silent independence assumption. Same per-move operational-carbon exposure surface as flat/sqrtk.
+        k_est = (config.robust_buffer_k_override
+                 if config.robust_buffer_k_override > 0
+                 else max(1, int(baseline_totals["flexible_pods"])))
+        robust_buffer = dro_per_move_buffer(
+            rho=config.robust_buffer_rho,
+            epsilon=config.robust_buffer_epsilon,
+            shape=config.robust_buffer_shape,
+            k_moves=k_est,
+            gamma=config.robust_buffer_gamma,
+            gamma_mode=config.robust_buffer_gamma_mode,
+        )
+        robust_buffer_water = dro_per_move_buffer(
+            rho=config.robust_buffer_water_rho,
+            epsilon=config.robust_buffer_epsilon,
+            shape=config.robust_buffer_shape,
+            k_moves=k_est,
+            gamma=config.robust_buffer_gamma,
+            gamma_mode=config.robust_buffer_gamma_mode,
+        )
+    else:
+        robust_buffer = config.robust_buffer
+        robust_buffer_water = config.robust_buffer_water
     applied_unc_carbon = 0.0  # cumulative worst-case carbon-forecast exposure of applied moves
+    applied_unc_scarcity = 0.0  # cumulative worst-case water-forecast exposure of applied moves
     lever_mode = config.lever_mode
     flavour_version: Dict[str, int] = {flv.id: 0 for flv in flavours_list}
     flav_cache: Dict[int, Dict[str, Dict[int, CandidatePlacement]]] = {}
@@ -797,6 +1430,72 @@ def repair_schedule_no_harm(
                 -abs(signal_delta["stress_kwh"]),
                 -candidate.timeslot.id,
             )
+        elif score_mode == "combined":
+            # Combined objective: pursue grid-stress relief AND certified carbon/water co-benefits,
+            # all still inside the no-harm guard. We rank by the NUMBER of certified axes a move
+            # strictly improves (Pareto progress; win-win-win first) — deliberately NOT a weighted
+            # sum (that is the bang-bang scalarization we critique in WaterWise) — then by stress
+            # relief, then the water and carbon co-benefits. Because score[0] is this count, the
+            # existing `score[0] <= 1e-12` gate keeps any move that improves >=1 certified axis,
+            # instead of discarding safe carbon/water-cutting moves that don't relieve stress.
+            stress_relief = -signal_delta["weighted_stress_kwh"] + 0.5 * signal_delta["headroom_kwh"]
+            eps = 1e-9
+            n_improved = int(stress_relief > eps) + int(carbon_saved > eps) + int(water_saved > eps)
+            score = (
+                n_improved,
+                stress_relief,
+                water_saved,
+                carbon_saved,
+                -signal_delta["drought_scarcity_water"],
+                -candidate.timeslot.id,
+            )
+        elif score_mode == "relief_only":
+            # Phase 1 of the dominating two-phase envelope (combined_v2). Accept ONLY grid-relieving
+            # moves (gate = stress_relief > 0), ranked by relief. It deliberately leaves every pure
+            # carbon/water co-benefit move for the phase-2 co-benefit pass, so phase 1 does NOT scramble
+            # the placements the co-benefit pass needs. (A single-score "do relief then co-benefit"
+            # ranking failed: with an any-axis gate it churned many tiny moves and recovered almost no
+            # co-benefit, and its move order broke ex-post certification.) Lexicographic, not a weighted
+            # sum -> no bang-bang. On a no-relief window this pass is a no-op, so phase 2 runs from B.
+            stress_relief = -signal_delta["weighted_stress_kwh"] + 0.5 * signal_delta["headroom_kwh"]
+            score = (
+                stress_relief,
+                water_saved,
+                carbon_saved,
+                -signal_delta["drought_scarcity_water"],
+                -candidate.timeslot.id,
+            )
+        elif score_mode in ("guarded_random", "guarded_carbon", "guarded_waterwise"):
+            # MC1 guarded controls. IDENTICAL no-harm guard to the envelope (the three guard checks in
+            # the move loop are unchanged); the ONLY difference is the acceptance ranking below. This
+            # isolates the value of the lexicographic combined ranking: each control still certifies by
+            # construction (guard-passing), so the experiment is the DELTA in certified grid-relief and
+            # co-benefit, not the certification rate. A deterministic per-candidate key (seeded) gives a
+            # reproducible "arbitrary order" and seed-varied CIs.
+            rkey = random.Random(
+                "%d|%s|%s|%d" % (
+                    config.repair_random_seed, placement.pod.id,
+                    candidate.flavour.id, candidate.timeslot.id,
+                )
+            ).random()
+            if score_mode == "guarded_random":
+                # Accept any move that strictly improves >=1 certified axis, in arbitrary (seeded) order.
+                stress_relief = -signal_delta["weighted_stress_kwh"] + 0.5 * signal_delta["headroom_kwh"]
+                eps = 1e-9
+                n_improved = int(stress_relief > eps) + int(carbon_saved > eps) + int(water_saved > eps)
+                score = (1.0 if n_improved > 0 else 0.0, rkey)
+            elif score_mode == "guarded_carbon":
+                # epsilon-constraint carbon-greedy: greedily maximize carbon reduction, ignore grid-stress.
+                score = (carbon_saved, water_saved, rkey)
+            else:  # guarded_waterwise
+                # epsilon-constraint WaterWise: greedily improve the scalarized w*carbon + (1-w)*water
+                # (relative to baseline), ignore grid-stress.
+                w = config.waterwise_carbon_weight
+                scalar = (
+                    w * (carbon_saved / base_carbon if base_carbon > 0 else 0.0)
+                    + (1.0 - w) * (water_saved / base_scarcity if base_scarcity > 0 else 0.0)
+                )
+                score = (scalar, rkey)
         else:
             score = (
                 -signal_delta["weighted_stress_kwh"] + 0.5 * signal_delta["headroom_kwh"],
@@ -814,18 +1513,53 @@ def repair_schedule_no_harm(
             scarcity_regret,
             signal_delta["drought_scarcity_water"],
             score,
-            # Operational carbon relocated by the move = the surface exposed to carbon-forecast
+            # [8] Operational carbon relocated by the move = the surface exposed to carbon-forecast
             # error (embodied carbon is certain; only CI is forecast).
             candidate.footprint.operational_carbon_kg + old_candidate.footprint.operational_carbon_kg,
+            # [9] Scarcity-water surface exposed to forecast error (wet-bulb for direct cooling water +
+            # grid-mix for indirect off-site water). Conservative: uses TOTAL scarcity-characterized
+            # water; the embodied-water fraction is certain, so this slightly over-reserves -> safe.
+            candidate.footprint.scarcity_characterized_water + old_candidate.footprint.scarcity_characterized_water,
         )
 
     base_carbon = baseline_totals["carbon_kg"]
     base_scarcity = baseline_totals["scarcity_water"]
+    # Ionising-radiation no-harm axis (default OFF -> the guard clause below never runs -> bit-identical).
+    radiation_guard = config.radiation_guard
+    base_radiation = baseline_totals.get("operational_radiation_kbq", 0.0)
+    cur_radiation = base_radiation
+    cost_guard = bool(getattr(config, "cost_guard", False))
+    base_cost = baseline_totals.get("operational_cost_eur", 0.0)
+    cur_cost = base_cost
     # Running totals maintained from CORRECT per-move deltas (idle re-attributed via the rebuilt
     # self-candidate as the removal baseline), so the guard checks the true current footprint rather
     # than a stale sum of per-pod footprints that loses a node's idle when its idle-bearer moves.
     cur_carbon = base_carbon
     cur_scarcity = base_scarcity
+    # Per-basin water baseline (default-off). Region == watershed in this testbed; the key generalizes
+    # to a basin id if a region spans basins. base_basin_water[reg] is the scarcity-characterized water
+    # per region in B (the no-harm reference); cur_basin_water tracks the running per-region totals.
+    per_basin_guard = config.per_basin_scarcity_guard
+    base_basin_water: Dict[str, float] = {}
+    cur_basin_water: Dict[str, float] = {}
+    if per_basin_guard:
+        for pl in baseline.placements:
+            reg = (getattr(pl.candidate.flavour, "region", "") or "").upper()
+            base_basin_water[reg] = base_basin_water.get(reg, 0.0) + \
+                pl.candidate.footprint.scarcity_characterized_water
+        cur_basin_water = dict(base_basin_water)
+    # Candidates rejected by the EXACT commit-time guard (see below). Banned for the window: they
+    # were priced against the true idle-once account and found harmful; occupancy changes could in
+    # principle redeem one, but keeping the ban is conservative (never unsafe) and bounds reruns.
+    exact_banned: set = set()
+    # Node-local exact-guard state (exact_guard_mode="node_local"): per-node exact totals
+    # (carbon, scarcity, radiation, cost), their global sum, and per-region scarcity, all under the
+    # idle-once account. Initialized lazily on the first commit attempt with one full per-node pass;
+    # afterwards each commit re-prices only the move's two touched nodes.
+    node_local_guard = getattr(config, "exact_guard_mode", "node_local") != "full"
+    node_exact: Dict[str, Tuple[float, float, float, float]] = {}
+    exact_glob: Optional[Tuple[float, float, float, float]] = None
+    exact_reg: Dict[str, float] = {}
     while repairs < max_repairs:
         best: Optional[Tuple[Tuple[float, ...], int, CandidatePlacement]] = None
 
@@ -890,35 +1624,180 @@ def repair_schedule_no_harm(
 
             for candidate in ranked:
                 (is_self, lever_skip, d_carbon, d_scarcity, carbon_regret, scarcity_regret,
-                 drought_delta, score, unc_carbon) = candidate._nh
+                 drought_delta, score, unc_carbon, unc_scarcity) = candidate._nh
                 if is_self or lever_skip:
                     continue
+                if (idx, candidate.flavour.id, candidate.timeslot.id) in exact_banned:
+                    continue  # already found harmful by the exact commit-time guard
                 # Carbon guard keeps the cumulative WORST-CASE realized carbon under baseline:
                 # nominal current + uncertainty already committed + this move's exposure.
                 if (cur_carbon + d_carbon + margin * carbon_regret
                         + applied_unc_carbon + robust_buffer * unc_carbon) > base_carbon + 1e-9:
                     rejected_moves += 1
                     continue
-                if cur_scarcity + d_scarcity + margin * scarcity_regret > base_scarcity + 1e-9:
+                # Scarcity guard, symmetric: nominal current + committed water-forecast uncertainty +
+                # this move's water exposure. robust_buffer_water defaults to 0 -> byte-identical legacy.
+                if (cur_scarcity + d_scarcity + margin * scarcity_regret
+                        + applied_unc_scarcity + robust_buffer_water * unc_scarcity) > base_scarcity + 1e-9:
                     rejected_moves += 1
                     continue
+                # Ionising-radiation guard (fourth axis): keep cumulative operational radiation <= B.
+                # d_radiation is computed vs the SAME rebuilt removal baseline as carbon/water, so the
+                # checked delta equals the committed delta. Gated -> off path is bit-identical.
+                if radiation_guard:
+                    d_radiation = (candidate.footprint.operational_radiation_kbq
+                                   - remove_baseline.footprint.operational_radiation_kbq)
+                    if cur_radiation + d_radiation > base_radiation + 1e-9:
+                        rejected_moves += 1
+                        continue
+                # Electricity-cost guard (fifth axis): keep cumulative operational cost <= B.
+                # Gated -> off path is bit-identical.
+                if cost_guard:
+                    d_cost = (candidate.footprint.operational_cost_eur
+                              - remove_baseline.footprint.operational_cost_eur)
+                    if cur_cost + d_cost > base_cost + 1e-9:
+                        rejected_moves += 1
+                        continue
                 if drought_delta > 1e-9:
                     rejected_moves += 1
                     continue
+                if per_basin_guard:
+                    src_reg = (getattr(remove_baseline.flavour, "region", "") or "").upper()
+                    dst_reg = (getattr(candidate.flavour, "region", "") or "").upper()
+                    src_w = remove_baseline.footprint.scarcity_characterized_water
+                    dst_w = candidate.footprint.scarcity_characterized_water
+                    # Projected per-basin water if this move is taken; reject if ANY basin exceeds B.
+                    proj_src = cur_basin_water.get(src_reg, 0.0) - src_w
+                    proj_dst = cur_basin_water.get(dst_reg, 0.0) \
+                        - (src_w if dst_reg == src_reg else 0.0) + dst_w
+                    if (proj_dst > base_basin_water.get(dst_reg, 0.0) + 1e-9
+                            or proj_src > base_basin_water.get(src_reg, 0.0) + 1e-9):
+                        rejected_moves += 1
+                        continue
                 if score[0] <= 1e-12:
                     continue
                 if best is None or score > best[0]:
-                    best = (score, idx, candidate)
+                    best = (score, idx, candidate, remove_baseline)
 
         if best is None:
             break
 
-        _, placement_idx, candidate = best
-        # Commit this move's CORRECT marginal footprint to the running totals the guard checks.
-        cur_carbon += candidate._nh[2]
-        cur_scarcity += candidate._nh[3]
+        _, placement_idx, candidate, best_remove_baseline = best
+        # ---- EXACT commit-time guard (2026-07-01) -------------------------------------------------
+        # The per-move deltas above are fast FILTERS, but their incremental ledger can drift from the
+        # true idle-once account when idle-bearer-ship is silently inherited (a bearer leaves, the
+        # co-tenant's STORED footprint never picks the idle up; when the inheritor later moves, the
+        # rebuilt removal baseline legitimately credits idle the ledger never paid for). On slack
+        # fleets many spreading moves compound this into certified-looking harm (found: +11.8% carbon
+        # "guarded" schedule on the 8-node headroom fleet; the ex-post check caught it, but the repair
+        # should never walk there). Before committing the SELECTED move, price the whole hypothetical
+        # placement set with the exact occupancy-ordered evaluator and reject if ANY certified ledger
+        # would exceed B; on acceptance re-sync every running ledger from the exact account, so drift
+        # cannot accumulate across moves.
+        if node_local_guard:
+            # ---- node-local exact pricing: only the move's two nodes change footprints ---------
+            if exact_glob is None:
+                # One full per-node pass (same cost as one whole-schedule re-pricing), then O(2
+                # nodes) per commit forever after.
+                groups: Dict[str, List[Placement]] = {}
+                for pl in current.placements:
+                    groups.setdefault(pl.candidate.flavour.id, []).append(pl)
+                for fid, pls in groups.items():
+                    tot = _exact_node_totals(pls, flavour_by_id[fid], config)
+                    if tot is None:  # should be impossible for a feasibility-checked schedule
+                        raise RuntimeError(f"exact node pricing found infeasible occupancy on {fid}")
+                    node_exact[fid] = tot
+                exact_glob = tuple(sum(t[i] for t in node_exact.values()) for i in range(4))  # type: ignore[assignment]
+                exact_reg = {}
+                for fid, t in node_exact.items():
+                    reg = (getattr(flavour_by_id[fid], "region", "") or "").upper()
+                    exact_reg[reg] = exact_reg.get(reg, 0.0) + t[1]
+            old_pl = current.placements[placement_idx]
+            fid_old = old_pl.candidate.flavour.id
+            fid_new = candidate.flavour.id
+            hypo = replace(old_pl, candidate=candidate)
+            occ_new: Dict[str, List[Placement]] = {fid_old: [], fid_new: []}
+            for i, pl in enumerate(current.placements):
+                fid = pl.candidate.flavour.id
+                if fid in occ_new and i != placement_idx:
+                    occ_new[fid].append(pl)
+            occ_new[fid_new].append(hypo)
+            new_tot: Dict[str, Tuple[float, float, float, float]] = {}
+            feasible = True
+            for fid, pls in occ_new.items():
+                t = _exact_node_totals(pls, flavour_by_id[fid], config)
+                if t is None:
+                    feasible = False
+                    break
+                new_tot[fid] = t
+            if not feasible:
+                exact_banned.add((placement_idx, candidate.flavour.id, candidate.timeslot.id))
+                rejected_moves += 1
+                continue
+            glob = list(exact_glob)
+            trial_reg = dict(exact_reg)
+            for fid in occ_new:
+                old_t = node_exact.get(fid, (0.0, 0.0, 0.0, 0.0))
+                for i in range(4):
+                    glob[i] += new_tot[fid][i] - old_t[i]
+                reg = (getattr(flavour_by_id[fid], "region", "") or "").upper()
+                trial_reg[reg] = trial_reg.get(reg, 0.0) + new_tot[fid][1] - old_t[1]
+            exact_carbon, exact_scarcity, exact_radiation, exact_cost = glob
+            exact_basin = trial_reg
+        else:
+            # ---- original whole-schedule re-pricing (kept for swap-and-diff validation) --------
+            trial_placements = list(current.placements)
+            trial_placements[placement_idx] = replace(trial_placements[placement_idx], candidate=candidate)
+            exact = _exact_carbon_scarcity(trial_placements, flavours, config)
+            if exact is None:
+                exact_banned.add((placement_idx, candidate.flavour.id, candidate.timeslot.id))
+                rejected_moves += 1
+                continue  # infeasible under joint occupancy -> rescan without this candidate
+            exact_carbon, exact_scarcity, exact_by_id = exact
+            exact_basin = {}
+            exact_radiation = 0.0
+            exact_cost = 0.0
+            for pl in trial_placements:
+                m = exact_by_id.get(id(pl))
+                if m is None:
+                    continue
+                reg = (getattr(m.flavour, "region", "") or "").upper()
+                exact_basin[reg] = exact_basin.get(reg, 0.0) + m.footprint.scarcity_characterized_water
+                exact_radiation += m.footprint.operational_radiation_kbq
+                exact_cost += m.footprint.operational_cost_eur
+        planned_unc_c = applied_unc_carbon + (robust_buffer * candidate._nh[8] if robust_buffer else 0.0)
+        planned_unc_w = applied_unc_scarcity + (robust_buffer_water * candidate._nh[9] if robust_buffer_water else 0.0)
+        harmful = (
+            exact_carbon + planned_unc_c > base_carbon + 1e-9
+            or exact_scarcity + planned_unc_w > base_scarcity + 1e-9
+            or (radiation_guard and exact_radiation > base_radiation + 1e-9)
+            or (cost_guard and exact_cost > base_cost + 1e-9)
+            or (per_basin_guard and any(
+                exact_basin.get(reg, 0.0) > base_basin_water.get(reg, 0.0) + 1e-9
+                for reg in set(exact_basin) | set(base_basin_water)))
+        )
+        if harmful:
+            exact_banned.add((placement_idx, candidate.flavour.id, candidate.timeslot.id))
+            rejected_moves += 1
+            continue  # the exact account rejects this move -> rescan for the next best
+        # Commit: re-sync ALL running ledgers from the exact account (no incremental drift).
+        cur_carbon = exact_carbon
+        cur_scarcity = exact_scarcity
+        if radiation_guard:
+            cur_radiation = exact_radiation
+        if cost_guard:
+            cur_cost = exact_cost
+        if per_basin_guard:
+            cur_basin_water = dict(exact_basin)
+        if node_local_guard:
+            # Persist the two touched nodes' exact totals + the global/per-region aggregates.
+            node_exact.update(new_tot)
+            exact_glob = tuple(glob)  # type: ignore[assignment]
+            exact_reg = trial_reg
         if robust_buffer:
             applied_unc_carbon += robust_buffer * candidate._nh[8]  # commit this move's carbon-forecast exposure
+        if robust_buffer_water:
+            applied_unc_scarcity += robust_buffer_water * candidate._nh[9]  # commit this move's water-forecast exposure
         old = current.placements[placement_idx]
         f_old = old.candidate.flavour.id
         f_new = candidate.flavour.id
@@ -929,6 +1808,20 @@ def repair_schedule_no_harm(
         flavour_version[f_new] += 1
         delta_dirty[placement_idx] = True
         repairs += 1
+
+    # D1: certified atomic consolidation post-pass (default OFF -> bit-identical). Closes the
+    # consolidation barrier the per-move guard cannot cross (an idle-once activation that fails the
+    # carbon guard mid-consolidation), by evaluating a coordinated move-SET against the certificate.
+    if config.consolidation_pass:
+        consolidated = _consolidation_pass(
+            current=current,
+            flavours=flavours,
+            signals=signals,
+            config=config,
+            base_carbon=base_carbon,
+            base_scarcity=base_scarcity,
+        )
+        repairs += consolidated
 
     current.repairs_applied = repairs
     current.rejected_moves = rejected_moves
@@ -1122,7 +2015,7 @@ def run_no_harm_flexibility_pilot(config: PilotConfig) -> Dict[str, Any]:
         flavours=decision_flavours,
         signals=decision_signals,
         config=config,
-        score_mode="flexibility",
+        score_mode="combined",  # pursue grid-stress relief AND certified carbon/water co-benefits
     )
     search_control_config = replace(config, max_repairs=no_harm_flex.repairs_applied)
     search_control = repair_schedule_no_harm(

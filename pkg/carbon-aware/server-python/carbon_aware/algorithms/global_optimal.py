@@ -600,11 +600,14 @@ class GlobalOptimalAlgorithm(SchedulingAlgorithm):
                 footprint.direct_water_l += direct_water
                 footprint.indirect_water_l += indirect_water
                 footprint.embodied_water_l += embodied_water
+                # Guarded/ranked scarcity is OPERATIONAL only (direct@basin + indirect@country);
+                # embodied scarcity is tracked separately and excluded from the optimised axis so the
+                # MILP optimality-gap stays apples-to-apples with the no-harm engine (footprints.py).
                 footprint.scarcity_characterized_water += (
                     direct_water * direct_cf
                     + indirect_water * indirect_cf
-                    + embodied_water * embodied_cf
                 )
+                footprint.embodied_scarcity_water += embodied_water * embodied_cf
 
         for pod_id_sol, footprint in pod_footprints.items():
             pod_footprints[pod_id_sol] = footprint.finalize()

@@ -16,7 +16,7 @@ extend-exclude = [
   "experiments/",
   "external/",
   "media/",
-  "pkg/generated-go/",
+  "legacy/",
   "pkg/carbon-aware/server-python/idl_pb2.py",
   "pkg/carbon-aware/server-python/idl_pb2_grpc.py",
 ]

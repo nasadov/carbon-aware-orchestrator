@@ -316,15 +316,22 @@ def _c_to_f(temp_c: float) -> float:
     return temp_c * 9.0 / 5.0 + 32.0
 
 
+# Gupta Eq.(2) is a downward parabola peaking at wbf* = -b/2a ~= 81.6 F (Tw ~= 27.6 C); above the peak
+# the raw fit turns DOWNWARD (unphysical: makeup water rises, not falls, with wet-bulb). Clamp the fit
+# argument to [30 F validity floor, peak] so WUE is MONOTONE NON-DECREASING in wet-bulb. This MUST match
+# scripts/build_timealigned_signals.gupta_wet_tower_wue (single coherent cooling physics).
+_GUPTA_PEAK_F = -0.03095 / (2.0 * -0.0001896)  # ~81.64 F parabola vertex
+_EVAP_TRANSITION_C = 3.0  # smooth evaporative-engagement band (C); matches build_timealigned_signals
+
+
 def _fixed_approach_wue_l_per_kwh(wet_bulb_c: float) -> Tuple[float, float]:
     """
-    Gupta et al. (e-Energy 2024), Eq. (2), fixed-approach cooling-tower model.
-
-    The paper states a lower validity bound of 30 F. We clamp colder conditions
-    to that limit rather than extrapolating below the fitted range.
+    Gupta et al. (e-Energy 2024), Eq. (2), fixed-approach cooling-tower model, MONOTONE in wet-bulb:
+    the fit argument is clamped to [30 F validity floor, parabola peak] so WUE never inverts above the
+    vertex (~27.6 C wet-bulb) -- it plateaus at the empirical maximum instead.
     """
     wet_bulb_f = _c_to_f(wet_bulb_c)
-    model_wet_bulb_f = max(wet_bulb_f, 30.0)
+    model_wet_bulb_f = min(max(wet_bulb_f, 30.0), _GUPTA_PEAK_F)
     wue = (
         -0.0001896 * (model_wet_bulb_f ** 2)
         + 0.03095 * model_wet_bulb_f
@@ -333,29 +340,38 @@ def _fixed_approach_wue_l_per_kwh(wet_bulb_c: float) -> Tuple[float, float]:
     return model_wet_bulb_f, max(wue, 0.0)
 
 
-def _is_evaporative_mode_active(profile: CoolingProfile, dry_bulb_c: float, wet_bulb_c: float) -> bool:
-    if profile.activation_rule == "always":
-        return True
-    if profile.activation_rule == "never":
-        return False
+def _smoothstep(x: float) -> float:
+    """C1-continuous 0->1 Hermite ramp on x in [0,1]; flat outside."""
+    x = min(max(x, 0.0), 1.0)
+    return x * x * (3.0 - 2.0 * x)
 
-    conditions: List[bool] = []
+
+def _evaporative_engagement(profile: CoolingProfile, dry_bulb_c: float, wet_bulb_c: float) -> float:
+    """CONTINUOUS evaporative-assist engagement in [0,1] (replaces the bang-bang boolean). Each active
+    weather threshold contributes a smoothstep ramp over an _EVAP_TRANSITION_C-wide window centred on the
+    threshold; any/all logic combines them as fuzzy OR (max) / AND (min). Matches build_timealigned_signals
+    so the reference table and the time-aligned signals share one continuous cooling physics."""
+    if profile.activation_rule == "always":
+        return 1.0
+    if profile.activation_rule == "never":
+        return 0.0
+    w = _EVAP_TRANSITION_C
+    ramps: List[float] = []
     if profile.evap_activation_dry_bulb_c is not None:
-        conditions.append(dry_bulb_c >= profile.evap_activation_dry_bulb_c)
+        ramps.append(_smoothstep((dry_bulb_c - (profile.evap_activation_dry_bulb_c - w / 2.0)) / w))
     if profile.evap_activation_wet_bulb_c is not None:
-        conditions.append(wet_bulb_c >= profile.evap_activation_wet_bulb_c)
-    if not conditions:
-        return False
-    if profile.activation_logic == "all":
-        return all(conditions)
-    return any(conditions)
+        ramps.append(_smoothstep((wet_bulb_c - (profile.evap_activation_wet_bulb_c - w / 2.0)) / w))
+    if not ramps:
+        return 0.0
+    return min(ramps) if profile.activation_logic == "all" else max(ramps)
 
 
 def _compute_direct_wue(profile: CoolingProfile, dry_bulb_c: float, wet_bulb_c: float) -> Tuple[bool, float, float, float]:
     model_wet_bulb_f, wet_tower_wue = _fixed_approach_wue_l_per_kwh(wet_bulb_c)
-    evaporative_active = _is_evaporative_mode_active(profile, dry_bulb_c, wet_bulb_c)
-    evap_component = wet_tower_wue * profile.evap_multiplier if evaporative_active else 0.0
+    sigma = _evaporative_engagement(profile, dry_bulb_c, wet_bulb_c)
+    evap_component = wet_tower_wue * profile.evap_multiplier * sigma
     direct_wue = max(profile.dry_mode_wue_l_per_kwh + evap_component, 0.0)
+    evaporative_active = sigma > 0.5  # reported bool retains the >50%-engaged semantics
     return evaporative_active, wet_tower_wue, model_wet_bulb_f, direct_wue
 
 

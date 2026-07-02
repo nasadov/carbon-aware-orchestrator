@@ -84,14 +84,17 @@ def main() -> int:
     ap.add_argument("--lever-mode", default="both")
     ap.add_argument("--scenario", default="heatwave-drought")
     ap.add_argument("--run-name", default="t12_alibaba")
+    ap.add_argument("--signals-dir", default=None,
+                    help="time-aligned signals dir (default = proxy data/timealigned; pass data/timealigned_realci for measured CI)")
     args = ap.parse_args()
     import logging
     logging.disable(logging.CRITICAL)
+    signals = (REPO_ROOT / args.signals_dir).resolve() if args.signals_dir else TIMEALIGNED
 
     window = (REPO_ROOT / args.window).resolve()
     workloads = window / "workloads"
     if not workloads.exists():
-        raise SystemExit(f"no workloads/ under {window} (run convert_alibaba_gpu_trace.py first)")
+        raise SystemExit(f"no workloads/ under {window} (run real_traces/convert_alibaba_gpu_v2020.py first)")
 
     run_dir = REPO_ROOT / "experiments" / "flexibility" / args.run_name
     fleet_dir = run_dir / "fleet"
@@ -102,10 +105,12 @@ def main() -> int:
     config_file = REPO_ROOT / "pkg" / "carbon-aware" / "infra-workload-config.yaml"
     pc = PilotConfig(
         repo_root=REPO_ROOT, nodes_file=nodes_file, workloads_dir=workloads,
-        forecasts_file=TIMEALIGNED / "forecasts.json", config_file=config_file,
+        forecasts_file=signals / "forecasts.json", config_file=config_file,
         output_dir=run_dir / "out", max_timeslots=args.max_timeslots, max_pods=None,
         scenario=args.scenario, lever_mode=args.lever_mode,
-        grid_signal_csv=TIMEALIGNED / "grid_residual_region_slot.csv", wue_csv=TIMEALIGNED / "wue_region_slot.csv",
+        grid_signal_csv=signals / "grid_residual_region_slot.csv", wue_csv=signals / "wue_region_slot.csv",
+        # In-window off-site water (same Energy-Charts mix as CI/WUE) when present in the signals dir.
+        ewif_csv=((signals / "ewif_region_slot.csv") if (signals / "ewif_region_slot.csv").exists() else None),
     )
     pods = load_pods(workloads)
     n_gpu_pods = sum(1 for p in pods if getattr(p, "gpuRequest", 0) > 0)

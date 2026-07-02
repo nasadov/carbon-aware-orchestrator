@@ -38,7 +38,7 @@ GPKG_URL = ("https://zenodo.org/records/16332127/files/"
 SOURCE_DATASET = "AWARE2.0 native CFs (geospatial), WULCA"
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 # region -> ISO country code, for the country-vs-basin contrast print and provenance.
-REGION_TO_CC = {"DE": "DE", "FR": "FR", "ES": "ES", "IT-NO": "IT"}
+REGION_TO_CC = {"DE": "DE", "FR": "FR", "ES": "ES", "IT-NO": "IT", "SE": "SE", "PL": "PL"}
 
 
 def _load_sites():

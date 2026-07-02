@@ -1,0 +1,1196 @@
+{
+  "DE": {
+    "zone": "DE",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 490.0
+      }
+    ],
+    "ci_model": "energy_charts_merit_order_marginal_fuel_srmef_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2018-07-25T00:00:00Z"
+  },
+  "FR": {
+    "zone": "FR",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 490.0
+      }
+    ],
+    "ci_model": "energy_charts_merit_order_marginal_fuel_srmef_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2018-07-25T00:00:00Z"
+  },
+  "ES": {
+    "zone": "ES",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 490.0
+      }
+    ],
+    "ci_model": "energy_charts_merit_order_marginal_fuel_srmef_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2018-07-25T00:00:00Z"
+  },
+  "IT-NO": {
+    "zone": "IT-NO",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 490.0
+      }
+    ],
+    "ci_model": "energy_charts_merit_order_marginal_fuel_srmef_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2018-07-25T00:00:00Z"
+  },
+  "SE": {
+    "zone": "SE",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 700.0
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 700.0
+      }
+    ],
+    "ci_model": "energy_charts_merit_order_marginal_fuel_srmef_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2018-07-25T00:00:00Z"
+  },
+  "PL": {
+    "zone": "PL",
+    "forecast": [
+      {
+        "datetime": "2018-07-25T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-25T23:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T00:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T01:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T02:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T03:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T04:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T05:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T06:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T07:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T08:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T09:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T10:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T11:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T12:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T13:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T14:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T15:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T16:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T17:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T18:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T19:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T20:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T21:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T22:00:00Z",
+        "carbonIntensity": 490.0
+      },
+      {
+        "datetime": "2018-07-26T23:00:00Z",
+        "carbonIntensity": 490.0
+      }
+    ],
+    "ci_model": "energy_charts_merit_order_marginal_fuel_srmef_x_ipcc_ar5_lifecycle_ef",
+    "updatedAt": "2018-07-25T00:00:00Z"
+  }
+}

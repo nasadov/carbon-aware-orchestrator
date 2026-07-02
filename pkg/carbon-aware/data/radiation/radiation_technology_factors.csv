@@ -1,0 +1,12 @@
+source_type,ionising_radiation_kbq_u235eq_per_kwh_low,ionising_radiation_kbq_u235eq_per_kwh_base,ionising_radiation_kbq_u235eq_per_kwh_high,source_id,source_note
+nuclear,0.500000,0.681000,0.900000,"ef31_ecoinvent_representative;leboulch2024edf_mechanism","Representative full-fuel-cycle ionising-radiation intensity for nuclear electricity, EF3.1/ecoinvent-based (kBq U235eq/kWh); low/high bracket the ecoinvent/EF3.1 nuclear range. PROVENANCE CORRECTED 2026-07-01: the EDF France LCA (Le-Boulch et al., EPJ Nuclear Sci. Technol. 2024, ISO 14040/44) documents the MECHANISM (ionising radiation ~98% carbon-14 to air; spent-fuel treatment ~60% + generation ~37%) but treats the category semi-qualitatively and does NOT report a kBq U235eq/kWh value; cite it for the mechanism only, never for 0.681."
+coal,0.002000,0.004000,0.008000,"ef31;ecoinvent","Radon-222/thorium from coal extraction and combustion; small relative to nuclear."
+gas,0.000800,0.001500,0.003000,"ef31;ecoinvent","Upstream fuel-cycle radionuclides for natural gas; minor."
+oil,0.001500,0.003000,0.006000,"ef31;ecoinvent","Oil-fired thermal upstream radionuclides; minor."
+biomass,0.001000,0.003000,0.006000,"ef31;ecoinvent","Biomass supply-chain radionuclides; minor."
+hydro,0.000300,0.000600,0.001000,"ef31;ecoinvent","Construction-phase materials; negligible operational ionising radiation."
+wind,0.000400,0.000800,0.001500,"ef31;ecoinvent","Materials/manufacturing radionuclides; negligible."
+solar,0.001000,0.002000,0.004000,"ef31;ecoinvent","PV materials/manufacturing radionuclides; small."
+geothermal,0.000500,0.001000,0.002000,"ef31;ecoinvent","Geothermal radionuclide release; small."
+other,,,,inherit_non_nuclear_mix,"Residual/unmapped technologies inherit the non-nuclear mix average."
+unknown,,,,inherit_non_nuclear_mix,"Unmapped share inherits the non-nuclear mix average."

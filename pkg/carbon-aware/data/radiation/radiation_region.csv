@@ -1,0 +1,7 @@
+region,nuclear_share,ionising_radiation_kbq_u235eq_per_kwh_low,ionising_radiation_kbq_u235eq_per_kwh_base,ionising_radiation_kbq_u235eq_per_kwh_high
+FR,0.65,0.325203,0.443067,0.585803
+DE,0.06,0.031082,0.043095,0.058441
+ES,0.2,0.10056,0.137315,0.182184
+IT-NO,0.0,0.000761,0.001512,0.002974
+SE,0.29,0.145287,0.1981,0.262116
+PL,0.0,0.001629,0.003289,0.006566

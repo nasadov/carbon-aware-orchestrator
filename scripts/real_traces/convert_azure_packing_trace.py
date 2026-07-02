@@ -14,6 +14,15 @@ The converter intentionally keeps the scheduling harness unchanged. It writes:
 The Azure trace has real arrivals, lifetimes, priorities, and normalized VM
 type resources. It does not have user deadlines, so this converter records that
 deadlines are synthetic and generated as duration + slack.
+
+Coherence with the Alibaba GPU testbed (so the two are comparable):
+  * Energy: Packing 2020 is an *allocation* trace with no per-VM CPU-usage telemetry, so each
+    pod is imputed the trace-population mean utilization (trace/cpu_util_ratio) and the engine
+    drives DYNAMIC power from usage, not request -- the same population-mean imputation the
+    Alibaba converter uses for its sensor-missing tasks (no more request=100% energy).
+  * Slack: drawn from a literature-grounded distribution skewed to a few hours and CAPPED at 24 h
+    (no 48 h tail past the signal horizon), matching the Alibaba SLACK distribution.
+  * Tier: firm/flexible from the trace priority (evictability) -- an observable operator label.
 """
 
 from __future__ import annotations
@@ -64,9 +73,23 @@ DEPLOYMENT_TEMPLATE = {
 CPU_OPTIONS = ["100m", "250m", "500m", "1000m", "2000m"]
 MEM_OPTIONS = ["128Mi", "256Mi", "512Mi", "1Gi", "2Gi"]
 DURATION_OPTIONS = [1, 3, 6]
-# Deferral-horizon tiers for the FLEXIBLE (deferrable) class, aligned with the
-# paper-three realism register: base 12 h, realistic <=24 h, tail <=48 h.
-SLACK_OPTIONS = [4, 12, 24, 48]
+# Deferral slack (hours) for the FLEXIBLE (deferrable) class. ALIGNED with the Alibaba GPU
+# converter and the carbon-flexibility literature so the two testbeds make the same deferrability
+# assumption: grid benefit saturates after a few hours (Chen & Zheng 2026), the production envelope
+# is within-day ~24 h (Google Carbon-Intelligent Computing, Radovanovic 2023), DR events are a few
+# hours (EPRI DCFlex). So we draw a distribution SKEWED to a few hours, CAPPED at 24 h (no 48 h tail
+# that would defer past the signal horizon). Mean ~9 h, matching the Alibaba SLACK distribution.
+SLACK_OPTIONS = [3, 6, 12, 24]
+SLACK_WEIGHTS = [0.35, 0.30, 0.20, 0.15]
+# Imputed CPU utilization as a fraction of the request. The Azure Packing 2020 trace is an
+# *allocation* trace: it records VM requests/lifetimes/priority but NO per-VM CPU-usage telemetry.
+# We therefore impute the trace-population mean utilization and write it as trace/cpu_util_ratio so
+# the engine drives DYNAMIC power from usage (not request) -- the same population-mean imputation
+# rule the Alibaba converter applies to its sensor-missing tasks (CPU_GLOBAL_UTIL). 0.25 is
+# representative of measured average VM CPU utilization in Azure's fleet (most VMs average well
+# below 50%; fleet averages ~20-30% per Cortez et al., "Resource Central", SOSP 2017).
+# NOTE: verify the exact figure against the cited source before camera-ready; overridable via --cpu-util.
+CPU_UTIL_MEAN = 0.25
 DEFAULT_ARRIVAL_WINDOW_SLOTS = 12
 EXECUTION_HORIZON_SLOTS = 48
 
@@ -178,6 +201,8 @@ def assign_workload_fields(
     seed: int,
     slack_options: list[int],
     flexible_priorities: set[int],
+    slack_weights: list[float] | None = None,
+    cpu_util: float = CPU_UTIL_MEAN,
 ) -> pd.DataFrame:
     out = df.copy()
     duration_hours_raw = ((out["endtime"] - out["starttime"]) * 24.0).clip(lower=1.0)
@@ -194,15 +219,24 @@ def assign_workload_fields(
     out["tier"] = [
         "flexible" if int(p) in flexible_priorities else "firm" for p in out["priority"]
     ]
+    # Slack for flexible jobs: draw the literature-grounded SKEWED distribution (capped at the
+    # max slack option, default 24 h) when weights are given -- identical in spirit to the Alibaba
+    # converter -- else fall back to the legacy round-robin. Firm jobs get 0 (deadline == duration).
     rng = random.Random(seed + 10007)
-    flex_slacks = [slack_options[i % len(slack_options)] for i in range(len(out))]
-    rng.shuffle(flex_slacks)
-    slacks = [
-        flex_slacks[i] if out["tier"].iloc[i] == "flexible" else 0
-        for i in range(len(out))
-    ]
+    if slack_weights:
+        slacks = [
+            rng.choices(slack_options, weights=slack_weights)[0] if out["tier"].iloc[i] == "flexible" else 0
+            for i in range(len(out))
+        ]
+    else:
+        flex_slacks = [slack_options[i % len(slack_options)] for i in range(len(out))]
+        rng.shuffle(flex_slacks)
+        slacks = [flex_slacks[i] if out["tier"].iloc[i] == "flexible" else 0 for i in range(len(out))]
     out["deadline_slack_slots"] = slacks
     out["deadline_slots"] = out["duration_slots"].astype(int) + pd.Series(slacks, index=out.index).astype(int)
+    # Imputed measured-utilization fraction (no per-VM telemetry in Packing 2020). Written as
+    # trace/cpu_util_ratio so the engine scales DYNAMIC power by usage, matching the Alibaba testbed.
+    out["cpu_util_ratio"] = float(cpu_util)
     out["pod_id"] = [f"m{i:04d}" for i in range(len(out))]
     out["trace_source"] = "azure_packing_2020"
     out["source_id"] = out["vmId"].apply(clean_trace_id)
@@ -232,6 +266,7 @@ def make_deployment(row: pd.Series, vanilla: bool) -> dict:
         "trace/priority": str(row["priority"]),
         "trace/tier": str(row["tier"]),
         "trace/deadline_slack_hours": str(int(row["deadline_slack_slots"])),
+        "trace/cpu_util_ratio": f"{float(row.get('cpu_util_ratio', CPU_UTIL_MEAN)):.4f}",
         "trace/raw_start_day": f"{float(row['starttime']):.8f}",
         "trace/raw_end_day": f"{float(row['endtime']):.8f}",
         "trace/raw_duration_hours": f"{float(row['raw_duration_hours']):.4f}",
@@ -337,7 +372,14 @@ def parse_args() -> argparse.Namespace:
         "--slack-options",
         type=parse_int_list,
         default=SLACK_OPTIONS,
-        help="deferral-horizon tiers (hours) assigned to the flexible class; default 4,12,24,48",
+        help="deferral-slack tiers (hours) drawn for the flexible class; default 3,6,12,24 (capped at 24)",
+    )
+    parser.add_argument(
+        "--cpu-util",
+        type=float,
+        default=CPU_UTIL_MEAN,
+        help="imputed CPU utilization fraction of request (Packing 2020 has no per-VM usage telemetry); "
+        f"default {CPU_UTIL_MEAN} (Azure fleet average, Cortez et al. SOSP 2017)",
     )
     parser.add_argument(
         "--flexible-priorities",
@@ -369,11 +411,15 @@ def main() -> int:
         seed=args.seed,
         arrival_window_slots=args.arrival_window_slots,
     )
+    slack_opts = list(args.slack_options)
+    slack_wts = SLACK_WEIGHTS if slack_opts == SLACK_OPTIONS else None
     canonical = assign_workload_fields(
         sampled,
         seed=args.seed,
-        slack_options=list(args.slack_options),
+        slack_options=slack_opts,
         flexible_priorities=set(args.flexible_priorities),
+        slack_weights=slack_wts,
+        cpu_util=args.cpu_util,
     )
     earliest_finish = canonical["arrival_slot"] + canonical["duration_slots"]
     if (not args.allow_horizon_overflow) and (earliest_finish > EXECUTION_HORIZON_SLOTS).any():
@@ -407,11 +453,20 @@ def main() -> int:
         "deadline_mapping": (
             "firm/flexible tier from trace priority (evictability): flexible (deferrable) "
             "class = priority in {flexible_priorities}; firm class gets slack 0 (deadline == "
-            "duration). Flexible class gets synthetic duration + slack with slack in "
-            f"{list(args.slack_options)} h."
+            "duration). Flexible class gets synthetic duration + slack drawn from a literature-"
+            f"grounded skewed distribution over {slack_opts} h (capped at 24 h; aligned with the "
+            "Alibaba converter)."
         ),
         "flexible_priorities": list(args.flexible_priorities),
-        "slack_options_hours": list(args.slack_options),
+        "slack_options_hours": slack_opts,
+        "slack_weights": slack_wts,
+        "cpu_util_ratio_imputed": args.cpu_util,
+        "cpu_util_note": (
+            "Packing 2020 has no per-VM CPU-usage telemetry; every pod is imputed the trace-"
+            "population mean CPU utilization (written as trace/cpu_util_ratio, scales dynamic "
+            "power) -- the same population-mean rule the Alibaba converter applies to sensor-"
+            "missing tasks. Value ~Azure fleet average (Cortez et al., Resource Central, SOSP 2017)."
+        ),
         "tier_counts": {k: int(v) for k, v in canonical["tier"].value_counts().to_dict().items()},
         "tier_mapping_note": (
             "Azure Packing 2020 schema: priority 0=high/firm, 1=low/evictable ('low-priority "

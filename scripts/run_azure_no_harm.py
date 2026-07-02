@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""T3 — run the no-harm pilot on a real Azure Packing 2020 trace window.
+"""T3 — run the no-harm pilot on a real Azure Packing 2020 trace window (CPU/RAM general cloud).
 
-Generates a regionful fleet (with per-site cooling kappa via the time-aligned WUE
-table), points the no-harm pilot at a converted Azure window, and reports the
-no-harm certificate, carbon/scarcity deltas, stress relief, and the flexible share
-(firm/flexible tier derived from the trace priority by the converter).
+Canonical Azure runner. It rebuilds the window's workloads with the corrected energy/slack model
+(imputed CPU utilization drives dynamic power; slack capped at 24 h) from the window's
+``canonical_trace_workload.csv``, provisions a REALISTIC CPU fleet to a target utilization (no
+synthetic generator, no oversized nodes), and reports the no-harm certificate, carbon/scarcity
+deltas, grid-stress relief, and the firm/flexible share, beside the carbon-/water-greedy ceilings
+and WaterWise. The fleet, signals, regions, and PilotConfig are shared with the Alibaba GPU testbed
+(``azure_common``/``alibaba_common``), so only the workload class and binding resource differ.
 """
 from __future__ import annotations
 
@@ -14,93 +17,91 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[0]
-SERVER = REPO_ROOT / "pkg" / "carbon-aware" / "server-python"
-for p in (str(SERVER), str(SCRIPT_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
-
-from carbon_aware.no_harm_flexibility import PilotConfig, load_pods, run_no_harm_flexibility_pilot  # noqa: E402
-from no_harm_flex_matrix import _generate_case_inputs, load_generator_dependencies  # noqa: E402
-
-TIMEALIGNED = REPO_ROOT / "pkg" / "carbon-aware" / "data" / "timealigned"
+sys.path.insert(0, str(SCRIPT_DIR))
+import azure_common as ac  # noqa: E402
+from carbon_aware.no_harm_flexibility import load_pods, run_no_harm_flexibility_pilot  # noqa: E402
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--window", default="experiments/real_traces/azure_packing_2020_d0_s42_200",
-                    help="converted Azure window dir (contains workloads/)")
-    ap.add_argument("--nodes-per-region", type=int, default=8)
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--source-window", default="experiments/real_traces/azure_packing_2020_d0_s42_200",
+                    help="converted Azure window dir (must contain canonical_trace_workload.csv)")
+    ap.add_argument("--target-util", type=float, default=0.55, help="target peak CPU utilization")
+    ap.add_argument("--cpu-util", type=float, default=ac.conv.CPU_UTIL_MEAN,
+                    help="imputed per-pod CPU utilization fraction (drives dynamic power)")
+    ap.add_argument("--signals-dir", default=None, help="time-aligned signals dir (default heatwave)")
     ap.add_argument("--max-timeslots", type=int, default=48)
     ap.add_argument("--lever-mode", default="both")
     ap.add_argument("--scenario", default="heatwave-drought")
-    ap.add_argument("--flex-slack-hours", type=float, default=2.0)
-    ap.add_argument("--run-name", default="t3_azure")
-    ap.add_argument("--fleet-seed", type=int, default=0)
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--run-name", default=None, help="default: t3_<source-window-basename>")
     args = ap.parse_args()
-
     import logging
     logging.disable(logging.CRITICAL)
 
-    window = (REPO_ROOT / args.window).resolve()
-    workloads = window / "workloads"
-    if not workloads.exists():
-        raise SystemExit(f"no workloads/ under {window}")
+    src = (ac.REPO_ROOT / args.source_window).resolve()
+    canonical = src / "canonical_trace_workload.csv"
+    if not canonical.exists():
+        raise SystemExit(f"no canonical_trace_workload.csv under {src} (run convert_azure_packing_trace.py)")
+    run_name = args.run_name or f"t3_{src.name}"
+    run_dir = ac.REPO_ROOT / "experiments" / "flexibility" / run_name
+    signals = (ac.REPO_ROOT / args.signals_dir).resolve() if args.signals_dir else ac.TIMEALIGNED
 
-    # Fleet: generate a regionful nodes.yaml (we ignore the generator's synthetic
-    # workloads and point the pilot at the Azure window instead).
-    config_file = REPO_ROOT / "pkg" / "carbon-aware" / "infra-workload-config.yaml"
-    base_config, gen_nodes, gen_ts = load_generator_dependencies(REPO_ROOT, config_file)
-    fleet_dir = REPO_ROOT / "experiments" / "flexibility" / args.run_name / "fleet"
-    paths = _generate_case_inputs(
-        base_config=base_config, generate_nodes_file=gen_nodes, generate_timeslot_files=gen_ts,
-        input_dir=fleet_dir, pod_count=4, seed=args.fleet_seed, timeslots=12,
-        config_file=config_file, deadline_flex_hours=24, nodes_per_region=args.nodes_per_region,
-        server_only=True,
-    )
+    # Rebuild workloads with the corrected energy/slack model, then provision the fleet to ~target util.
+    stats = ac.build_window_from_canonical(canonical, run_dir, seed=args.seed, cpu_util=args.cpu_util)
+    workloads = stats["workloads_dir"]
+    peak = ac.workload_peak_cores(workloads)
+    per_region = ac.provision_for_util(peak, args.target_util)
+    nodes_file, n_nodes, cap = ac.build_fleet(run_dir / "fleet", per_region)
+    achieved = 100 * peak / cap if cap else 0.0
 
-    pc = PilotConfig(
-        repo_root=REPO_ROOT, nodes_file=paths["nodes_file"], workloads_dir=workloads,
-        forecasts_file=TIMEALIGNED / "forecasts.json", config_file=config_file,
-        output_dir=REPO_ROOT / "experiments" / "flexibility" / args.run_name / "out",
-        max_timeslots=args.max_timeslots, max_pods=None, scenario=args.scenario,
-        flexibility_slack_hours=args.flex_slack_hours, lever_mode=args.lever_mode,
-        grid_signal_csv=TIMEALIGNED / "grid_residual_region_slot.csv",
-        wue_csv=TIMEALIGNED / "wue_region_slot.csv",
-    )
-
+    pc = ac.make_pilot_config(nodes_file, workloads, run_dir / "out", signals=signals,
+                              max_timeslots=args.max_timeslots, scenario=args.scenario,
+                              lever_mode=args.lever_mode)
     pods = load_pods(workloads)
-    res = run_no_harm_flexibility_pilot(pc)
-    rows = {r["method_key"]: r for r in res["summary_rows"]}
+    rows = {r["method_key"]: r for r in run_no_harm_flexibility_pilot(pc)["summary_rows"]}
     flex = rows["no_harm_flex"]
-    n_flex = flex["flexible_pods"]
-    n_prot = flex["protected_pods"]
+    n_flex, n_prot = flex["flexible_pods"], flex["protected_pods"]
     total = n_flex + n_prot
 
-    print(f"\n=== T3 Azure Packing 2020 no-harm result ({window.name}) ===")
-    print(f"pods loaded={len(pods)}  placed={flex['placed_pods']}  unplaced={flex['unplaced_pods']}  "
-          f"nodes/region={args.nodes_per_region} ({args.nodes_per_region*4} nodes)  max_timeslots={args.max_timeslots}")
-    print(f"flexible share (priority tier): {n_flex}/{total} = {100*n_flex/max(total,1):.1f}%  (protected={n_prot})")
-    print(f"no_harm flex: certificate={flex['no_harm_certificate']}  carbon%={flex['carbon_delta_pct']:.2f}  "
-          f"scarcity%={flex['scarcity_delta_pct']:.3f}  stress_avoided={flex['stress_kwh_avoided']:.4f} kWh  "
-          f"repairs={flex['repairs_applied']}")
-    for m in ("carbon", "water_scarcity", "no_harm_search_control"):
-        r = rows[m]
-        print(f"  {m:>22}: certificate={r['no_harm_certificate']}  carbon%={r['carbon_delta_pct']:.2f}  "
-              f"scarcity%={r['scarcity_delta_pct']:.3f}  stress_avoided={r['stress_kwh_avoided']:.4f}")
-    print(f"\noutput_dir={pc.output_dir}\ncertificate={pc.output_dir/'no_harm_certificate.json'}")
+    print(f"\n=== T3 Azure Packing 2020 no-harm result ({src.name}) ===")
+    print(f"pods={len(pods)}  placed={flex['placed_pods']:.0f} unplaced={flex['unplaced_pods']:.0f}  "
+          f"fleet={n_nodes} CPU nodes ({per_region}/region x {ac.CPU_NODE['cpu_cores']} cores = {cap}) "
+          f"-> peak util {achieved:.0f}% (target {100*args.target_util:.0f}%)")
+    print(f"workload: imputed cpu_util_ratio={args.cpu_util}  signals={signals.name}  max_ts={args.max_timeslots}")
+    print(f"flexible share (trace priority/evictability): {n_flex}/{total} = "
+          f"{100*n_flex/max(total,1):.1f}%  (firm={n_prot})")
+    for m, tag in [("carbon", "carbon-greedy (ceiling)"), ("water_scarcity", "water-greedy"),
+                   ("waterwise", "WaterWise"), ("no_harm_search_control", "search-control"),
+                   ("no_harm_flex", "NO-HARM ENVELOPE")]:
+        r = rows.get(m)
+        if not r:
+            continue
+        print(f"  {tag:24}: carbon%={r['carbon_delta_pct']:7.2f}  scar%={r['scarcity_delta_pct']:7.3f}  "
+              f"cert={r['no_harm_certificate']!s:5}  stress_avoid={r.get('stress_kwh_avoided',0):6.3f}  "
+              f"repairs={r.get('repairs_applied',0):.0f}")
 
     digest = {
-        "window": window.name, "nodes": args.nodes_per_region * 4, "max_timeslots": args.max_timeslots,
-        "pods_loaded": len(pods), "placed": flex["placed_pods"], "unplaced": flex["unplaced_pods"],
+        "window": src.name, "run_name": run_name, "nodes": n_nodes, "nodes_per_region": per_region,
+        "total_cpu_cores": cap, "peak_concurrent_cores": round(peak, 1),
+        "achieved_peak_util_pct": round(achieved, 1), "target_util_pct": round(100 * args.target_util, 1),
+        "cpu_util_ratio_imputed": args.cpu_util, "signals": signals.name,
+        "max_timeslots": args.max_timeslots, "pods_loaded": len(pods),
+        "placed": flex["placed_pods"], "unplaced": flex["unplaced_pods"],
         "flexible_share_pct": round(100 * n_flex / max(total, 1), 2),
         "flexible_pods": int(n_flex), "protected_pods": int(n_prot),
-        "no_harm_flex": {k: flex[k] for k in ("no_harm_certificate", "carbon_delta_pct", "scarcity_delta_pct",
-                                              "stress_kwh_avoided", "repairs_applied", "rejected_moves")},
-        "baselines": {m: {k: rows[m][k] for k in ("no_harm_certificate", "carbon_delta_pct", "scarcity_delta_pct")}
-                      for m in ("carbon", "water_scarcity", "no_harm_search_control")},
+        "no_harm_flex": {k: flex[k] for k in ("no_harm_certificate", "carbon_delta_pct",
+                                              "scarcity_delta_pct", "stress_kwh_avoided",
+                                              "repairs_applied", "rejected_moves")
+                         if k in flex},
+        "baselines": {m: {k: rows[m][k] for k in ("no_harm_certificate", "carbon_delta_pct",
+                                                  "scarcity_delta_pct") if k in rows[m]}
+                      for m in ("carbon", "water_scarcity", "waterwise", "no_harm_search_control")
+                      if m in rows},
     }
-    (pc.output_dir / "t3_digest.json").write_text(json.dumps(digest, indent=2))
+    (run_dir / "out").mkdir(parents=True, exist_ok=True)
+    (run_dir / "out" / "t3_digest.json").write_text(json.dumps(digest, indent=2))
+    print(f"\noutput_dir={run_dir/'out'}\ncertificate={run_dir/'out'/'no_harm_certificate.json'}")
     return 0
 
 

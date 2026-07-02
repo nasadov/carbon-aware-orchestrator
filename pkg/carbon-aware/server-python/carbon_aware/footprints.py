@@ -16,11 +16,20 @@ class FootprintVector:
     operational_carbon_g: float = 0.0
     embodied_carbon_g: float = 0.0
     total_carbon_g: float = 0.0
+    operational_radiation_kbq: float = 0.0  # ionising radiation (kBq U-235 eq), mix-driven, operational
+    operational_cost_eur: float = 0.0  # electricity cost (EUR), day-ahead price x facility energy, operational
     direct_water_l: float = 0.0
     indirect_water_l: float = 0.0
     embodied_water_l: float = 0.0
     total_raw_water_l: float = 0.0
+    # scarcity_characterized_water is the GUARDED, OPERATIONAL scarcity-weighted water:
+    #   direct_water * direct_cf (basin) + indirect_water * indirect_cf (country).
+    # Embodied (manufacturing) scarcity is tracked SEPARATELY in embodied_scarcity_water and is
+    # reported but never enters the no-harm guard or the ranking -- it is a fixed, location-of-
+    # -fab quantity the scheduler cannot shift, so guarding it would penalise moves for water the
+    # action does not change. (Matches the paper: "embodied does not enter the guard.")
     scarcity_characterized_water: float = 0.0
+    embodied_scarcity_water: float = 0.0
     criticality_adjusted_water: float = 0.0
 
     def finalize(self) -> "FootprintVector":
@@ -52,7 +61,10 @@ class FootprintVector:
             "embodied_water_l": self.embodied_water_l,
             "total_raw_water_l": self.total_raw_water_l,
             "scarcity_characterized_water": self.scarcity_characterized_water,
+            "embodied_scarcity_water": self.embodied_scarcity_water,
             "criticality_adjusted_water": self.criticality_adjusted_water,
+            "operational_radiation_kbq": self.operational_radiation_kbq,
+            "operational_cost_eur": self.operational_cost_eur,
         }
 
     # These are set by compute_footprint_vector before finalize().
@@ -201,6 +213,12 @@ def compute_footprint_vector(
     pue_by_slot = getattr(flavour, "pue_by_slot", {}) or {}  # temperature-dependent facility overhead
     wue_by_slot = getattr(flavour, "wue_by_slot", {}) or {}
     ewif_by_slot = getattr(flavour, "ewif_by_slot", {}) or {}
+    radiation_by_slot = getattr(flavour, "radiation_by_slot", {}) or {}
+    radiation_scalar = float(getattr(flavour, "radiation_intensity", 0.0) or 0.0)
+    # Electricity cost (fifth axis, default-off): day-ahead price (EUR/kWh) attached per slot only
+    # when the cost axis is switched on; default 0 -> term is 0 (bit-identical off path).
+    price_by_slot = getattr(flavour, "price_by_slot", {}) or {}
+    price_scalar = float(getattr(flavour, "electricity_price_eur_kwh", 0.0) or 0.0)
     direct_cf_by_slot = getattr(flavour, "water_scarcity_direct_cf_by_slot", {}) or {}
     indirect_cf_by_slot = getattr(flavour, "water_scarcity_indirect_cf_by_slot", {}) or {}
 
@@ -238,6 +256,16 @@ def compute_footprint_vector(
 
         result.operational_energy_kwh += facility_energy_kwh
         result.operational_carbon_g += carbon_intensity * facility_energy_kwh
+        # Operational ionising radiation: mix-driven CF (kBq U-235 eq/kWh) x facility energy,
+        # exactly parallel to carbon. Default radiation factor 0 -> term is 0 (bit-identical).
+        radiation_cf = (_slot_value(radiation_by_slot, slot, radiation_scalar)
+                        if radiation_by_slot else radiation_scalar)
+        result.operational_radiation_kbq += radiation_cf * facility_energy_kwh
+        # Operational electricity cost: day-ahead price (EUR/kWh) x facility energy, exactly
+        # parallel to carbon/radiation. Default price 0 -> term is 0 (bit-identical).
+        price_eur = (_slot_value(price_by_slot, slot, price_scalar)
+                     if price_by_slot else price_scalar)
+        result.operational_cost_eur += price_eur * facility_energy_kwh
         direct_water = it_energy_kwh * wue          # on-site cooling water (WUE per IT kWh)
         indirect_water = facility_energy_kwh * ewif  # power-plant water for total grid draw
         result.direct_water_l += direct_water
@@ -259,6 +287,9 @@ def compute_footprint_vector(
                 embodied_water += gpu_embodied_water_per_hour * gpu_request * frac
             result.embodied_carbon_g += embodied_carbon
             result.embodied_water_l += embodied_water
-            result.scarcity_characterized_water += embodied_water * embodied_cf
+            # Embodied scarcity is reported separately and stays OUT of scarcity_characterized_water
+            # (the guarded/ranked axis): the scheduler cannot relocate a chip's fab watershed, so it
+            # is not a degree of freedom of the action.
+            result.embodied_scarcity_water += embodied_water * embodied_cf
 
     return result.finalize()

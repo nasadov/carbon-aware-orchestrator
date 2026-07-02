@@ -75,6 +75,8 @@ class EnvironmentalFlavor:
         water_scarcity_indirect_cf: float = 1.0,
         water_scarcity_embodied_cf: float = 1.0,
         water_criticality: float = 1.0,
+        radiation_by_slot: Optional[Dict[int, float]] = None,
+        radiation_intensity: float = 0.0,
     ):
         self.id = id
         self.embodiedCarbon = embodiedCarbon
@@ -104,6 +106,10 @@ class EnvironmentalFlavor:
         self.water_scarcity_indirect_cf = water_scarcity_indirect_cf
         self.water_scarcity_embodied_cf = water_scarcity_embodied_cf
         self.water_criticality = water_criticality
+        # Operational ionising-radiation characterization (kBq U-235 eq / kWh of facility
+        # electricity), region-resolved (mix-average) like AWARE; per-slot dict optional.
+        self.radiation_by_slot = radiation_by_slot or {}
+        self.radiation_intensity = radiation_intensity
 
 
 # Backward-compatible alias while the codebase migrates from the old name.

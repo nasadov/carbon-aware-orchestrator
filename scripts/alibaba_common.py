@@ -116,6 +116,11 @@ def make_pilot_config(nodes_file: Path, workloads_dir: Path, output_dir: Path, *
         grid_signal_csv=signals / "grid_residual_region_slot.csv",
         wue_csv=signals / "wue_region_slot.csv",
     )
+    # In-window off-site water: use the coherent EWIF emitted alongside CI/WUE (same Energy-Charts
+    # mix) when present. Falls back to the engine default only for legacy dirs that lack it.
+    ewif_path = signals / "ewif_region_slot.csv"
+    if ewif_path.exists():
+        kw["ewif_csv"] = ewif_path
     if waterwise_carbon_weight is not None:
         kw["waterwise_carbon_weight"] = waterwise_carbon_weight
     return PilotConfig(**kw)
@@ -144,6 +149,11 @@ def mean(values: Sequence[float]) -> float:
 
 
 def ci95(values: Sequence[float]) -> float:
-    """Half-width of the 95% CI of the mean (normal approx; 0 for n<2)."""
+    """Half-width of the 95% CI of the mean (Student-t, small-n correct; 0 for n<2).
+    The earlier normal approximation (z=1.96) understated the half-width ~40% at n=5
+    (t(0.975,4)=2.776) -- fixed 2026-07-01; all seeded tables re-derive with this."""
     a = np.asarray([x for x in values if not (isinstance(x, float) and math.isnan(x))], dtype=float)
-    return 1.96 * a.std(ddof=1) / math.sqrt(a.size) if a.size > 1 else 0.0
+    if a.size < 2:
+        return 0.0
+    from scipy.stats import t as _t
+    return float(_t.ppf(0.975, a.size - 1) * a.std(ddof=1) / math.sqrt(a.size))

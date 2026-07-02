@@ -67,7 +67,8 @@ def main() -> int:
 
     AZC, ALC = "#1f77b4", "#ff7f0e"  # azure blue / alibaba orange
 
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5.2))
+    plt.rcParams.update({"axes.titlesize": 11.5, "axes.labelsize": 10.5})
 
     # ---- Panel A: deferrable share spectrum ----
     ax = axes[0]
@@ -87,39 +88,32 @@ def main() -> int:
     ax.grid(axis="y", alpha=0.3)
     from matplotlib.patches import Patch
     ax.legend(handles=[Patch(color=AZC, label=f"Azure (mean {az_m:.0f}%)"),
-                       Patch(color=ALC, label=f"Alibaba (mean {al_m:.0f}%)")], fontsize=8, loc="center right")
+                       Patch(color=ALC, label=f"Alibaba (mean {al_m:.0f}%)")], fontsize=8.5, loc="upper left")
 
-    # ---- Panel B: no-harm guarantee (certified flex; carbon & scarcity <= 0) ----
+    # ---- Panel B: water<->carbon tension (uncertified water-only baseline carbon penalty) ----
+    # (The certification story itself is the no-harm plane, Fig. 2; here we show the tension
+    #  magnitude per testbed so the two figures are complementary, not redundant.)
     ax = axes[1]
-    w = 0.38
-    carb = [d["no_harm_flex"]["carbon_delta_pct"] for d in az + al]
-    scar = [d["no_harm_flex"]["scarcity_delta_pct"] for d in az + al]
-    certs = [d["no_harm_flex"]["no_harm_certificate"] for d in az + al]
-    ax.bar(x - w / 2, carb, w, label="carbon Δ%", color="#2ca02c")
-    ax.bar(x + w / 2, scar, w, label="scarcity Δ%", color="#17becf")
-    ax.axhline(0, color="k", lw=0.9)
-    ax.set_xticks(x); ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
-    ax.set_ylabel("realized Δ vs packing (%)  — ≤0 = no harm")
-    ok = all(certs)
-    ax.set_title(f"B. No-harm guarantee holds on every window\ncertificate = {'PASS (all 6)' if ok else 'CHECK'} "
-                 f"(verified on realized signals)")
-    ax.legend(fontsize=8); ax.grid(axis="y", alpha=0.3)
-
-    # ---- Panel C: water<->carbon tension (water-only baseline carbon penalty) ----
-    ax = axes[2]
     pen = [d["baselines"]["water_scarcity"]["carbon_delta_pct"] for d in az + al]
+    certs = [d["no_harm_flex"]["no_harm_certificate"] for d in az + al]
     ax.bar(x, pen, color=colors)
+    top = max(pen)
     for xi, p in zip(x, pen):
-        ax.text(xi, p + 8, f"+{p:.0f}%", ha="center", va="bottom", fontsize=8)
+        ax.text(xi, p + top * 0.02, f"+{p:.0f}%", ha="center", va="bottom", fontsize=9)
     ax.axhline(0, color="k", lw=0.9)
+    ax.set_ylim(0, top * 1.16)
     ax.set_xticks(x); ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
-    ax.set_ylabel("carbon Δ% of naive water-only schedule")
-    ax.set_title("C. Water↔carbon tension (uncertified baseline)\nworse on GPU clusters: power × dry-cooling PUE")
+    ax.set_ylabel("carbon inflation of naive water-only schedule (%)")
+    ax.set_title("B. Water↔carbon tension (uncertified water-only baseline)\n"
+                 "inflates carbon on both — magnitude is testbed-dependent")
     ax.grid(axis="y", alpha=0.3)
+    note = "envelope certifies all 6 windows" if all(certs) else "check certificates"
+    ax.text(0.5, 0.93, f"({note})", transform=ax.transAxes, ha="center",
+            fontsize=8.5, style="italic", color="#1a6b3a")
 
     fig.suptitle("No-Harm Flexibility Envelope — generalization across resource classes & workload mixes",
-                 fontsize=13)
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+                 fontsize=14, weight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     out = FLEX / "azure_alibaba_contrast.png"
     fig.savefig(out, dpi=150); plt.close(fig)
 

@@ -32,8 +32,9 @@ COC = 5.0                   # cycles of concentration (typ. 4-6); use 5 for the 
 # The experiments consume the time-aligned signals (fixed-kappa, T-dependent PUE model in
 # build_timealigned_signals.py); the data/water reference (Gupta build) is the secondary path.
 CSV_CANDIDATES = [
-    "../timealigned/wue_region_slot.csv",        # CONSUMED by the no-harm pilot (primary)
+    "../timealigned/wue_region_slot.csv",         # CONSUMED by the no-harm pilot (proxy)
     "../timealigned_realci/wue_region_slot.csv",  # real-CI variant, if present
+    "../timealigned_realci2/wue_region_slot.csv",  # coherent revamp build (measured CI + in-window EWIF + continuous cooling)
     "wue_region_slot_base.csv", "wue_region_slot_low.csv", "wue_region_slot_high.csv",  # reference
 ]
 

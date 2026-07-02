@@ -92,7 +92,11 @@ However, making container orchestration carbon-aware is nontrivial. Practical sc
 
 To this end, we present TotEm, a scheduler architecture designed for Kubernetes that greedily minimizes a combined operational and embodied carbon objective under resource and timing constraints, validated here via trace-driven emulation to ensure reproducibility and explore theoretical bounds. Complementarily, we also explore a mixed-integer linear program (MILP) formulation with a lexicographic objective (first maximize successful placements, then minimize emissions) that we solve under a fixed time limit as a MILP benchmark (a carbon-emissions lower bound in our experiments); and a carbon-agnostic baseline that mirrors Kubernetes’ resource-only scoring (a carbon-emissions upper bound) for our TotEm scheduler \cite{KubernetesSchedulingFramework2025}. We integrate carbon-intensity forecasts with a co-location–aware power and embodied-carbon model, enforce earliest-start and deadline constraints, and evaluate all approaches in an offline precomputation mode that simulates multi-timeslot scheduling. Our experimental design systematically varies pods (Kubernetes’ smallest schedulable unit) and nodes to assess both effectiveness and time complexity, producing apples-to-apples comparisons across algorithms.
 
+<<<<<<< Updated upstream
 In a representative moderate-load setting, TotEm reduces modeled per-pod total emissions by \(\approx 33\%\) versus a carbon-agnostic baseline while keeping offline precomputation in single-digit seconds (Section~\ref{s:res}).
+=======
+We implemented a prototype scheduler and evaluated it offline on controlled workloads across 12–24 hour horizons while varying pod and node scales; in a representative 80-pod run, estimated average per-pod emissions decreased from ~10 g to ~3 g CO\textsubscript{2}e (\(\approx\)-68\%) relative to a vanilla baseline, while end-to-end precompute remained in single-digit seconds.
+>>>>>>> Stashed changes
 
 %We implemented a prototype scheduler and evaluated it offline on controlled workloads across 12–24 hour horizons while varying pod and node scales; at a representative moderate-load point ($\approx 28$\% implied average CPU utilization over 24 hours), TotEm reduced average per-pod emissions from 36.6 to 24.7 g CO\textsubscript{2}e (\(-32.5\%\)) relative to a carbon-agnostic baseline, while end-to-end precompute remained in single-digit seconds.
 
@@ -146,17 +150,32 @@ We therefore treat a time- and location-indexed forecast as a shared input to al
 
 Each node exposes a two-point power profile with an idle baseline \(P_{idle}\) and a maximum \(P_{max}\). We model node power \(P(U)\) as a piecewise linear function of aggregate CPU utilization \(U \in [0,1]\), where \(P(0)=0\) and \(P(U) = P_{idle} + (P_{max} - P_{idle}) \cdot U\) for \(U>0\). This linear approximation is widely standard in cluster scheduling research \cite{fan2007power} and sufficiently captures the dominant dynamic power component of CPU-bound workloads. This implies that the idle baseline is incurred only when at least one workload is active, and is zero otherwise.
 
+<<<<<<< Updated upstream
 For a pod \(i\) with CPU request \(c_i\) on a node \(j\) with total capacity \(C_j^{tot}\), we attribute per-pod power per slot \(t\) using the same linear interpolation for the incremental component and allocate the idle baseline across concurrent workloads in proportion to CPU share:
 \begin{equation}
 p_{ijt} = (P_{max} - P_{idle}) \cdot \frac{c_i}{C_j^{tot}} + \theta_{ijt} \cdot P_{idle},
 \end{equation}
 where \(\theta_{ijt} = c_i / \sum_{k \in \mathcal{A}_{jt}} c_k\) is the allocation share of pod \(i\) among the set \(\mathcal{A}_{jt}\) of all pods active on node \(j\) at time \(t\), ensuring \(\sum_i \theta_{ijt} = 1\) for active slots.
+=======
+\textbf{Power model and per-workload attribution:} Each node exposes a two-point power profile with an idle baseline \(P_{idle}\) and a maximum \(P_{max}\). We model node power as a linear function of aggregate CPU utilization \(U \in [0,1]\):
+\(P(U) = P_{idle} + (P_{max} - P_{idle})\,U\) for \(U>0\), and zero when no work is scheduled. The idle baseline is charged once per active slot.
+
+For a workload requesting \(\mathrm{CPU}_{\mathrm{request}}\) on a node with \(\mathrm{CPU}_{\mathrm{total}}\), we attribute per-pod power per slot \(t\) using the same linear interpolation for the incremental component and allocate the idle baseline across concurrent workloads in proportion to CPU share:
+\begin{equation*}
+p_{ijt} = (P_{max} - P_{idle}) \cdot \frac{\mathrm{CPU}_{\mathrm{request}}}{\mathrm{CPU}_{\mathrm{total}}} + \theta_{ijt}\,P_{idle},
+\end{equation*}
+where \(\sum_i \theta_{ijt} = 1\) for active slots and \(\theta_{ijt}\) is proportional to \(\mathrm{CPU}_{\mathrm{request}}\) among concurrent workloads.
+>>>>>>> Stashed changes
 
 
 \subsubsection{Embodied: Emissions and Amortization}\label{s:emb}
 
 
+<<<<<<< Updated upstream
 The embodied carbon calculations are based on lifecycle assessment (LCA) data from the Boavizta database~\cite{boavizta2023}, which aggregates manufacturer-reported environmental product declarations following ISO 14040/14044 standards.
+=======
+Our embodied carbon parameters use category-average lifecycle assessment (LCA) values from the Boavizta database~\cite{boavizta2023}, which aggregates manufacturer-reported environmental product declarations (EPDs). Per Boavizta's methodology, these values have large uncertainties and are intended to convey orders of magnitude rather than precise impacts~\cite{boavizta2023methodology}. We therefore treat all embodied quantities as estimates used to set scale for the embodied term and to study the method’s behavior, not to compare vendors or to claim precise g CO\textsubscript{2}e values.
+>>>>>>> Stashed changes
 
 \begin{table}[!t]
 \centering
@@ -165,6 +184,7 @@ The embodied carbon calculations are based on lifecycle assessment (LCA) data fr
 \setlength{\tabcolsep}{3pt}
 \begin{tabular}{lcccccc}
 \toprule
+<<<<<<< Updated upstream
 \textbf{Category} & \textbf{Cores} & \textbf{RAM} & \textbf{Idle} & \textbf{Max} & \textbf{Embodied} & \textbf{Life} \\
                   &                & \textbf{(GiB)} & \textbf{(W)}  & \textbf{(W)} & \textbf{(kg CO\textsubscript{2}e)} & \textbf{(y)} \\
 \midrule
@@ -172,8 +192,19 @@ IoT               & 2              & 2              & 0.5           & 5.0       
 Smartphone        & 4              & 4              & 1.0           & 15.0         & 52.73  & 3.03 \\
 Laptop            & 8              & 8              & 10.0          & 150.0        & 231.86 & 4.13 \\
 Server            & 16             & 16             & 100.0         & 400.0        & 1230.66& 3.87 \\
+=======
+\textbf{Hardware Category} & \textbf{Approx. Embodied Emissions} & \textbf{Lifetime} \\
+                           & \textbf{(kg CO\textsubscript{2}e)} & \textbf{(years)} \\
+\midrule
+IoT                        & 27                         & 5.2 \\
+Smartphone                 & 53                         & 3.0 \\
+Laptop                     & 230                        & 4.1 \\
+Server                     & 1230                       & 3.9 \\
+>>>>>>> Stashed changes
 \bottomrule
 \end{tabular}
+\vspace{2pt}
+\emph{Note: Embodied values are approximate and reflect order-of-magnitude LCA estimates with large uncertainty per Boavizta~\cite{boavizta2023methodology,boavizta2023}.}
 \end{table}
 
 The dataset encompasses over 200 hardware configurations from major manufacturers including Dell, Lenovo, and others, providing representative embodied carbon values and expected lifetimes across different hardware categories. We computed category-wise averages for the device types used in our experimental evaluation, as summarized in Table~\ref{t:hw_combined}.
@@ -192,11 +223,25 @@ where $\mathrm{EC}_j$ represents the total embodied emissions for a hardware uni
 For workload allocation, embodied emissions are attributed proportionally to both the time scheduled and the resource share within each active slot:
 
 \begin{equation}
+<<<<<<< Updated upstream
 m^{emb}_{i} = \sum_{k=0}^{d_i-1} m^{emb}_{j(t+k)} \cdot \theta_{ij(t+k)}
+=======
+E_{emb,workload} = \sum_{k=0}^{d_i-1} E_{emb,hourly} \cdot \theta_{ij(t+k)}
+>>>>>>> Stashed changes
 \end{equation}
 where $\theta_{ij(t+k)}$ is the allocation share for pod $i$ on node $j$ at slot $t$ (proportional to its resource share, with $\sum_i \theta_{ij(t+k)}=1$ for active slots).
 
+<<<<<<< Updated upstream
 We adopt a refined, SCI-consistent allocation: we attribute embodied emissions using time-in-use and resource share derived from hourly CPU utilization. We argue that this choice is critical for \emph{Incentive Alignment}: unlike simple time-based amortization (which charges a fixed ``rent'' regardless of utility), utilization-based allocation strictly aligns the scheduler's incentives with the physical reality of the hardware. By linking the carbon ``cost'' to actual resource consumption, the model correctly rewards maximizing the utility of the manufactured asset---thereby deferring the environmental debt of new hardware production---consistent with the economic intent of the SCI standard. We discuss the validity of this attributional approach as a proxy for consequential reductions in Section~\ref{s:disc}.
+=======
+where $\theta_{ijt}$ is the allocation share for pod $i$ on node $j$ at slot $t$ (proportional to its resource share, with $\sum_i \theta_{ijt}=1$ for active slots). This allocation model reduces to uniform time-based amortization when detailed shares are unavailable (i.e., $\theta_{ijt}=1$ for a single active workload), and ensures that longer-running and higher-share workloads bear proportionally larger embodied carbon.
+
+Operationally, we instantiate $\theta_{ijt}$ from the pod's per-slot CPU share after accounting for previously placed pods: with residual capacity $\tilde C_{jt}$ and baseline capacity $C_{jt}$, we set
+\begin{equation*}
+\theta_{ijt} = \frac{c_i}{(C_{jt} - \tilde C_{jt}) + c_i}.
+\end{equation*}
+This provides a utilization-aware attribution for embodied carbon within active slots.
+>>>>>>> Stashed changes
 
 The embodied carbon calculation is integrated directly into the scheduling objective function, where it combines with operational emissions to provide a comprehensive CF assessment for each placement decision. This integrated approach ensures that both emission components influence scheduling decisions simultaneously, rather than treating them as separate optimization phases. We quantify the effect on placement patterns in Section~\ref{s:impact}.
 
@@ -208,7 +253,36 @@ We formulate the carbon-aware scheduling problem as a MILP optimization that fin
 
 \paragraph*{Sets} Let $\mathcal{P}$ denote the set of pods (indexed by $i$), $\mathcal{F}$ the set of nodes (indexed by $j$), and $\mathcal{T}$ the set of timeslots (indexed by $t$).
 
+<<<<<<< Updated upstream
 \paragraph*{Parameters} We define pod $i$'s deadline $D_i$, earliest start $s_i$, duration $d_i$, slack $w_i$, and requests $c_i, r_i$. Node $j$ has capacities $C_{jt}, R_{jt}$ and embodied attributes. $m_{ijt}$ represents total carbon (operational + embodied) for placing pod $i$ on node $j$ at time $t$.
+=======
+\textbf{Parameters:} Table~\ref{tab:problem-parameters} lists the notation and description of the inputs used in the formulation.
+\begin{table}[!t]
+\centering
+\caption{Glossary of parameters}
+\label{tab:problem-parameters}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Description} \\
+\midrule
+$D_i \in \mathbb{N}^+$ & Deadline timeslot for pod $i$ \\
+$s_i \in \mathbb{N}^+$ & Earliest timeslot for pod $i$ \\
+$d_i \in \mathbb{N}^+$ & Duration of pod $i$ (in timeslots) \\
+$w_i \in \mathbb{N}^+$ & Temporal slack for pod $i$ \\
+$c_i \in \mathbb{R}^+$ & CPU request of pod $i$ \\
+$r_i \in \mathbb{R}^+$ & RAM request of pod $i$ \\
+$C_{jt} \in \mathbb{R}^+$ & Available CPU of node $j$ in timeslot $t$ \\
+$R_{jt} \in \mathbb{R}^+$ & Available RAM of node $j$ in timeslot $t$ \\
+$p_{ij} \in \mathbb{R}^+$ & Power consumption of pod $i$ on node $j$ \\
+$\mathrm{CI}_{jt} \in \mathbb{R}^+$ & Carbon intensity of node $j$ in timeslot $t$ \\
+$\mathrm{EC}_j \in \mathbb{R}^+$ & Embodied carbon of node $j$ \\
+$L_j \in \mathbb{R}^+$ & Expected lifetime of node $j$ \\
+$u_j \in \mathbb{R}^+$ & Utilization factor of node $j$ \\
+$\theta_{ijt} \in [0,1]$ & Resource-share allocation weight for pod $i$ on node $j$ at slot $t$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+>>>>>>> Stashed changes
 
 \paragraph*{Decision Variables} The binary decision variable is defined as:
 \begin{align}
@@ -243,18 +317,33 @@ where $m_{ijt}$ represents the total carbon emissions for executing pod $i$ on n
 The carbon emissions $m_{ijt}$ incorporate both operational and embodied components over the pod's execution duration $d_i$:
 
 \begin{equation}
+<<<<<<< Updated upstream
 m_{ijt} = \sum_{k=0}^{d_i-1} \left( m^{op}_{ij(t+k)} + m^{emb}_{ij(t+k)} \right)
+=======
+e_{ijt} = \sum_{k=0}^{d_i-1} \left( op_{ij(t+k)} + emb_{ij(t+k)} \right)
+>>>>>>> Stashed changes
 \end{equation}
 where operational emissions $m^{op}_{ij(t+k)} = p_{ij(t+k)} \cdot \text{CI}_{j(t+k)}$ depend on per-slot power $p_{ij(t+k)}$ and carbon intensity $\text{CI}_{j(t+k)}$, and embodied emissions per timeslot are $m^{emb}_{ij(t+k)} = \frac{\text{EC}_j}{L_j \times 8760} \cdot \theta_{ij(t+k)}$ based on total embodied carbon $\text{EC}_j$, lifetime $L_j$ (in years), and allocation share $\theta_{ij(t+k)}$ (proportional to CPU share; $\sum_i \theta_{ij(t+k)}=1$ for active slots).
 
+<<<<<<< Updated upstream
 \subsubsection{Constraints}\label{s:constr}
+=======
+where operational emissions $op_{ij(t+k)} = p_{ij(t+k)} \cdot \text{CI}_{j(t+k)}$ depend on per-slot power $p_{ij(t+k)}$ and carbon intensity $\text{CI}_{j(t+k)}$, and embodied emissions per timeslot are $emb_{ij(t+k)} = \frac{\text{EC}_j}{L_j \cdot u_j} \cdot \theta_{ij(t+k)}$ based on total embodied carbon $\text{EC}_j$, lifetime $L_j$, node-level utilization factor $u_j$, and allocation share $\theta_{ij(t+k)}$ (proportional to CPU share; $\sum_i \theta_{ijt}=1$ for active slots).
+>>>>>>> Stashed changes
 
 \paragraph*{Resource capacity}
 \begin{align}
+<<<<<<< Updated upstream
 \sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} c_i\, x_{ij,\,t-k} &\le C_{jt},\\
 \sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} r_i\, x_{ij,\,t-k} &\le R_{jt},
 \end{align}
 for all $j\in\mathcal{F}$ and $t\in\mathcal{T}$. We take $x_{ij,t}=0$ when $t\notin\mathcal{T}$ or $(j,t)\notin\mathcal{V}_i$.
+=======
+\sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} c_i\, x_{ij(\tau-k)} &\le C_{j\tau},\\
+\sum_{i\in\mathcal{P}} \sum_{k=0}^{d_i-1} r_i\, x_{ij(\tau-k)} &\le R_{j\tau},
+\end{align}
+for all $j\in\mathcal{F}$ and $\tau\in\mathcal{T}$. We take $x_{ijt}=0$ when $t\notin\mathcal{T}$ or $(j,t)\notin\mathcal{V}_i$.
+>>>>>>> Stashed changes
 
 \paragraph*{Assignment (per pod $i$)}
 \begin{equation}
@@ -314,14 +403,21 @@ We enumerate all feasible (node, timeslot) pairs for the pod (no node sampling o
 \paragraph*{Implementation notes}
 We track per-slot residual capacity in dictionaries indexed by node and timeslot, and use stable sorts for deterministic processing. Per-iteration work remains $O(|\mathcal{F}||\mathcal{T}|)$ per pod (see Section~\ref{s:milp-complex}).
 
+<<<<<<< Updated upstream
 \paragraph*{Unschedulable case}
 If no feasible $(j,t)$ exists for a pod (e.g., due to capacity or window constraints), the pod remains pending and is retried in the next scheduling round; deadlines/windows are re-evaluated each pass. No implicit relaxation or forced placement occurs in TotEm.
 % Notation aligned with MILP: i (pods), j (nodes), t (timeslots); d_i duration; s_i earliest; D_i deadline; capacities C_{jt}, R_{jt}; CI_{j,t}; emissions e_{ijt}.
+=======
+\paragraph*{Unschedulable case.}
+If no feasible $(j,t)$ exists for a pod (e.g., due to capacity or window constraints), the pod remains pending and is retried in the next scheduling round; deadlines/windows are re-evaluated each pass. No implicit relaxation or forced placement occurs in the heuristic.
+% Notation aligned with MILP: i (pods), j (nodes), t (timeslots); d_i duration; s_i earliest; D_i deadline; capacities C_{jt}, R_{jt}; CI_{jt}; emissions e_{ijt}.
+>>>>>>> Stashed changes
 
 \begin{algorithm}[htbp]
 \caption{TotEm Scheduler}
 \label{a:totem}
 \begin{algorithmic}[1]
+<<<<<<< Updated upstream
 \State \textbf{Input:} Pods $\mathcal{P}$, Nodes $\mathcal{F}$, Timeslots $\mathcal{T}$, Capacities, Carbon Data.
 \State Init residuals $\tilde C_{jt}, \tilde R_{jt}$; $S\gets\emptyset$.
 \State Sort $\mathcal{P}$ by slack $(D_i-d_i)$, then size/duration.
@@ -332,10 +428,41 @@ If no feasible $(j,t)$ exists for a pod (e.g., due to capacity or window constra
       \State $\widehat m \gets \sum_{\tau=0}^{d_i-1} (m^{op}_{ij(t+\tau)} + m^{emb}_{ij(t+\tau)})$; \quad $\pi \gets$ packing score
       \If{$\widehat m < m^\star - \epsilon$ \textbf{or} ($|\widehat m - m^\star| \le \epsilon$ \textbf{and} $\pi < \pi^\star$)}
         \State $m^\star \gets \widehat m, (j^\star,t^\star)\gets (j,t), \pi^\star \gets \pi$
+=======
+\State \textbf{Input:} Pods $\mathcal{P}$, nodes $\mathcal{F}$, timeslots $\mathcal{T}$;
+\Statex \hspace{2.2em} pod parameters $\{(c_i,r_i,d_i,s_i,D_i)\}_{i\in\mathcal{P}}$;
+\Statex \hspace{2.2em} capacities $\{(C_{jt},R_{jt})\}_{j\in\mathcal{F},t\in\mathcal{T}}$;
+\Statex \hspace{2.2em} carbon intensity $\{\mathrm{CI}_{jt}\}_{j,t}$; power $p_{ij}$; embodied $(\mathrm{EC}_j,L_j)$; utilization $\{u_j\}_{j\in\mathcal{F}}$
+\State \textbf{Output:} Schedule $S \subseteq \mathcal{P}\times\mathcal{F}\times\mathcal{T}$
+\State
+\State Initialize residuals $\tilde C_{jt}\gets C_{jt}$, $\tilde R_{jt}\gets R_{jt}$ for all $j,t$; \quad $S\gets\emptyset$
+\State Compute $w_i \gets D_i - d_i$; \quad sort $\mathcal{P}$ by $(w_i\uparrow,\; c_i\downarrow,\; r_i\downarrow,\; d_i\downarrow)$
+\For{each $i \in \mathcal{P}$}
+  \State $e^\star \gets \infty$, $(j^\star,t^\star)\gets (\varnothing,\varnothing)$, $\pi^\star \gets \infty$
+  \For{each $t \in \mathcal{T}$ with $t \ge s_i$ and $t + d_i \le D_i$}
+    \For{each $j \in \mathcal{F}$}
+      \If{$\tilde C_{j(t+\tau)} \ge c_i$ and $\tilde R_{j(t+\tau)} \ge r_i$ for all $\tau \in \{0,\ldots,d_i-1\}$}
+        \State $\theta_{ij(t+\tau)} \gets \frac{c_i}{(C_{j(t+\tau)}-\tilde C_{j(t+\tau)}) + c_i}$ \textbf{for all} $\tau \in \{0,\ldots,d_i-1\}$
+        \State $\widehat e_{ijt} \gets \sum_{\tau=0}^{d_i-1}\Big( p_{ij}\cdot \mathrm{CI}_{j(t+\tau)} + \frac{\mathrm{EC}_j}{L_j u_j} \cdot \theta_{ij(t+\tau)} \Big)$
+        \State $\pi_{ijt} \gets \sum_{\tau=0}^{d_i-1}\Big(\frac{\tilde C_{j(t+\tau)}-c_i}{C_{j(t+\tau)}} + \frac{\tilde R_{j(t+\tau)}-r_i}{R_{j(t+\tau)}}\Big)$
+        \If{$\widehat e_{ijt} < e^\star - \epsilon$ \textbf{ or } ($|\widehat e_{ijt}-e^\star|\le \epsilon$ \textbf{ and } $\pi_{ijt} < \pi^\star$)}
+          \State $e^\star \gets \widehat e_{ijt}$, $(j^\star,t^\star)\gets (j,t)$, $\pi^\star \gets \pi_{ijt}$
+        \EndIf
+>>>>>>> Stashed changes
       \EndIf
     \EndIf
   \EndFor
+<<<<<<< Updated upstream
   \If{$(j^\star,t^\star) \neq \bot$} $S \gets S \cup \{(i,j^\star,t^\star)\}$; update residuals. \EndIf
+=======
+  \If{$(j^\star,t^\star)\neq(\varnothing,\varnothing)$}
+    \State $S \gets S \cup \{(i,j^\star,t^\star)\}$
+    \For{$\tau=0$ \textbf{to} $d_i-1$}
+      \State $\tilde C_{j^\star(t^\star+\tau)} \gets \tilde C_{j^\star(t^\star+\tau)} - c_i$; \quad
+             $\tilde R_{j^\star(t^\star+\tau)} \gets \tilde R_{j^\star(t^\star+\tau)} - r_i$
+    \EndFor
+  \EndIf
+>>>>>>> Stashed changes
 \EndFor
 \State \Return $S$
 \end{algorithmic}
@@ -553,6 +680,7 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
 
 \noindent\textit{Results.} Runtime grows smoothly with both nodes and pods and remains online-friendly at our largest scales. The MILP scheduler is far slower and sensitive to solver limits, so we treat it as a benchmarking tool rather than a production scheduler. Following the carbon-agnostic baseline optimizations described above, the baseline series shifts down substantially in both overlays.
 
+<<<<<<< Updated upstream
 \subsection{Sensitivity to Embodied Assumptions}\label{s:sens}
    
    \noindent\textit{Protocol.} Embodied emissions and lifetimes in Table~\ref{t:hw_combined} are derived from Boavizta~\cite{boavizta2023}, but real deployments see variation between individual hardware configurations and management policies. To test that our conclusions do not hinge on exact values, we run a one-factor-at-a-time sensitivity study at the same representative utilization level. Guided by the Boavizta variability analysis, we apply uniform perturbations across all node classes: embodied emissions scaled by \(\{0.60, 0.80, 1.00, 1.20, 1.60\}\) and lifetimes by \(\{0.75, 1.0, 1.25\}\), averaged over independent seeds.
@@ -578,6 +706,54 @@ The result aligns with our allocation model: embodied emissions are a fixed, tim
    \noindent\textit{Protocol.} To test robustness we introduce controlled noise into the Electricity Maps trace and regenerate schedules using the same experimental setup as in Section~\ref{s:setup}. We inject multiplicative Gaussian noise with calibrated scale factors that reach target mean absolute percentage errors (MAPE) of 0, 5, 10, 15, and 20\%; for each level we rerun the carbon-agnostic baseline and TotEm across pod counts 20, 80, 140, and 200 and three random seeds. Each scheduler observes only the noisy trace while making decisions, but we evaluate the resulting placements against the untouched trace to approximate real-world execution with forecast error. We report carbon savings relative to the optimized carbon-agnostic baseline after resampling nodes' carbon curves and recomputing operational+embodied emissions.
    	
    \noindent\textit{Findings.} Figure~\ref{f:forecast} shows that TotEm exhibits remarkable robustness to forecast error across all system scales. For small experiments (e.g., 20 pods), TotEm maintains large savings even under 20\% MAPE. As pod count increases, absolute savings naturally decrease due to cluster saturation, yet the savings remain stable with respect to forecast noise. This indicates that TotEm's decision-making—which ranks timeslots by carbon intensity—remains effective even when intensity values are perturbed, as the relative ordering of windows is often preserved or the best windows remain good enough. Because the carbon-agnostic baseline ignores forecasts entirely, its emissions are identical across the sweep, so all variation in the figure comes from how carbon-aware schedulers respond to imperfect predictions.
+=======
+% Figure for emissions per common pod removed
+
+\noindent\textit{Concrete findings.} In a representative 80-pod evaluation, estimated per-pod emissions were approximately: vanilla ~10 g CO\textsubscript{2}e, heuristic ~3 g (\(\approx\)-67.5\%), and global-optimal ~2.6 g (\(\approx\)-74.0\%). This gap illustrates that the heuristic captures most of the oracle's benefit while remaining deployable.
+
+\subsection{Placement Success Rate}\label{subsec:success-rate}
+% Update to newest success-rate plot (computed from per-run CSVs; ignores stale pods.txt)
+\renewcommand{\SuccessRateVsPods}{\detokenize{../../figures/SuccessRate/success_rate_comparison_20251111_220212.pdf}}
+Figure~\ref{fig:success-rate} shows scheduling success rate versus pod count. At low load, all three methods are near 100\%; as load increases, the heuristic remains above the vanilla baseline and close to the MILP oracle.
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\SuccessRateVsPods}
+  \caption{Scheduling success rate vs. pod count. Higher is better. Used jointly with inclusive emissions to disambiguate feasibility from carbon efficiency.}
+  \label{fig:success-rate}
+\end{figure}
+
+\subsection{Runtime Cost: Time Complexity}\label{subsec:time-complexity}
+Figures~\ref{fig:time-overlay-nodes} and~\ref{fig:time-overlay-pods} summarise runtime. It grows roughly with the number of pods and remains compatible with online use at our largest scales. The MILP approach is far slower and sensitive to solver limits, so we treat it as a benchmarking oracle rather than a production scheduler. Following the vanilla baseline optimizations described above, the vanilla series shifts down substantially in both overlays.
+% Overlay time complexity plots (multi-algorithm)
+\newcommand{\TimeOverlayNodesFixedPods}{\detokenize{figures/overlay_time_vs_nodes_fixed_pods_200_20251111_170850.pdf}}
+\newcommand{\TimeOverlayPodsFixedNodes}{\detokenize{figures/overlay_time_vs_pods_fixed_nodes_32_20251111_170850.pdf}}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\TimeOverlayNodesFixedPods}
+  \caption{Median precompute runtime versus node count at fixed 200 pods (overlay across algorithms; error bars where available denote $\pm1\sigma$).}
+  \label{fig:time-overlay-nodes}
+\end{figure}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{\TimeOverlayPodsFixedNodes}
+  \caption{Median precompute runtime versus pod count at fixed 32 nodes (overlay across algorithms; error bars where available denote $\pm1\sigma$).}
+  \label{fig:time-overlay-pods}
+\end{figure}
+
+\noindent\textit{Setup.} We report median precompute runtime in offline mode with a 12-slot horizon. Figure~\ref{fig:time-overlay-nodes} fixes pods to 200 and varies node count; Figure~\ref{fig:time-overlay-pods} fixes nodes to 32 and varies pod count. Curves overlay multiple schedulers; error bars (when present) denote $\pm1\sigma$ over three replicates.
+
+\noindent\textit{Results.} Runtime grows smoothly with both nodes and pods. The heuristic remains compatible with online use across tested scales (single-digit seconds at the largest points), while the MILP oracle grows much faster and is sensitive to solver limits. The vanilla baseline is generally the fastest (simplest scoring), with the heuristic modestly above it but far below MILP; this ordering holds in both fixed-pods and fixed-nodes views.
+
+\paragraph*{Fixed pods (varying nodes).}
+With 200 pods held constant, both vanilla and heuristic exhibit near-linear growth in precompute time as node count increases. The optimized vanilla curve lies consistently below its earlier baseline, indicating lower constant factors; its slope remains modest due to node sampling and early termination once a small set of feasible candidates is found. By contrast, the MILP oracle grows much more steeply with the number of nodes. Error bars are small across replicates, indicating stable timings and low run-to-run variance.
+
+\paragraph*{Fixed nodes (varying pods).}
+With 32 nodes held constant, runtime grows approximately linearly with total pods for both vanilla and heuristic, as expected from per-pod evaluation over a bounded timeslot window. The optimized vanilla reduces both the intercept and the slope relative to the prior implementation, reflecting cheaper feasibility checks and less I/O in the hot path. The heuristic maintains a roughly constant factor overhead versus vanilla across scales—primarily from additional feasibility and scoring work—while remaining far below the MILP oracle, which grows faster-than-linearly and exhibits higher variance.
+
+\noindent\textit{Takeaways.} (i) Empirical scaling matches the intended design: linear in pods at fixed nodes, and close to linear in nodes at fixed pods; (ii) kube-inspired pruning (node sampling and early feasible stop) keeps growth in check; (iii) simulator-specific accelerations (tight timeslot windowing, sliding-window feasibility, array-backed capacity) reduce constant factors, shifting the vanilla curve downward without changing its qualitative scaling; (iv) MILP remains orders of magnitude slower and is best treated as an oracle for bounds rather than a production scheduler.
+
+\pk{add subsections on sensitivity to forecast error (and embodied data)}
+>>>>>>> Stashed changes
 
 \section{Discussion}
 \label{s:disc}
@@ -607,7 +783,14 @@ We attribute this robustness to the nature of the decision space. The scheduler 
 
 \paragraph*{External Validity} We utilize ACI as our optimization signal. Some economists argue that Marginal Emissions Factors (MEF) more accurately reflect the immediate grid impact of load changes. While TotEm is agnostic to the signal source—it minimizes whatever time-series it is given—the magnitude of savings might differ under MEF. Furthermore, our offline precomputation assumes perfect knowledge of job arrival (batch processing); in an online setting, the ``greedy'' penalty might increase as the scheduler cannot see future arrivals, though this is a standard limitation of online algorithms.
 
+<<<<<<< Updated upstream
 \paragraph*{Construct Validity} Our model assumes that ``embodied carbon'' can be linearly amortized over time and utilization. While consistent with the SCI standard, this is an accounting convention. It does not physically ``emit'' carbon during the job's run but rather attributes a share of the sunk cost. We argue this is the correct incentive for software design: it encourages maximizing the utility of manufactured devices, thereby deferring the need for new hardware production. Finally, our current model focuses on server-side operational and embodied emissions; it does not explicitly model network energy consumption (data transfer) or the embodied carbon of networking equipment (switches, routers), which may be significant for data-intensive workloads.
+=======
+\paragraph*{Limitations of Embodied Carbon Data.}
+We rely on Boavizta’s aggregated LCA values for embodied-carbon parameters. Boavizta notes that manufacturers’ methodologies are not transparent and that reported values can have very large margins of error; it strongly recommends not using the dataset for accurate impact evaluations or for comparing devices across vendors, and positions the data primarily to convey orders of magnitude~\cite{boavizta2023methodology,boavizta2023}. Accordingly, all embodied-carbon quantities in this paper should be treated as approximate. We therefore (i) round reported embodied numbers to appropriate significant figures, (ii) use qualifying language (e.g., “estimated,” “approximately”), and (iii) avoid interpreting absolute g CO\textsubscript{2}e values as precise measurements. Our contribution is the scheduling method that integrates an embodied term into the objective; the specific embodied figures merely set scale for experiments.
+
+\textbf{External validity.} Results derive from synthetic workloads and consolidated forecasts; real clusters may have additional constraints (affinity/anti-affinity, topology spread, storage). Our simulator architecture allows incrementally adding these.
+>>>>>>> Stashed changes
 
 \section{Conclusion and Future Work}\label{s:conc}
 	
@@ -615,7 +798,11 @@ This paper showed that container orchestration can reduce \emph{total} emissions
 
 For practitioners, these results suggest an actionable path: integrate forecasted carbon signals and amortized embodied costs into placement, and deploy a fast heuristic to capture most of the achievable benefit. By optimizing this attributional efficiency, operators can generate the demand-side signals necessary to drive long-term consequential reductions in hardware procurement. Our evaluation protocol—shared signals, models, constraints, and coverage-inclusive reporting—provides a reproducible basis for comparing algorithms and for tuning trade-offs between feasibility, carbon efficiency, and latency.
 
+<<<<<<< Updated upstream
 Future work will: (i) integrate additional environmental indicators (in particular water footprint); and (ii) evaluate on production traces and in live clusters with online admission. Together, these steps should help moving carbon-aware orchestration from controlled studies toward robust production deployments.
+=======
+This paper shows that container orchestration can reduce \emph{total} emissions—operational and embodied—without sacrificing feasibility or incurring prohibitive runtime. Across controlled scales, our carbon-aware heuristic consistently lowers emissions relative to a carbon-agnostic baseline while closely tracking a global MILP oracle. In a representative 80-pod evaluation, estimated per-pod emissions decreased by approximately 68\% (from ~10 g to ~3 g CO\textsubscript{2}e) versus baseline, approaching ~2.6 g; absolute values depend on uncertain embodied parameters. Runtime grows smoothly with pods and nodes and remains within single-digit seconds at our largest settings, indicating practicality for precompute or nearline use.
+>>>>>>> Stashed changes
 
 \section*{Acknowledgments}
 The authors would like to extend their gratitude to Electricity Maps for providing access to their carbon intensity data, which was invaluable for the development of this work. We further thank Philipp Wiesner, Silvio Cretti, and Sébastien Rumley for fruitful discussions early in the development process.

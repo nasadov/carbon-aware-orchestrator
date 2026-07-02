@@ -19,6 +19,11 @@ from carbon_aware.no_harm_flexibility import (  # noqa: E402
     run_no_harm_flexibility_pilot,
     schedule_totals,
     _rematerialize_under_realized,
+    _z_score,
+    _cantelli_factor,
+    _budget_gamma,
+    dro_per_move_buffer,
+    sqrtk_per_move_buffer,
 )
 
 
@@ -43,7 +48,11 @@ def test_heatwave_drought_signals_are_temporal_and_water_stressed(tmp_path: Path
     assert len(signals) == 4 * config.max_timeslots
     assert any(signal.grid_stress for signal in signals.values())
     assert any(signal.clean_headroom for signal in signals.values())
-    assert any(signal.drought_guardrail for signal in signals.values())
+    # Drought guardrail retired under watershed (basin) resolution: no DC basin reaches the CF>=20
+    # threshold (max ~7.7), so the binary guard is inert by design -- the per-basin Delta W_b <= 0
+    # guard provides drought protection instead. (Water-pipeline revamp, Option A: direct=basin CF,
+    # indirect=generation-country CF; the CF>=20 trigger was a country-aggregation artifact.)
+    assert not any(signal.drought_guardrail for signal in signals.values())
 
     assert {signal.grid_signal_source for signal in signals.values()} == {"opsd_residual_load_lite"}
 
@@ -74,6 +83,96 @@ def test_no_harm_flexibility_pilot_writes_certificate_and_improves_stress(tmp_pa
     assert flex["stress_kwh_avoided"] > 0.0
     assert flex["stress_kwh_avoided"] >= search_control["stress_kwh_avoided"] - 1e-12
     assert flex["weighted_stress_kwh"] <= search_control["weighted_stress_kwh"] + 1e-12
+
+
+def test_dro_buffer_factors_and_gamma_budget() -> None:
+    """The DRO buffer math (Tier-1-D): distribution-free Cantelli factor + Bertsimas-Sim Gamma budget."""
+    import math
+
+    eps = 0.05
+    # Cantelli is the distribution-free one-sided factor sqrt((1-eps)/eps); ~2.65x the Gaussian z.
+    assert abs(_cantelli_factor(eps) - math.sqrt((1.0 - eps) / eps)) < 1e-12
+    assert _cantelli_factor(eps) > _z_score(eps)
+    assert abs(_cantelli_factor(eps) / _z_score(eps) - 2.65) < 0.05
+
+    # Gamma budget interpolates sqrt(K) (independence) <-> K (full correlation) via fraction c in [0,1].
+    K = 30
+    assert abs(_budget_gamma(gamma=0.0, gamma_mode="frac", k_moves=K) - math.sqrt(K)) < 1e-9
+    assert abs(_budget_gamma(gamma=1.0, gamma_mode="frac", k_moves=K) - float(K)) < 1e-9
+    assert math.sqrt(K) < _budget_gamma(gamma=0.5, gamma_mode="frac", k_moves=K) < float(K)
+    # Out-of-range Gamma is clamped to [sqrt(K), K].
+    assert _budget_gamma(gamma=2.0, gamma_mode="frac", k_moves=K) == float(K)
+
+    # Total reserve = per_move * K = cantelli * rho * shape * Gamma (the Gamma-scaling guarantee).
+    rho, shape = 0.3, 1.0
+    for c in (0.0, 0.5, 1.0):
+        pm = dro_per_move_buffer(rho=rho, epsilon=eps, shape=shape, k_moves=K, gamma=c, gamma_mode="frac")
+        gamma = _budget_gamma(gamma=c, gamma_mode="frac", k_moves=K)
+        assert abs(pm * K - _cantelli_factor(eps) * rho * shape * gamma) < 1e-9
+    # dro at c=0 (independence) differs from sqrtk ONLY by the Cantelli-vs-Gaussian factor.
+    pm_dro0 = dro_per_move_buffer(rho=rho, epsilon=eps, shape=shape, k_moves=K, gamma=0.0, gamma_mode="frac")
+    pm_sk = sqrtk_per_move_buffer(rho=rho, epsilon=eps, shape=shape, k_moves=K)
+    assert abs((pm_dro0 / pm_sk) - (_cantelli_factor(eps) / _z_score(eps))) < 1e-9
+
+
+def test_dro_buffer_off_is_bit_identical(tmp_path: Path) -> None:
+    """The DRO buffer is additive and flag-gated: with robust_buffer_mode left at the default 'flat'
+    and no buffer set, enabling the new config fields must NOT change the schedule (bit-identical)."""
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours = load_flavours_for_pilot(config)
+    signals = build_action_signals(flavours, config)
+    pods = load_pods(config.workloads_dir, max_pods=config.max_pods)
+    packing, _, _ = build_greedy_schedule(method_key="packing", pods=pods, flavours=flavours, config=config)
+
+    base = repair_schedule_no_harm(
+        method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+        signals=signals, config=config, score_mode="combined",
+    )
+    # Default DRO config fields present but mode is still 'flat' -> identical placements.
+    from dataclasses import replace as dc_replace
+    cfg2 = dc_replace(config, robust_buffer_gamma=0.7, robust_buffer_gamma_mode="frac")
+    same = repair_schedule_no_harm(
+        method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+        signals=signals, config=cfg2, score_mode="combined",
+    )
+    assert len(base.placements) == len(same.placements)
+    a = {p.pod.id: (p.candidate.flavour.id, p.candidate.timeslot.id) for p in base.placements}
+    b = {p.pod.id: (p.candidate.flavour.id, p.candidate.timeslot.id) for p in same.placements}
+    assert a == b
+
+
+def test_dro_buffer_mode_certifies_and_reserves_more_than_sqrtk(tmp_path: Path) -> None:
+    """The DRO buffer mode runs end-to-end, keeps the ex-post certificate, and (being distribution-free
+    + correlation-budgeted) reserves at least as much as sqrtk -> never MORE repairs than sqrtk."""
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours = load_flavours_for_pilot(config)
+    signals = build_action_signals(flavours, config)
+    pods = load_pods(config.workloads_dir, max_pods=config.max_pods)
+    packing, _, _ = build_greedy_schedule(method_key="packing", pods=pods, flavours=flavours, config=config)
+
+    from dataclasses import replace as dc_replace
+    sqrtk_cfg = dc_replace(config, robust_buffer_mode="sqrtk", robust_buffer_rho=0.237,
+                           robust_buffer_epsilon=0.05)
+    dro_cfg = dc_replace(config, robust_buffer_mode="dro", robust_buffer_rho=0.237,
+                         robust_buffer_epsilon=0.05, robust_buffer_gamma=1.0, robust_buffer_gamma_mode="frac")
+
+    sqrtk = repair_schedule_no_harm(
+        method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+        signals=signals, config=sqrtk_cfg, score_mode="combined",
+    )
+    dro = repair_schedule_no_harm(
+        method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+        signals=signals, config=dro_cfg, score_mode="combined",
+    )
+    # Both certify ex-post: realized carbon/scarcity never exceed the packing baseline.
+    base = schedule_totals(packing, signals)
+    for sched in (sqrtk, dro):
+        _rematerialize_under_realized(sched, flavours, config)
+        t = schedule_totals(sched, signals)
+        assert t["carbon_kg"] <= base["carbon_kg"] + 1e-6
+        assert t["scarcity_water"] <= base["scarcity_water"] + 1e-6
+    # DRO (Cantelli x Gamma=K) reserves more -> blocks at least as many moves as sqrtk.
+    assert dro.repairs_applied <= sqrtk.repairs_applied
 
 
 def test_footprint_accounting_is_idle_consistent_after_repair(tmp_path: Path) -> None:

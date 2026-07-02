@@ -252,9 +252,10 @@ def _write_figure(agg_rows, trace_agg, fleets, path: Path, label: str) -> None:
     l2, lb2 = ax2.get_legend_handles_labels()
     ax.legend(lines + l2, labs + lb2, fontsize=7, loc="upper left"); ax.grid(alpha=0.3)
 
-    fig.suptitle(f"No-Harm Flexibility Envelope — fleet-scale on real Alibaba GPU v2020 (lever=both; {label})", fontsize=10)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(path, dpi=140)
+    fig.suptitle("Fleet-scale on the real Alibaba GPU testbed (V100 DGX-1, lever=both)",
+                 fontsize=13, weight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 

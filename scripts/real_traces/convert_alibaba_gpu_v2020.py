@@ -3,10 +3,12 @@
 
 Joins pai_sensor_table (measured cpu_usage, gpu_wrk_util) to pai_task_table (plan_* requests), so
 each pod carries its utilization-as-fraction-of-request -> the engine drives DYNAMIC power from
-actual usage (idle/allocation stay request-based). Tier from task role (interactive Jupyter/
-Tensorboard = firm; training = flexible). Durations seconds->hours, ROUNDED (min 1); only >=1h jobs
-become schedulable pods (sub-hour tasks are ~6.5% of GPU-hours -> documented limitation / appendix
-background). Period-accurate hardware = V100 (the trace's actual cards). Annotations consumed by the
+actual usage (idle/allocation stay request-based). Tier: interactive roles (Jupyter/Tensorboard)
+AND censored jobs (no observed end_time, effectively unbounded) -> firm; only genuinely shiftable
+training jobs stay flexible. Durations seconds->hours, ROUNDED (min 1); only >=1h jobs become
+schedulable pods. The actual sub-hour drop and censored fractions are printed at conversion time
+(they are a large share of *tasks*, not the ~6.5%-of-GPU-hours figure previously claimed here).
+Period-accurate hardware = V100 (the trace's actual cards). Annotations consumed by the
 loader: trace/gpu_request, trace/tier, trace/cpu_util_ratio, trace/gpu_util_ratio.
 """
 from __future__ import annotations
@@ -58,7 +60,12 @@ def load_window(task_csv: Path, window_start_s: float, arrival_slots: int, horiz
     for c in ("start_time","end_time","plan_cpu","plan_mem","plan_gpu"):
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df = df.dropna(subset=["start_time","plan_cpu","plan_mem"])
-    # censored (no end_time) -> clip to window end (treat as running through the window)
+    # Censored = no observed end_time. We DO NOT impute a finite duration for these (the old
+    # fill-to-window-end gave them a ~38h median, which made long, effectively-unbounded jobs
+    # dominate the "flexible" GPU-hours while being unable to shift within their slack). We mark
+    # them and force them to the FIRM tier downstream so the deferrable pool reflects genuinely
+    # shiftable work. end_eff is still clipped to the window only to bound in-window duration.
+    df["censored"] = df["end_time"].isna()
     window_end_s = window_start_s + horizon_h * 3600.0
     df["end_eff"] = df["end_time"].fillna(window_end_s).clip(upper=window_end_s)
     df["arrival_slot"] = ((df["start_time"] - window_start_s) / 3600.0).apply(math.floor)
@@ -66,8 +73,15 @@ def load_window(task_csv: Path, window_start_s: float, arrival_slots: int, horiz
     # in-window duration, rounded to whole hours (min 1); keep only >=1h schedulable jobs
     df["dur_h"] = ((df["end_eff"] - df["start_time"]) / 3600.0).clip(lower=0)
     df["duration_slots"] = df["dur_h"].round().clip(lower=1).astype(int)
-    df = df[df["dur_h"] >= 0.5]   # drop genuinely sub-hour (rounds to <1h); ~6.5% of GPU-hours
+    n_in_window = len(df)
+    sub_hour = df["dur_h"] < 0.5
+    n_drop = int(sub_hour.sum())
+    df = df[~sub_hour]   # drop genuinely sub-hour (rounds to <1h)
     df["duration_slots"] = df["duration_slots"].clip(upper=horizon_h)
+    n_cens = int(df["censored"].sum())
+    print(f"  window: {n_in_window} in-window tasks; dropped {n_drop} sub-hour "
+          f"({100*n_drop/max(n_in_window,1):.0f}% of tasks); kept {len(df)}; "
+          f"censored (no end_time, -> firm) {n_cens} ({100*n_cens/max(len(df),1):.0f}% of kept)")
     return df
 
 
@@ -108,7 +122,14 @@ def stratified_sample(df: pd.DataFrame, target: int, seed: int) -> pd.DataFrame:
 
 def assign_fields(df: pd.DataFrame, seed: int, fixed_slack: int = 0) -> pd.DataFrame:
     out = df.copy()
-    out["tier"] = out["task_name"].apply(lambda r: "firm" if str(r) in FIRM_ROLES else "flexible")
+    # Firm = interactive/latency-sensitive role OR censored (no observed end_time -> effectively
+    # unbounded, cannot be safely deferred). Only genuinely shiftable jobs stay flexible, so the
+    # deferrable pool no longer counts long imputed-duration jobs that physically cannot move.
+    censored = out["censored"] if "censored" in out.columns else pd.Series(False, index=out.index)
+    out["tier"] = [
+        "firm" if (str(role) in FIRM_ROLES or bool(c)) else "flexible"
+        for role, c in zip(out["task_name"], censored)
+    ]
     rng = random.Random(seed + 7)
     # fixed_slack>0 -> every flexible job gets exactly that slack (for the slack-sensitivity sweep);
     # else draw the literature-grounded skewed distribution.
