@@ -194,6 +194,27 @@ class PilotConfig:
     # fleets; the EXACT occupancy-order eval was narrowed to the moved node so runtime stays ~<=2s.
     consolidation_max_destinations: int = 96
     consolidation_max_rounds: int = 8
+    # B2 -- guarded RELIEF move-set / LNS (default OFF, bit-identical when off). Generalizes D1 from the
+    # CARBON objective to the engine's headline GRID-STRESS-RELIEF objective, and from the aggregate
+    # carbon+scarcity certificate to the FULL certificate (carbon, scarcity, radiation, cost, per-basin).
+    # Motivation (measured against the exact occupancy-dependent MILP, scripts/optgap_exact_milp.py): the
+    # single-move greedy leaves a large relief gap because the MILP's advantage is coordinated -- it EMPTIES
+    # a node (freeing that node's idle-once carbon, via the activation binaries y[f,s]) and SPENDS the freed
+    # carbon budget on relief moves that individually breach the carbon guard. The per-move greedy can cross
+    # neither barrier: (a) it cannot empty a node (that needs all its pods moved as a set), and (b) it rejects
+    # a high-relief move that transiently exceeds the carbon/water budget even when a simultaneous budget-
+    # freeing move-set would restore it, and rejects the budget-freeing move itself (it does not relieve
+    # stress -> fails the relief gate). This pass pulls a SET of flexible pods from higher-stress locations
+    # onto a low-stress destination (lowest grid-stress-score first), scores the COMPLETED schedule with the
+    # EXACT idle-once evaluator (emptied sources lose their idle; the destination pays it once), and commits
+    # the set ATOMICALLY iff it (i) strictly reduces weighted grid-stress (the relief payoff) and (ii) carries
+    # the full no-harm certificate vs B. The harmful intermediate (a transient idle activation / budget breach
+    # before the sources are emptied) is never a guard-checked state -> the ex-post certificate holds by
+    # construction. The single admissible relief move is the empty-donor special case; D1 is the carbon-
+    # objective special case. Off -> no branch runs (byte-identical).
+    relief_move_set: bool = False
+    relief_move_set_max_destinations: int = 96
+    relief_move_set_max_rounds: int = 12
     # Per-basin (per-region == per-watershed in this testbed) water non-degradation. Default False ->
     # ONLY the aggregate scarcity guard runs (byte-identical to the legacy path). When True, the repair
     # loop additionally rejects any move that would raise ANY basin's scarcity-characterized water above
@@ -229,6 +250,57 @@ class PilotConfig:
     # whole schedule. "full" re-prices the entire placement set (the original path, kept for
     # swap-and-diff validation). Both modes yield identical accepted-move decisions.
     exact_guard_mode: str = "node_local"
+    # --- F1-B1: regret-based move ranking (default OFF -> bit-identical) ------------------------
+    # RANKING-ONLY. The no-harm guard is unchanged, so every committed move still certifies and the
+    # off-path is byte-for-byte identical. The DEFAULT selector commits, each repair round, the single
+    # globally highest-SCORING admissible move. With this flag on, the round instead commits the
+    # flexible pod with the largest REGRET -- the classical GAP/regret heuristic gap between the pod's
+    # best and second-best admissible move (a pod with only one admissible move has +inf regret and is
+    # taken first, since deferring it risks losing that move to a later resource change). Same guard,
+    # same certificate; a different commit order reaches a different certified local optimum.
+    # MEASURED VERDICT (2026-07-02, basin-cert 6-window suite): REGRESSION, kept OFF. The certificate
+    # holds everywhere (ranking-only), but certified co-benefit collapses in all 6 windows and
+    # catastrophically on the high-relief Azure windows (d0 -16.7%C -> -0.0%C; d2 -12.5%C -> -0.5%C). The
+    # GAP/regret heuristic does not transfer to a BUDGETED setting: singleton (+inf-regret) forced moves
+    # commit first and consume the guard's carbon/water headroom, starving the high-value relief moves.
+    # Retained as a documented negative result -- the score-max selector is the right default here.
+    regret_ranking: bool = False
+    # --- F1-B3: certificate-as-portfolio selector (default OFF -> bit-identical, no extra row) ---
+    # When ON, after every schedule is scored against B the pilot additionally SHIPS the best schedule
+    # that CARRIES the no-harm certificate (carbon<=B, scarcity<=B, SLO preserved), ranked by a DECLARED
+    # priority over axes (portfolio_priority). The envelope always certifies, so the portfolio is >= the
+    # envelope by construction and strictly dominates whenever an UNCONSTRAINED baseline both certifies
+    # and beats the envelope on the declared axis (measured: carbon-greedy certifies -17.2%C on d4 where
+    # the envelope is -0.9%C; WaterWise certifies -41.4%W on d4). Emits ONE extra `no_harm_portfolio`
+    # summary row + placements CSV that mirror the winning method; nothing else changes. Off -> no row.
+    # MEASURED VERDICT (2026-07-02, basin-cert 6-window suite): WIN, adopt. Carbon-first portfolio >=
+    # envelope on carbon in ALL 6 windows (w1600 -5.0 vs -0.1; d4 -17.2 vs -0.9; d0 -20.4 vs -16.7 via the
+    # already-computed search_control member; d2 -20.7 vs -12.5), never a regression. NOTE: the aggregate
+    # certificate is the filter; carbon-greedy/WaterWise picks can fail the STRICTER per-basin guard, so a
+    # per-basin-safe portfolio must restrict the pool to per-basin-certified members (search_control here).
+    portfolio_selector: bool = False
+    # Declared axis order for the portfolio ranking (operator preference; NEVER tuned by us). Tokens:
+    # "relief" (max grid-stress relief), "carbon" (max carbon reduction), "water" (max scarcity
+    # reduction). Comma-separated, applied lexicographically; exact ties prefer the certified envelope.
+    portfolio_priority: str = "relief,carbon,water"
+    # --- F1-B4: declared non-inferiority epsilon-margins per axis (default 0 -> bit-identical) ---
+    # Each axis guard threshold becomes base*(1+eps_axis): the operator DECLARES a tolerated fractional
+    # increase per axis (an input, never tuned by us). eps=0 recovers the strict no-harm certificate
+    # EXACTLY (base*(1+0.0)==base in IEEE-754 -> byte-identical). A positive eps on one axis lets the
+    # guard keep a move that would otherwise be rejected, trading a small declared increase there for
+    # larger certified gains elsewhere (the dC/deps frontier; e.g. eps_radiation>0 preserves a carbon
+    # cut the strict 4-axis guard sacrifices). The eps vector is recorded in the certificate. Applied to
+    # the aggregate carbon/water/radiation/cost guards AND (via eps_scarcity) the per-basin water guard.
+    # MEASURED VERDICT (2026-07-02): CORRECT + conflict-scoped, kept OFF as the headline. No strict-cert
+    # win on the water-only basin-cert suite (no axis conflict to trade -> relaxing water only drifts it
+    # up within the band with no carbon/relief payoff). Validated where DESIGNED: d2 with radiation_guard
+    # ON, eps_radiation 0->0.01 recovers carbon relief -0.02%C -> -9.4%C (radiation +0.96%, within band),
+    # 0.03 -> -15.1%C (+1.99%); aggregate certificate stays True. Its home is the declared-frontier
+    # exhibit under an axis conflict, not the strict water suite.
+    epsilon_carbon: float = 0.0
+    epsilon_scarcity: float = 0.0
+    epsilon_radiation: float = 0.0
+    epsilon_cost: float = 0.0
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -930,6 +1002,20 @@ def _percent_delta(new_value: float, old_value: float) -> float:
     return (new_value - old_value) / old_value * 100.0
 
 
+def _score_gap(best_score: Tuple[float, ...], second_score: Optional[Tuple[float, ...]]) -> float:
+    """Regret (F1-B1) = the magnitude of the first lexicographic component where a pod's BEST admissible
+    move outranks its SECOND-best. `best_score` >= `second_score` lexicographically by construction, so
+    the first differing component has best > second and the gap is positive. A pod with no alternative
+    (second_score is None) has +inf regret: it MUST be placed now, since deferring risks losing its only
+    admissible move to a later resource change -- the standard regret-heuristic priority for singletons."""
+    if second_score is None:
+        return float("inf")
+    for x, y in zip(best_score, second_score):
+        if x != y:
+            return float(x - y)
+    return 0.0
+
+
 def _z_score(epsilon: float) -> float:
     """One-sided normal quantile z = Phi^{-1}(1 - eps) for the safety-stock buffer.
     eps is the target ex-post violation probability (e.g. 0.05 -> z~1.645 for 95% hold)."""
@@ -1296,6 +1382,259 @@ def _consolidation_pass(
     return total_moves
 
 
+def _exact_ledger_stress(
+    placements: Sequence[Placement],
+    flavours: Sequence[EnvironmentalFlavor],
+    signals: Mapping[RegionSlot, ActionSignal],
+    config: PilotConfig,
+) -> Optional[Dict[str, Any]]:
+    """Exact idle-once ledger (carbon, scarcity, radiation, cost, per-region scarcity) AND total
+    weighted grid-stress for a HYPOTHETICAL placement set, computed on the rematerialized (idle-once
+    correct) footprints without mutating the input. Returns None if the set is infeasible under joint
+    occupancy. Lets the relief move-set pass score a candidate move-SET against the full certificate
+    AND the relief objective before deciding whether to commit it."""
+    remat = _exact_footprints_in_occupancy_order(placements, flavours, config)
+    if not remat and placements:
+        return None
+    carbon = scarcity = radiation = cost = stress = 0.0
+    basin: Dict[str, float] = {}
+    for pl in placements:
+        rc = remat.get(id(pl))
+        if rc is None:
+            return None
+        fp = rc.footprint
+        carbon += fp.total_carbon_kg
+        scarcity += fp.scarcity_characterized_water
+        radiation += getattr(fp, "operational_radiation_kbq", 0.0)
+        cost += getattr(fp, "operational_cost_eur", 0.0)
+        reg = (getattr(rc.flavour, "region", "") or "").upper()
+        basin[reg] = basin.get(reg, 0.0) + fp.scarcity_characterized_water
+        # Weighted grid-stress on the idle-once footprint (same metric schedule_totals aggregates and
+        # the wstress MILP minimizes). placement_signal_metrics reads candidate.footprint, so score the
+        # rematerialized candidate at the placement's (region, slot).
+        stress += placement_signal_metrics(replace(pl, candidate=rc), signals)["weighted_stress_kwh"]
+    return {"carbon": carbon, "scarcity": scarcity, "radiation": radiation, "cost": cost,
+            "basin": basin, "stress": stress, "remat": remat}
+
+
+def _relief_move_set_pass(
+    *,
+    current: ScheduleResult,
+    flavours: Sequence[EnvironmentalFlavor],
+    signals: Mapping[RegionSlot, ActionSignal],
+    config: PilotConfig,
+    cert: Mapping[str, Any],
+) -> int:
+    """Guarded RELIEF move-set / LNS (B2). See PilotConfig.relief_move_set for the motivation.
+
+    Pull a SET of flexible pods from higher-grid-stress locations onto a low-stress destination
+    (lowest stress-score first), score the COMPLETED schedule with the EXACT idle-once evaluator
+    (emptied sources shed their idle; the destination pays it once), and commit the set ATOMICALLY
+    iff it (i) strictly reduces total weighted grid-stress (the relief payoff) and (ii) carries the
+    full no-harm certificate vs B (carbon/scarcity/radiation/cost/per-basin, each <= base*(1+eps)).
+    Generalizes _consolidation_pass (carbon objective, aggregate certificate) to the relief objective
+    and all axes. Mutates current.placements in place; returns #moves committed."""
+    flavours_list = list(flavours)
+    flavour_by_id = {flv.id: flv for flv in flavours_list}
+    timeslots = build_timeslots(config.max_timeslots)
+    lever_mode = config.lever_mode
+
+    thr_carbon = cert["thr_carbon"]
+    thr_scarcity = cert["thr_scarcity"]
+    radiation_guard = cert["radiation_guard"]
+    thr_radiation = cert["thr_radiation"]
+    cost_guard = cert["cost_guard"]
+    thr_cost = cert["thr_cost"]
+    per_basin_guard = cert["per_basin_guard"]
+    base_basin = cert["base_basin_water"]
+    eps_scar = cert["eps_scarcity"]
+
+    def _certifies(led: Mapping[str, Any]) -> bool:
+        if led["carbon"] > thr_carbon + 1e-9:
+            return False
+        if led["scarcity"] > thr_scarcity + 1e-9:
+            return False
+        if radiation_guard and led["radiation"] > thr_radiation + 1e-9:
+            return False
+        if cost_guard and led["cost"] > thr_cost + 1e-9:
+            return False
+        if per_basin_guard:
+            for reg in set(led["basin"]) | set(base_basin):
+                if led["basin"].get(reg, 0.0) > base_basin.get(reg, 0.0) * (1.0 + eps_scar) + 1e-9:
+                    return False
+        return True
+
+    def _slot_stress(region: str, slot: int) -> float:
+        sig = signals.get((region.upper(), slot))
+        return float(getattr(sig, "grid_stress_score", 0.0)) if sig is not None else 0.0
+
+    total_moves = 0
+    for _round in range(max(1, config.relief_move_set_max_rounds)):
+        inc = _exact_ledger_stress(current.placements, flavours_list, signals, config)
+        if inc is None:
+            break
+        inc_stress = inc["stress"]
+
+        flex_idx = [i for i, pl in enumerate(current.placements) if pl.flexibility_class == "flexible"]
+        if not flex_idx:
+            break
+
+        # Destinations = (flavour, start-slot), LOWEST grid-stress-score first (the best relief sinks).
+        dests: List[Tuple[float, str, int]] = []
+        for flv in flavours_list:
+            region = (getattr(flv, "region", "") or "").upper()
+            for slot in range(config.max_timeslots):
+                dests.append((_slot_stress(region, slot), flv.id, slot))
+        dests.sort(key=lambda d: (d[0], d[1], d[2]))
+        dests = dests[: max(1, config.relief_move_set_max_destinations)]
+
+        committed = False
+        for _s, dest_fid, dest_slot in dests:
+            dest_flv = flavour_by_id[dest_fid]
+            dest_region = (getattr(dest_flv, "region", "") or "").upper()
+            dest_stress = _slot_stress(dest_region, dest_slot)
+
+            # Movable = flexible pods NOT at the destination whose CURRENT slot is dirtier (moving them
+            # onto the destination relieves stress), lever-mode-respecting. Dirtiest current slot first.
+            movable: List[Tuple[float, int]] = []
+            for i in flex_idx:
+                pl = current.placements[i]
+                cand = pl.candidate
+                if cand.flavour.id == dest_fid and cand.timeslot.id == dest_slot:
+                    continue
+                if lever_mode == "temporal" and dest_fid != cand.flavour.id:
+                    continue
+                if lever_mode == "spatial" and dest_slot != cand.timeslot.id:
+                    continue
+                cur_region = (getattr(cand.flavour, "region", "") or "").upper()
+                if _slot_stress(cur_region, cand.timeslot.id) <= dest_stress + 1e-12:
+                    continue  # moving this pod here would not relieve stress
+                movable.append((_slot_stress(cur_region, cand.timeslot.id), i))
+            if not movable:
+                continue
+            movable.sort(key=lambda m: (-m[0], m[1]))
+
+            # Grow the move-set greedily; capacity is enforced EXACTLY by the occupancy-order remat in
+            # _exact_ledger_stress below (the cheap pre-filter here mirrors _consolidation_pass).
+            trial_placements = [replace(pl) for pl in current.placements]
+            leftover_cpu, leftover_ram, leftover_gpu = _init_resources(flavours_list, config.max_timeslots)
+            applied: List[int] = []
+            for _cs, i in movable:
+                pod = current.placements[i].pod
+                dur = max(int(pod.duration), 1)
+                if dest_slot + dur > config.max_timeslots:
+                    continue
+                ts = next((t for t in timeslots if t.id == dest_slot), None)
+                if ts is None or not is_timeslot_valid(ts, pod):
+                    continue
+                built = _build_feasible_candidates(
+                    pod=pod, flavours=[dest_flv], timeslots=timeslots,
+                    leftover_cpu=leftover_cpu, leftover_ram=leftover_ram,
+                    max_time_slots=config.max_timeslots, leftover_gpu=leftover_gpu)
+                new_cand = next((c for c in built if c.timeslot.id == dest_slot), None)
+                if new_cand is None:
+                    continue  # destination capacity exhausted for this pod; keep the set, skip it
+                _apply_candidate_resources(pod, new_cand, leftover_cpu, leftover_ram, leftover_gpu)
+                trial_placements[i] = replace(current.placements[i], candidate=new_cand)
+                applied.append(i)
+            if not applied:
+                continue
+
+            led = _exact_ledger_stress(trial_placements, flavours_list, signals, config)
+            if led is None:
+                continue
+            if led["stress"] < inc_stress - 1e-12 and _certifies(led):
+                # Commit atomically: adopt the rematerialized (idle-correct) footprints for the WHOLE
+                # schedule so later rounds and the caller's totals stay occupancy-consistent.
+                remat = led["remat"]
+                for pl in trial_placements:
+                    rc = remat.get(id(pl))
+                    if rc is not None:
+                        pl.candidate = rc
+                current.placements = trial_placements
+                total_moves += len(applied)
+                committed = True
+                break  # re-evaluate the incumbent before probing more destinations
+        if not committed:
+            break
+
+    return total_moves
+
+
+def _rebuild_flavour_candidate_map(
+    pod: CarbonAwarePod,
+    flavour: EnvironmentalFlavor,
+    valid_timeslots: Sequence[CarbonAwareTimeslot],
+    leftover_cpu: Dict[str, Dict[int, float]],
+    leftover_ram: Dict[str, Dict[int, float]],
+    leftover_gpu: Optional[Dict[str, Dict[int, float]]],
+    max_time_slots: int,
+) -> Dict[int, CandidatePlacement]:
+    """Bit-identical fast path for `_build_feasible_candidates` restricted to ONE flavour over a
+    PRECOMPUTED is_timeslot_valid-filtered timeslot list.
+
+    `is_timeslot_valid(ts, pod)` depends only on (now, ts, pod) -- NOT on occupancy -- so it is
+    hoisted out of the per-move rebuild and computed once per pod (see valid_ts_by_pod below). The
+    per-call `ordered_timeslots` sort inside `_build_feasible_candidates` is likewise dropped: the
+    repair caller only ever indexes the result by timeslot id, so list ordering is irrelevant. This
+    produces exactly the candidate SET and footprints `_build_feasible_candidates` would for this
+    flavour (same feasibility test, same used_cpu_before, same pack_score) -> byte-for-byte results.
+    """
+    fid = flavour.id
+    lc = leftover_cpu[fid]
+    lr = leftover_ram[fid]
+    lg = leftover_gpu.get(fid) if leftover_gpu is not None else None
+    gpu_req = float(getattr(pod, "gpuRequest", 0) or 0)
+    dur = int(pod.duration)
+    cpu_req = pod.cpuRequest
+    ram_req = pod.ramRequest
+    total_capacity = flavour.totalCpu
+    cpu_norm = flavour.totalCpu * max(dur, 1)
+    ram_norm = flavour.totalRam * max(dur, 1)
+    out: Dict[int, CandidatePlacement] = {}
+    for ts in valid_timeslots:
+        start = ts.id
+        end = start + dur
+        if end > max_time_slots:
+            continue
+        feasible = True
+        for s in range(start, end):
+            if lc[s] < cpu_req or lr[s] < ram_req:
+                feasible = False
+                break
+            if gpu_req > 0.0 and lg is not None and lg.get(s, 0.0) < gpu_req:
+                feasible = False
+                break
+        if not feasible:
+            continue
+        cpu_slack_sum = 0.0
+        ram_slack_sum = 0.0
+        used_cpu_before: Dict[int, float] = {}
+        for s in range(start, end):
+            lc_now = lc[s]
+            cpu_slack_sum += max(lc_now - cpu_req, 0.0)
+            ram_slack_sum += max(lr[s] - ram_req, 0.0)
+            used_cpu_before[s] = max(total_capacity - lc_now, 0.0)
+        footprint = compute_footprint_vector(
+            flavour=flavour,
+            start_slot=start,
+            pod=pod,
+            used_cpu_before_by_slot=used_cpu_before,
+            embodied_allocation_mode="proportional",
+            operational_only=False,
+            use_pod_power_only=False,
+        )
+        pack_score = (cpu_slack_sum / max(cpu_norm, 1e-6)) + (ram_slack_sum / max(ram_norm, 1e-6))
+        out[start] = CandidatePlacement(
+            flavour=flavour,
+            timeslot=ts,
+            footprint=footprint,
+            pack_score=pack_score,
+            used_cpu_before=used_cpu_before,
+        )
+    return out
+
+
 def repair_schedule_no_harm(
     *,
     method_key: str,
@@ -1344,8 +1683,17 @@ def repair_schedule_no_harm(
         ordered_ts = sorted(timeslots, key=lambda t: min(flv.forecast.get(t.id, 200.0) for flv in flavours_list))
     except Exception:
         ordered_ts = list(timeslots)
+    # Per-pod valid timeslots, hoisted once. is_timeslot_valid(ts, pod) is occupancy-INDEPENDENT
+    # (depends only on now/ts/pod), so the O(pods*rounds*flavours) recomputation inside the rebuild
+    # is pure waste; compute the valid-ts list once per pod here and feed it to the fast rebuild.
+    valid_ts_by_pod: Dict[str, List[CarbonAwareTimeslot]] = {}
+    for placement in placements:
+        pid = placement.pod.id
+        if pid not in valid_ts_by_pod:
+            valid_ts_by_pod[pid] = [ts for ts in timeslots if is_timeslot_valid(ts, placement.pod)]
 
     margin = config.regret_margin
+    regret_ranking = bool(getattr(config, "regret_ranking", False))  # F1-B1 (ranking-only; guard unchanged)
     # Effective per-move carbon-forecast buffer fraction. In the default "flat" mode this is EXACTLY
     # config.robust_buffer (bit-identical to the legacy guard). In "sqrtk" mode it is the pooled
     # safety-stock per-move fraction z(eps)*rho*shape/sqrt(K_est), where K_est = the decision-time
@@ -1531,6 +1879,17 @@ def repair_schedule_no_harm(
     cost_guard = bool(getattr(config, "cost_guard", False))
     base_cost = baseline_totals.get("operational_cost_eur", 0.0)
     cur_cost = base_cost
+    # F1-B4 non-inferiority margins: every axis guards against base*(1+eps_axis). eps defaults to 0.0,
+    # for which base*(1.0+0.0)==base exactly in IEEE-754 -> the thresholds below are bit-identical to the
+    # strict guard. A declared eps>0 relaxes ONLY that axis. eps_scarcity also relaxes the per-basin guard.
+    eps_carbon = float(getattr(config, "epsilon_carbon", 0.0))
+    eps_scarcity = float(getattr(config, "epsilon_scarcity", 0.0))
+    eps_radiation = float(getattr(config, "epsilon_radiation", 0.0))
+    eps_cost = float(getattr(config, "epsilon_cost", 0.0))
+    thr_carbon = base_carbon * (1.0 + eps_carbon)
+    thr_scarcity = base_scarcity * (1.0 + eps_scarcity)
+    thr_radiation = base_radiation * (1.0 + eps_radiation)
+    thr_cost = base_cost * (1.0 + eps_cost)
     # Running totals maintained from CORRECT per-move deltas (idle re-attributed via the rebuilt
     # self-candidate as the removal baseline), so the guard checks the true current footprint rather
     # than a stale sum of per-pod footprints that loses a node's idle when its idle-bearer moves.
@@ -1562,10 +1921,15 @@ def repair_schedule_no_harm(
     exact_reg: Dict[str, float] = {}
     while repairs < max_repairs:
         best: Optional[Tuple[Tuple[float, ...], int, CandidatePlacement]] = None
+        # F1-B1: best move by REGRET across pods (only populated when regret_ranking is on).
+        best_regret: Optional[Tuple[Tuple[float, ...], int, CandidatePlacement, CandidatePlacement]] = None
 
         for idx, placement in enumerate(current.placements):
             if placement.flexibility_class != "flexible":
                 continue
+            # Per-pod best/second admissible move (F1-B1 regret ranking; unused when the flag is off).
+            pod_best: Optional[Tuple[Tuple[float, ...], CandidatePlacement, CandidatePlacement]] = None
+            pod_second: Optional[Tuple[Tuple[float, ...], CandidatePlacement, CandidatePlacement]] = None
 
             old_candidate = placement.candidate
             bv = built_ver.get(idx)
@@ -1580,17 +1944,17 @@ def repair_schedule_no_harm(
                 # the naive path does), then reassemble + re-rank in identical order.
                 _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram, leftover_gpu, release=True)
                 cache = flav_cache.setdefault(idx, {})
+                pod_valid_ts = valid_ts_by_pod[placement.pod.id]
                 for fid in dirty_fids:
-                    built = _build_feasible_candidates(
-                        pod=placement.pod,
-                        flavours=[flavour_by_id[fid]],
-                        timeslots=timeslots,
-                        leftover_cpu=leftover_cpu,
-                        leftover_ram=leftover_ram,
-                        max_time_slots=config.max_timeslots,
-                        leftover_gpu=leftover_gpu,
+                    cache[fid] = _rebuild_flavour_candidate_map(
+                        placement.pod,
+                        flavour_by_id[fid],
+                        pod_valid_ts,
+                        leftover_cpu,
+                        leftover_ram,
+                        leftover_gpu,
+                        config.max_timeslots,
                     )
-                    cache[fid] = {c.timeslot.id: c for c in built}
                 _apply_candidate_resources(placement.pod, old_candidate, leftover_cpu, leftover_ram, leftover_gpu)
                 built_ver[idx] = dict(flavour_version)
                 assembled: List[CandidatePlacement] = []
@@ -1630,15 +1994,16 @@ def repair_schedule_no_harm(
                 if (idx, candidate.flavour.id, candidate.timeslot.id) in exact_banned:
                     continue  # already found harmful by the exact commit-time guard
                 # Carbon guard keeps the cumulative WORST-CASE realized carbon under baseline:
-                # nominal current + uncertainty already committed + this move's exposure.
+                # nominal current + uncertainty already committed + this move's exposure. The RHS is
+                # thr_carbon = base_carbon*(1+eps_carbon) (eps=0 -> base_carbon exactly; F1-B4).
                 if (cur_carbon + d_carbon + margin * carbon_regret
-                        + applied_unc_carbon + robust_buffer * unc_carbon) > base_carbon + 1e-9:
+                        + applied_unc_carbon + robust_buffer * unc_carbon) > thr_carbon + 1e-9:
                     rejected_moves += 1
                     continue
                 # Scarcity guard, symmetric: nominal current + committed water-forecast uncertainty +
                 # this move's water exposure. robust_buffer_water defaults to 0 -> byte-identical legacy.
                 if (cur_scarcity + d_scarcity + margin * scarcity_regret
-                        + applied_unc_scarcity + robust_buffer_water * unc_scarcity) > base_scarcity + 1e-9:
+                        + applied_unc_scarcity + robust_buffer_water * unc_scarcity) > thr_scarcity + 1e-9:
                     rejected_moves += 1
                     continue
                 # Ionising-radiation guard (fourth axis): keep cumulative operational radiation <= B.
@@ -1647,7 +2012,7 @@ def repair_schedule_no_harm(
                 if radiation_guard:
                     d_radiation = (candidate.footprint.operational_radiation_kbq
                                    - remove_baseline.footprint.operational_radiation_kbq)
-                    if cur_radiation + d_radiation > base_radiation + 1e-9:
+                    if cur_radiation + d_radiation > thr_radiation + 1e-9:
                         rejected_moves += 1
                         continue
                 # Electricity-cost guard (fifth axis): keep cumulative operational cost <= B.
@@ -1655,7 +2020,7 @@ def repair_schedule_no_harm(
                 if cost_guard:
                     d_cost = (candidate.footprint.operational_cost_eur
                               - remove_baseline.footprint.operational_cost_eur)
-                    if cur_cost + d_cost > base_cost + 1e-9:
+                    if cur_cost + d_cost > thr_cost + 1e-9:
                         rejected_moves += 1
                         continue
                 if drought_delta > 1e-9:
@@ -1666,23 +2031,41 @@ def repair_schedule_no_harm(
                     dst_reg = (getattr(candidate.flavour, "region", "") or "").upper()
                     src_w = remove_baseline.footprint.scarcity_characterized_water
                     dst_w = candidate.footprint.scarcity_characterized_water
-                    # Projected per-basin water if this move is taken; reject if ANY basin exceeds B.
+                    # Projected per-basin water if this move is taken; reject if ANY basin exceeds B's
+                    # basin threshold base*(1+eps_scarcity) (eps=0 -> strict per-basin guard; F1-B4).
                     proj_src = cur_basin_water.get(src_reg, 0.0) - src_w
                     proj_dst = cur_basin_water.get(dst_reg, 0.0) \
                         - (src_w if dst_reg == src_reg else 0.0) + dst_w
-                    if (proj_dst > base_basin_water.get(dst_reg, 0.0) + 1e-9
-                            or proj_src > base_basin_water.get(src_reg, 0.0) + 1e-9):
+                    if (proj_dst > base_basin_water.get(dst_reg, 0.0) * (1.0 + eps_scarcity) + 1e-9
+                            or proj_src > base_basin_water.get(src_reg, 0.0) * (1.0 + eps_scarcity) + 1e-9):
                         rejected_moves += 1
                         continue
                 if score[0] <= 1e-12:
                     continue
+                # Default selector: the single globally highest-scoring admissible move (off-path,
+                # bit-identical). F1-B1 regret ranking (below) instead tracks each pod's best/second
+                # admissible move so a round can commit the highest-regret pod; the guard is untouched.
                 if best is None or score > best[0]:
                     best = (score, idx, candidate, remove_baseline)
+                if regret_ranking:
+                    if pod_best is None or score > pod_best[0]:
+                        pod_second = pod_best
+                        pod_best = (score, candidate, remove_baseline)
+                    elif pod_second is None or score > pod_second[0]:
+                        pod_second = (score, candidate, remove_baseline)
 
-        if best is None:
+            if regret_ranking and pod_best is not None:
+                reg = _score_gap(pod_best[0], pod_second[0] if pod_second is not None else None)
+                # Prioritize by regret, break ties by the pod's own best score (higher first).
+                reg_key = (reg,) + tuple(pod_best[0])
+                if best_regret is None or reg_key > best_regret[0]:
+                    best_regret = (reg_key, idx, pod_best[1], pod_best[2])
+
+        chosen = best_regret if regret_ranking else best
+        if chosen is None:
             break
 
-        _, placement_idx, candidate, best_remove_baseline = best
+        _, placement_idx, candidate, best_remove_baseline = chosen
         # ---- EXACT commit-time guard (2026-07-01) -------------------------------------------------
         # The per-move deltas above are fast FILTERS, but their incremental ledger can drift from the
         # true idle-once account when idle-bearer-ship is silently inherited (a bearer leaves, the
@@ -1767,13 +2150,14 @@ def repair_schedule_no_harm(
                 exact_cost += m.footprint.operational_cost_eur
         planned_unc_c = applied_unc_carbon + (robust_buffer * candidate._nh[8] if robust_buffer else 0.0)
         planned_unc_w = applied_unc_scarcity + (robust_buffer_water * candidate._nh[9] if robust_buffer_water else 0.0)
+        # Same ε-relaxed thresholds (thr_*) as the per-move filters -> eps=0 is byte-identical (F1-B4).
         harmful = (
-            exact_carbon + planned_unc_c > base_carbon + 1e-9
-            or exact_scarcity + planned_unc_w > base_scarcity + 1e-9
-            or (radiation_guard and exact_radiation > base_radiation + 1e-9)
-            or (cost_guard and exact_cost > base_cost + 1e-9)
+            exact_carbon + planned_unc_c > thr_carbon + 1e-9
+            or exact_scarcity + planned_unc_w > thr_scarcity + 1e-9
+            or (radiation_guard and exact_radiation > thr_radiation + 1e-9)
+            or (cost_guard and exact_cost > thr_cost + 1e-9)
             or (per_basin_guard and any(
-                exact_basin.get(reg, 0.0) > base_basin_water.get(reg, 0.0) + 1e-9
+                exact_basin.get(reg, 0.0) > base_basin_water.get(reg, 0.0) * (1.0 + eps_scarcity) + 1e-9
                 for reg in set(exact_basin) | set(base_basin_water)))
         )
         if harmful:
@@ -1822,6 +2206,22 @@ def repair_schedule_no_harm(
             base_scarcity=base_scarcity,
         )
         repairs += consolidated
+
+    # B2: guarded RELIEF move-set / LNS post-pass (default OFF -> bit-identical). Generalizes the D1
+    # consolidation pass from the carbon objective + aggregate certificate to the grid-stress-relief
+    # objective + the FULL certificate; crosses the coordinated barrier (empty a node to free idle-carbon
+    # budget, then spend it on relief moves) that the per-move greedy cannot. See PilotConfig.relief_move_set.
+    if config.relief_move_set:
+        moved = _relief_move_set_pass(
+            current=current, flavours=flavours, signals=signals, config=config,
+            cert={
+                "thr_carbon": thr_carbon, "thr_scarcity": thr_scarcity,
+                "radiation_guard": radiation_guard, "thr_radiation": thr_radiation,
+                "cost_guard": cost_guard, "thr_cost": thr_cost,
+                "per_basin_guard": per_basin_guard, "base_basin_water": base_basin_water,
+                "eps_scarcity": eps_scarcity,
+            })
+        repairs += moved
 
     current.repairs_applied = repairs
     current.rejected_moves = rejected_moves
@@ -1971,6 +2371,43 @@ def _rematerialize_under_realized(result: ScheduleResult, realized_flavours: Seq
             _apply_candidate_resources(placement.pod, match, leftover_cpu, leftover_ram, leftover_gpu)
 
 
+# F1-B3 portfolio ranking axes (all "larger is better"): relief = grid-stress relief delivered;
+# carbon/water = fractional REDUCTION (negative delta_pct -> positive score). Applied lexicographically
+# in the declared order; a final envelope-preference tie-break keeps the certified envelope on exact ties.
+_PORTFOLIO_AXIS = {
+    "relief": lambda r: r.get("weighted_stress_kwh_avoided", 0.0),
+    "carbon": lambda r: -r.get("carbon_delta_pct", 0.0),
+    "water": lambda r: -r.get("scarcity_delta_pct", 0.0),
+}
+_PORTFOLIO_METHOD_PREF = {"no_harm_flex": 3, "no_harm_search_control": 2}
+
+
+def _select_portfolio(summary_rows: Sequence[Mapping[str, Any]], priority: str) -> Optional[Dict[str, Any]]:
+    """F1-B3: among the schedules that CARRY the no-harm certificate (vs B), pick the best by the
+    operator's DECLARED axis priority. Returns {source, priority, key, certified_methods} or None if
+    somehow nothing certifies (packing==B always certifies, so this is defensive). Pure post-hoc
+    selection over already-scored rows -- it ships an existing certified schedule, inventing nothing."""
+    tokens = [t.strip() for t in priority.split(",") if t.strip() in _PORTFOLIO_AXIS]
+    if not tokens:
+        tokens = ["relief", "carbon", "water"]
+    certified = [r for r in summary_rows if r.get("no_harm_certificate")]
+    if not certified:
+        return None
+
+    def _key(r: Mapping[str, Any]) -> Tuple[float, ...]:
+        return tuple(_PORTFOLIO_AXIS[t](r) for t in tokens) + (
+            float(_PORTFOLIO_METHOD_PREF.get(r.get("method_key", ""), 0)),
+        )
+
+    winner = max(certified, key=_key)
+    return {
+        "source": winner["method_key"],
+        "priority": ",".join(tokens),
+        "key": list(_key(winner)),
+        "certified_methods": [r["method_key"] for r in certified],
+    }
+
+
 def run_no_harm_flexibility_pilot(config: PilotConfig) -> Dict[str, Any]:
     config.output_dir.mkdir(parents=True, exist_ok=True)
     realized_flavours = load_flavours_for_pilot(config)
@@ -2046,6 +2483,30 @@ def run_no_harm_flexibility_pilot(config: PilotConfig) -> Dict[str, Any]:
     write_signal_csv(config.output_dir / "actionable_signals.csv", signals)
 
     summary_rows = [summarize_against_reference(result, packing, signals) for result in results]
+
+    # F1-B3 portfolio selector (default OFF -> no extra row/file -> byte-identical). Ship the best
+    # CERTIFIED schedule under the declared priority; mirror it as a `no_harm_portfolio` row + CSV so
+    # downstream reads the shipped choice directly. The envelope always certifies, so this is >= it.
+    portfolio_info: Optional[Dict[str, Any]] = None
+    if config.portfolio_selector:
+        portfolio_info = _select_portfolio(summary_rows, config.portfolio_priority)
+        if portfolio_info is not None:
+            src = portfolio_info["source"]
+            src_row = next(r for r in summary_rows if r["method_key"] == src)
+            src_result = next(r for r in results if r.method_key == src)
+            port_row = dict(src_row)
+            port_row["method_key"] = "no_harm_portfolio"
+            port_row["portfolio_source"] = src
+            port_row["portfolio_priority"] = portfolio_info["priority"]
+            summary_rows.append(port_row)
+            port_result = ScheduleResult(
+                method_key="no_harm_portfolio",
+                placements=src_result.placements,
+                unplaced_pods=list(src_result.unplaced_pods),
+                elapsed_seconds=src_result.elapsed_seconds,
+            )
+            write_placements_csv(config.output_dir / "placements_no_harm_portfolio.csv", port_result, signals)
+
     write_summary_csv(config.output_dir / "summary.csv", summary_rows)
 
     n_sig = max(len(signals), 1)
@@ -2082,6 +2543,20 @@ def run_no_harm_flexibility_pilot(config: PilotConfig) -> Dict[str, Any]:
         "grid_signal_csv": str(grid_signal_path(config).relative_to(config.repo_root)) if grid_signal_path(config) else None,
         "methods": summary_rows,
     }
+    # F1-B4: record the declared non-inferiority margins WHEN ANY axis is relaxed (keys absent at the
+    # default eps=0 -> byte-identical certificate). eps=0 on every axis == the strict no-harm form.
+    if any(getattr(config, f"epsilon_{a}", 0.0) for a in ("carbon", "scarcity", "radiation", "cost")):
+        certificate["epsilon_margins"] = {
+            "carbon": config.epsilon_carbon,
+            "scarcity": config.epsilon_scarcity,
+            "radiation": config.epsilon_radiation,
+            "cost": config.epsilon_cost,
+            "note": "guard thresholds relaxed to base*(1+eps) per axis; a DECLARED non-inferiority "
+                    "tolerance (operator input, never tuned); eps=0 recovers the strict certificate",
+        }
+    # F1-B3: record the shipped portfolio choice WHEN the selector is on (absent otherwise).
+    if config.portfolio_selector and portfolio_info is not None:
+        certificate["portfolio"] = portfolio_info
     (config.output_dir / "no_harm_certificate.json").write_text(json.dumps(certificate, indent=2), encoding="utf-8")
 
     metadata = {

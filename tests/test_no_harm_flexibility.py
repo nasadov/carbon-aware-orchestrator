@@ -175,6 +175,124 @@ def test_dro_buffer_mode_certifies_and_reserves_more_than_sqrtk(tmp_path: Path) 
     assert dro.repairs_applied <= sqrtk.repairs_applied
 
 
+def _placement_map(result):
+    return {p.pod.id: (p.candidate.flavour.id, p.candidate.timeslot.id) for p in result.placements}
+
+
+def _prep(config):
+    from carbon_aware.no_harm_flexibility import build_action_signals as _bas
+    flavours = load_flavours_for_pilot(config)
+    signals = _bas(flavours, config)
+    pods = load_pods(config.workloads_dir, max_pods=config.max_pods)
+    packing, _, _ = build_greedy_schedule(method_key="packing", pods=pods, flavours=flavours, config=config)
+    return flavours, signals, pods, packing
+
+
+# ------------------------------------------------------------------ F1-B1: regret-based move ranking
+def test_regret_ranking_off_is_bit_identical(tmp_path: Path) -> None:
+    """Regret ranking is flag-gated: the default (regret_ranking=False) must produce byte-identical
+    placements to a config that never sets the field."""
+    from dataclasses import replace as dc_replace
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours, signals, pods, packing = _prep(config)
+    base = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods,
+                                   flavours=flavours, signals=signals, config=config, score_mode="combined")
+    same = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+                                   signals=signals, config=dc_replace(config, regret_ranking=False),
+                                   score_mode="combined")
+    assert _placement_map(base) == _placement_map(same)
+
+
+def test_regret_ranking_preserves_certificate(tmp_path: Path) -> None:
+    """Regret ranking is RANKING-ONLY: the guard is untouched, so the envelope must still certify
+    (carbon<=B, scarcity<=B, no pods dropped) on correct occupancy-based accounting."""
+    from dataclasses import replace as dc_replace
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours, signals, pods, packing = _prep(config)
+    reg = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+                                  signals=signals, config=dc_replace(config, regret_ranking=True),
+                                  score_mode="combined")
+    _rematerialize_under_realized(reg, flavours, config)
+    t = schedule_totals(reg, signals)
+    base = schedule_totals(packing, signals)
+    assert t["carbon_kg"] <= base["carbon_kg"] + 1e-6
+    assert t["scarcity_water"] <= base["scarcity_water"] + 1e-6
+    assert t["placed_pods"] >= base["placed_pods"]
+
+
+# ------------------------------------------------------------------ F1-B3: portfolio selector
+def test_portfolio_selector_off_is_bit_identical(tmp_path: Path) -> None:
+    """With the selector off (default), the pilot emits NO no_harm_portfolio row/file and the summary
+    rows are exactly those of the six base methods."""
+    result = run_no_harm_flexibility_pilot(_pilot_config(tmp_path, max_pods=80))
+    keys = [r["method_key"] for r in result["summary_rows"]]
+    assert "no_harm_portfolio" not in keys
+    assert not (tmp_path / "placements_no_harm_portfolio.csv").exists()
+    assert "portfolio" not in result["certificate"]
+
+
+def test_portfolio_selector_ships_best_certified(tmp_path: Path) -> None:
+    """With the selector on, the shipped no_harm_portfolio row (a) carries the certificate, (b) is drawn
+    from a certified method, and (c) is no worse than the envelope on the declared leading axis (carbon
+    reduction here) -- the portfolio dominates the envelope by construction."""
+    from dataclasses import replace as dc_replace
+    config = dc_replace(_pilot_config(tmp_path, max_pods=80),
+                        portfolio_selector=True, portfolio_priority="carbon,water,relief")
+    result = run_no_harm_flexibility_pilot(config)
+    rows = {r["method_key"]: r for r in result["summary_rows"]}
+    assert "no_harm_portfolio" in rows
+    port = rows["no_harm_portfolio"]
+    assert port["no_harm_certificate"] is True
+    src = port["portfolio_source"]
+    assert rows[src]["no_harm_certificate"] is True
+    # Declared leading axis = carbon reduction: portfolio >= envelope (more negative or equal delta).
+    assert port["carbon_delta_pct"] <= rows["no_harm_flex"]["carbon_delta_pct"] + 1e-9
+    assert (tmp_path / "placements_no_harm_portfolio.csv").exists()
+    assert result["certificate"]["portfolio"]["source"] == src
+
+
+# ------------------------------------------------------------------ F1-B4: epsilon non-inferiority margins
+def test_epsilon_margins_off_is_bit_identical(tmp_path: Path) -> None:
+    """All epsilon margins default to 0.0 -> base*(1+0)==base -> byte-identical placements + no
+    epsilon_margins block in the certificate."""
+    from dataclasses import replace as dc_replace
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours, signals, pods, packing = _prep(config)
+    base = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods,
+                                   flavours=flavours, signals=signals, config=config, score_mode="combined")
+    cfg0 = dc_replace(config, epsilon_carbon=0.0, epsilon_scarcity=0.0,
+                      epsilon_radiation=0.0, epsilon_cost=0.0)
+    same = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+                                   signals=signals, config=cfg0, score_mode="combined")
+    assert _placement_map(base) == _placement_map(same)
+    result = run_no_harm_flexibility_pilot(_pilot_config(tmp_path / "pilot", max_pods=80))
+    assert "epsilon_margins" not in result["certificate"]
+
+
+def test_epsilon_margin_relaxes_guard_within_declared_band(tmp_path: Path) -> None:
+    """A positive epsilon relaxes the guard to base*(1+eps): the repair may accept moves the strict
+    guard rejects (>= as many repairs), realized carbon stays within the DECLARED band base*(1+eps),
+    and the certificate records the margin vector."""
+    from dataclasses import replace as dc_replace
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours, signals, pods, packing = _prep(config)
+    base = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods,
+                                   flavours=flavours, signals=signals, config=config, score_mode="combined")
+    eps = 0.05
+    relaxed = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+                                      signals=signals, config=dc_replace(config, epsilon_carbon=eps),
+                                      score_mode="combined")
+    assert relaxed.repairs_applied >= base.repairs_applied
+    _rematerialize_under_realized(relaxed, flavours, config)
+    t = schedule_totals(relaxed, signals)
+    b = schedule_totals(packing, signals)
+    # Non-inferiority: realized carbon within the declared band (never a blanket free-for-all).
+    assert t["carbon_kg"] <= b["carbon_kg"] * (1.0 + eps) + 1e-6
+    result = run_no_harm_flexibility_pilot(dc_replace(_pilot_config(tmp_path / "p", max_pods=80),
+                                                      epsilon_scarcity=0.02))
+    assert result["certificate"]["epsilon_margins"]["scarcity"] == 0.02
+
+
 def test_footprint_accounting_is_idle_consistent_after_repair(tmp_path: Path) -> None:
     """Regression guard for the idle-attribution bug: node idle power must be charged exactly once
     per active node-slot, even after the repair moves pods. We assert (a) re-materialization is
@@ -204,3 +322,53 @@ def test_footprint_accounting_is_idle_consistent_after_repair(tmp_path: Path) ->
     base = schedule_totals(packing, signals)
     assert t1["carbon_kg"] <= base["carbon_kg"] + 1e-6
     assert t1["scarcity_water"] <= base["scarcity_water"] + 1e-6
+
+
+# ------------------------------------------------------------------ B2: guarded relief move-set / LNS
+def test_relief_move_set_off_is_bit_identical(tmp_path: Path) -> None:
+    """The guarded relief move-set is flag-gated: the default (relief_move_set=False) must produce
+    byte-identical placements to a config that never sets the field (no post-pass runs)."""
+    from dataclasses import replace as dc_replace
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours, signals, pods, packing = _prep(config)
+    base = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods,
+                                   flavours=flavours, signals=signals, config=config, score_mode="combined")
+    same = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+                                   signals=signals, config=dc_replace(config, relief_move_set=False),
+                                   score_mode="combined")
+    assert _placement_map(base) == _placement_map(same)
+
+
+def test_relief_move_set_preserves_certificate(tmp_path: Path) -> None:
+    """The move-set commits a coordinated SET only after scoring the COMPLETED schedule with the exact
+    idle-once evaluator against the full certificate, so the envelope must still certify (carbon<=B,
+    scarcity<=B, no pods dropped) on correct occupancy-based accounting."""
+    from dataclasses import replace as dc_replace
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours, signals, pods, packing = _prep(config)
+    lns = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+                                  signals=signals, config=dc_replace(config, relief_move_set=True),
+                                  score_mode="stress")
+    _rematerialize_under_realized(lns, flavours, config)
+    t = schedule_totals(lns, signals)
+    base = schedule_totals(packing, signals)
+    assert t["carbon_kg"] <= base["carbon_kg"] + 1e-6
+    assert t["scarcity_water"] <= base["scarcity_water"] + 1e-6
+    assert t["placed_pods"] >= base["placed_pods"]
+
+
+def test_relief_move_set_never_worsens_weighted_stress(tmp_path: Path) -> None:
+    """The pass commits a set only on STRICT weighted-stress improvement, so enabling it can never
+    raise total weighted grid-stress vs the single-move greedy under the same objective."""
+    from dataclasses import replace as dc_replace
+    config = _pilot_config(tmp_path, max_pods=80)
+    flavours, signals, pods, packing = _prep(config)
+    greedy = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+                                     signals=signals, config=config, score_mode="stress")
+    lns = repair_schedule_no_harm(method_key="no_harm_flex", baseline=packing, pods=pods, flavours=flavours,
+                                  signals=signals, config=dc_replace(config, relief_move_set=True),
+                                  score_mode="stress")
+    _rematerialize_under_realized(greedy, flavours, config)
+    _rematerialize_under_realized(lns, flavours, config)
+    assert schedule_totals(lns, signals)["weighted_stress_kwh"] <= \
+        schedule_totals(greedy, signals)["weighted_stress_kwh"] + 1e-9

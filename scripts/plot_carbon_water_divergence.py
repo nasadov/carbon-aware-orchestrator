@@ -4,7 +4,7 @@
 Mean measured carbon intensity (x) vs mean OPERATIONAL scarcity-water intensity (y) per region,
 computed exactly as the certificate charges it (Option A): direct WUE x native-watershed AWARE CF
 + EWIF x generation-country AWARE CF, per facility-kWh, averaged over the window's slots — all from
-the committed realci2 signals. Regenerable; replaces the ad-hoc pre-revamp figure.
+the committed realci2 signals. Authored at print size (columnwidth); see paper_fig_style.
 
 Run: python scripts/plot_carbon_water_divergence.py
 """
@@ -15,17 +15,17 @@ import json
 import statistics as st
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
+import paper_fig_style as sty
 import matplotlib.pyplot as plt
 
 REPO = Path(__file__).resolve().parents[1]
 TA = REPO / "pkg" / "carbon-aware" / "data" / "timealigned_realci2"
 WATER = REPO / "pkg" / "carbon-aware" / "data" / "water"
-OUTS = [REPO / "experiments" / "figures", REPO / "docs" / "paper-three" / "Paper" / "figures"]
 REGIONS = ["DE", "FR", "ES", "IT-NO"]
 NAME = {"DE": "Germany", "FR": "France", "ES": "Spain", "IT-NO": "N. Italy"}
 MONTH = "jul_cf"
+# label offsets in points so no text clips at the canvas edge (Germany sits far right)
+LABEL_OFF = {"DE": (-4, 9), "FR": (0, -14), "ES": (2, -14), "IT-NO": (4, 10)}
 
 
 def cf(path, key):
@@ -54,32 +54,32 @@ def main() -> int:
             ewif[row["region"]].append(float(row["ewif_l_per_kwh"]))
     sw = {r: st.mean(wue[r]) * basin[r] + st.mean(ewif[r]) * country[c4r(r)] for r in REGIONS}
 
-    fig, ax = plt.subplots(figsize=(6.6, 4.4))
+    sty.apply()
+    fig, ax = plt.subplots(figsize=(sty.COLW, 2.30))
     for r in REGIONS:
-        ax.scatter(ci[r], sw[r], s=1500, color="#4A4A8C", alpha=0.88, edgecolor="white",
-                   lw=2, zorder=3)
-        ax.annotate(NAME[r], (ci[r], sw[r]), color="white", fontsize=10, fontweight="bold",
-                    ha="center", va="center", zorder=4)
+        ax.scatter(ci[r], sw[r], s=110, color="#4A4A8C", alpha=0.9, edgecolor="white",
+                   lw=1.0, zorder=3)
+        dx, dy = LABEL_OFF[r]
+        ax.annotate(NAME[r], (ci[r], sw[r]), textcoords="offset points", xytext=(dx, dy),
+                    color="#2c2c55", fontsize=7.5, fontweight="bold", ha="center", zorder=4)
     # carbon-greedy arrow: toward the cleanest grid (France) -> scarcity-water RISES
-    ax.annotate("", xy=(ci["FR"] + 28, sw["FR"] - 4), xytext=(ci["DE"] - 40, sw["DE"] + 6),
-                arrowprops=dict(arrowstyle="-|>", color="#C0392B", lw=2.4), zorder=2)
-    ax.text(0.42 * (ci["DE"] + ci["FR"]), 0.55 * (sw["FR"] + sw["DE"]),
-            "carbon-greedy shift toward\nthe cleanest grid raises\nscarcity-weighted water",
-            color="#C0392B", fontsize=9.5, ha="center")
-    ax.set_xlabel("mean measured carbon intensity (gCO$_2$/kWh)  $\\rightarrow$ dirtier")
-    ax.set_ylabel("operational scarcity-water intensity\n(L$_{\\mathrm{eq}}$/kWh, Option-A charging)  $\\rightarrow$ thirstier")
+    ax.annotate("", xy=(ci["FR"] + 22, sw["FR"] + 2), xytext=(ci["DE"] - 30, sw["DE"] + 4),
+                arrowprops=dict(arrowstyle="-|>", color=sty.WATER_RED, lw=1.6), zorder=2)
+    ax.text(0.47 * (ci["DE"] + ci["FR"]), 0.42 * (sw["FR"] + sw["DE"]) + 12,
+            "carbon-greedy shift toward the\ncleanest grid raises scarcity-water",
+            color=sty.WATER_RED, fontsize=7.0, ha="center", va="bottom")
+    ax.set_xlabel("measured carbon intensity (gCO$_2$/kWh)  $\\rightarrow$ dirtier")
+    ax.set_ylabel("scarcity-water (L$_{\\mathrm{eq}}$/kWh)\n$\\rightarrow$ thirstier")
     ax.grid(alpha=0.2)
     ax.set_xlim(0, 600)
     ax.set_ylim(-8, 122)
-    fig.tight_layout()
-    for out in OUTS:
-        out.mkdir(parents=True, exist_ok=True)
-        for ext in ("pdf", "png"):
-            fig.savefig(out / f"carbon_water_divergence.{ext}", dpi=170, bbox_inches="tight")
+    for name in ("carbon_water_divergence",):
+        sty.save(fig, name)
     print("regions:", {r: (round(ci[r]), round(sw[r], 1)) for r in REGIONS})
-    print(f"wrote carbon_water_divergence to {len(OUTS)} dirs")
     return 0
 
 
 if __name__ == "__main__":
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     raise SystemExit(main())

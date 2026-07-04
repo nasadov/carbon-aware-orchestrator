@@ -51,6 +51,7 @@ import csv
 import json
 import logging
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -329,10 +330,11 @@ def run_instance(n: int, max_ts: int, out_root: Path, time_limit: int):
     # "stress"  = pure weighted-grid-stress relief under no-harm   (matches the wstress MILP)
     # "combined"= production default: rank by #certified axes improved, then stress
     # "search_control" = carbon/water-greedy ignoring stress
-    def run_greedy(mode):
+    def run_greedy(mode, *, relief_move_set=False):
+        cfg = replace(pc, relief_move_set=True) if relief_move_set else pc
         t0 = time.perf_counter()
         rep = repair_schedule_no_harm(method_key=f"greedy_{mode}", baseline=packing, pods=pods_all,
-                                      flavours=flavours, signals=signals, config=pc, score_mode=mode)
+                                      flavours=flavours, signals=signals, config=cfg, score_mode=mode)
         wall = time.perf_counter() - t0
         ch = {}
         for pl in rep.placements:
@@ -349,6 +351,8 @@ def run_instance(n: int, max_ts: int, out_root: Path, time_limit: int):
 
     g_stress, wall_stress, rep_stress = run_greedy("stress")
     g_combined, wall_combined, rep_combined = run_greedy("combined")
+    # B2: pure-stress greedy + guarded RELIEF move-set / LNS post-pass (default-off feature toggled on).
+    g_lns, wall_lns, rep_lns = run_greedy("stress", relief_move_set=True)
     if g_stress is None or g_combined is None:
         return {"n": n_placed, "skipped": "greedy result not representable in candidate table"}
 
@@ -392,6 +396,11 @@ def run_instance(n: int, max_ts: int, out_root: Path, time_limit: int):
         "stress_carbon": g_stress["carbon"], "stress_scarcity": g_stress["scarcity"],
         "stress_wstress": g_stress["wstress"], "stress_repairs": rep_stress.repairs_applied,
         "stress_wall_s": wall_stress,
+        # B2 relief move-set / LNS: pure-stress greedy + atomic move-set post-pass (only differs from
+        # `stress` when the LNS commits a coordinated set the per-move greedy could not).
+        "lns_carbon": (g_lns or {}).get("carbon"), "lns_scarcity": (g_lns or {}).get("scarcity"),
+        "lns_wstress": (g_lns or {}).get("wstress"), "lns_repairs": rep_lns.repairs_applied,
+        "lns_wall_s": wall_lns,
         "milp_wstress_status": st_w, "milp_wstress_wall_s": wall_w,
         "milp_carbon_status": st_c, "milp_carbon_wall_s": wall_c,
         "milp_scarcity_status": st_s, "milp_scarcity_wall_s": wall_s,
@@ -402,6 +411,16 @@ def run_instance(n: int, max_ts: int, out_root: Path, time_limit: int):
         row["gap_wstress_pct"] = gap(g_stress["wstress"], milp_w["wstress"])  # objective-matched gap
         row["stress_relief_pct"] = relief(base["wstress"], g_stress["wstress"])
         row["opt_relief_pct"] = relief(base["wstress"], milp_w["wstress"])
+        # B2: LNS greedy vs the SAME wstress-optimal MILP -> does the move-set close the search gap?
+        if g_lns is not None:
+            row["gap_wstress_lns_pct"] = gap(g_lns["wstress"], milp_w["wstress"])
+            row["lns_relief_pct"] = relief(base["wstress"], g_lns["wstress"])
+            # fraction of the MILP-optimal relief captured, greedy vs greedy+LNS (stable near opt~0).
+            opt_rel = relief(base["wstress"], milp_w["wstress"])
+            row["stress_frac_of_opt_pct"] = (row["stress_relief_pct"] / opt_rel * 100.0) if opt_rel > 1e-9 else 0.0
+            row["lns_frac_of_opt_pct"] = (row["lns_relief_pct"] / opt_rel * 100.0) if opt_rel > 1e-9 else 0.0
+            row["lns_carbon_le_base"] = bool(g_lns["carbon"] <= base["carbon"] + 1e-7)
+            row["lns_scarcity_le_base"] = bool(g_lns["scarcity"] <= base["scarcity"] + 1e-7)
         # combined-objective greedy's stress outcome (it trades stress for carbon/water co-benefits)
         row["combined_relief_pct"] = relief(base["wstress"], g_combined["wstress"])
         if wall_stress > 0:
@@ -459,8 +478,10 @@ def main() -> int:
     print(f"# MATCHED gap = greedy vs MILP with firm pods PINNED (the greedy's own action space).")
     print(f"# STRESS: greedy 'stress' mode; CARBON/SCAR: production 'combined' greedy.")
     print(f"#")
-    print(f"# {'n':>3} {'flx':>3} | {'Sgap_glb%':>9} {'Sgap_mch%':>9} | {'Cgap_glb%':>9} {'Cgap_mch%':>9} | "
-          f"{'Wgap_glb%':>9} {'Wgap_mch%':>9} | {'g_s':>6} {'milpW':>6} {'spd':>5} | {'cert':>5} {'dec':>7}")
+    print(f"# STRESS vs LNS: pure-stress greedy relief%, greedy+LNS relief%, MILP-optimal relief%, and")
+    print(f"#   frac-of-optimum each captures (the B2 headline: does the move-set close the search gap?).")
+    print(f"# {'n':>3} {'flx':>3} | {'g_rel%':>7} {'lns_rel%':>8} {'opt_rel%':>8} | "
+          f"{'g/opt%':>7} {'lns/opt%':>8} | {'lns_mv':>6} {'cert':>5} {'dec':>7}")
     for n in sizes:
         r = run_instance(n, args.max_ts, out_root, args.time_limit)
         rows.append(r)
@@ -468,13 +489,12 @@ def main() -> int:
             print(f"# n={n}: SKIPPED ({r['skipped']})")
             continue
         cert = (r["combined_carbon_le_base"] and r["combined_scarcity_le_base"]
-                and r["stress_carbon_le_base"] and r["stress_scarcity_le_base"] and r["greedy_slo_ok"])
+                and r["stress_carbon_le_base"] and r["stress_scarcity_le_base"] and r["greedy_slo_ok"]
+                and r.get("lns_carbon_le_base", True) and r.get("lns_scarcity_le_base", True))
         g = lambda k: r.get(k, float('nan'))
-        print(f"  {r['n_placed']:>3} {r['n_flex']:>3} | {g('gap_wstress_pct'):>9.1f} {g('gap_wstress_matched_pct'):>9.1f} | "
-              f"{g('gap_carbon_pct'):>9.1f} {g('gap_carbon_matched_pct'):>9.1f} | "
-              f"{g('gap_scarcity_pct'):>9.1f} {g('gap_scarcity_matched_pct'):>9.1f} | "
-              f"{r['stress_wall_s']:>6.3f} {g('milp_wstress_wall_s'):>6.2f} {g('speedup_stress_vs_milp'):>5.0f} | "
-              f"{str(cert):>5} {max(r['decomp_err_carbon_kg'],r['decomp_err_scarcity']):>7.0e}")
+        print(f"  {r['n_placed']:>3} {r['n_flex']:>3} | {g('stress_relief_pct'):>7.1f} {g('lns_relief_pct'):>8.1f} "
+              f"{g('opt_relief_pct'):>8.1f} | {g('stress_frac_of_opt_pct'):>7.1f} {g('lns_frac_of_opt_pct'):>8.1f} | "
+              f"{g('lns_repairs'):>6.0f} {str(cert):>5} {max(r['decomp_err_carbon_kg'],r['decomp_err_scarcity']):>7.0e}")
 
     with (out_root / "summary.csv").open("w", newline="", encoding="utf-8") as h:
         keys = sorted({k for r in rows for k in r})

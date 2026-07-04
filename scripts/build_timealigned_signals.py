@@ -227,8 +227,10 @@ LIFECYCLE_EF = {
 # fuel mix as the real CI -- removing the static-EWIF asymmetry (W1). Consumption (not withdrawal),
 # the scarcity-relevant term. NOTE (flagged for review): reservoir-hydro evaporation is the dominant
 # uncertainty -- estimates span ~0 (run-of-river) to ~17 L/kWh (gross reservoir evaporation, often
-# excluded from operational accounting); we use a CONSERVATIVE operational value below and will
-# sensitivity-test it. Geothermal also high/variable.
+# excluded from operational accounting); we use a CONSERVATIVE operational value below.
+# SENSITIVITY-TESTED (--hydro-reservoir-lkwh, 0.5/1.0/4.0 L/kWh, K=24 sweep re-run per factor:
+# experiments/generalize_us/us2018_window_sweep_hydro*): every certification statistic is
+# unchanged at every factor. Geothermal also high/variable.
 WATER_FACTOR_L_PER_KWH = {
     "Nuclear": 2.5, "Fossil hard coal": 2.6, "Fossil brown coal / lignite": 2.6,
     "Fossil coal-derived gas": 2.6, "Fossil gas": 0.75, "Fossil oil": 1.1,
@@ -803,7 +805,15 @@ def main() -> int:
                          "Also emits ewif_us_region_slot.csv (off-site water from the US mix).")
     ap.add_argument("--eia930-cache-dir", default=None,
                     help="cache dir for EIA-930 bulk CSV (default: <out-dir>/cache/); only --grid eia930")
+    ap.add_argument("--hydro-reservoir-lkwh", type=float,
+                    default=WATER_FACTOR_L_PER_KWH["Hydro water reservoir"],
+                    help="reservoir-hydro operational water-consumption factor (L/kWh). Default keeps the "
+                         "committed conservative 2.0; the flagged sensitivity (estimates span ~0 run-of-river "
+                         "to ~17 gross reservoir evaporation) sweeps this. A run-of-river share s in the "
+                         "combined EIA hydro bucket is equivalent to scaling the factor by (1-s), so one "
+                         "dial covers both the factor and the bucket-mapping question.")
     args = ap.parse_args()
+    WATER_FACTOR_L_PER_KWH["Hydro water reservoir"] = args.hydro_reservoir_lkwh
     start = pd.Timestamp(args.start)
     n = args.slots
     OUT = Path(args.out_dir).resolve() if args.out_dir else (REPO / "pkg" / "carbon-aware" / "data" / "timealigned")

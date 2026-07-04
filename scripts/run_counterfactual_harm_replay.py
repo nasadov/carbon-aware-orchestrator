@@ -142,6 +142,18 @@ def field_dict(rows, methods, field):
     return {m: rows[m].get(field) for m in methods if m in rows}
 
 
+def method_row(row):
+    """Compact per-method digest row (feeds tab:counterfactual directly)."""
+    return {
+        "no_harm_certificate": bool(row["no_harm_certificate"]),
+        "carbon_delta_pct": round(row["carbon_delta_pct"], 3),
+        "scarcity_delta_pct": round(row["scarcity_delta_pct"], 3),
+        "placed_pods": int(row["placed_pods"]),
+        "unplaced_pods": int(row["unplaced_pods"]),
+        "weighted_stress_kwh_avoided": round(row.get("weighted_stress_kwh_avoided", 0.0) or 0.0, 3),
+    }
+
+
 def build_field(resolution, waterwise_weights=(0.0, 0.25, 0.5, 0.75, 1.0)):
     """Run the full published-baseline field on the headroom fleet at one resolution.
     Returns (results_by_method, summary_rows_by_method, signals)."""
@@ -155,14 +167,15 @@ def build_field(resolution, waterwise_weights=(0.0, 0.25, 0.5, 0.75, 1.0)):
 
 
 def perbasin_guarded_envelope(resolution_signals_cfg):
-    """memo-08 P1 per-basin-guarded envelope, emulated with drought_cf_threshold=0 on the
-    EXISTING engine machinery (basin CFs already injected by the caller). Returns
-    (packing, env_pb, row, signals)."""
+    """Engine-native per-basin-guarded envelope (per_basin_scarcity_guard=True) at the
+    certificate's default accounting (on-site basin CF + generation country CF).
+    Supersedes the old memo-08 drought-threshold emulation. Returns
+    (packing, env_pb, row, signals, cfg)."""
     from carbon_aware.no_harm_flexibility import (
         load_flavours_for_pilot, load_pods, build_greedy_schedule,
         repair_schedule_no_harm, _rematerialize_under_realized, summarize_against_reference,
     )
-    cfg = headroom_config(OUT / "field_basin_perbasinguard", drought_cf_threshold=0.0)
+    cfg = dc_replace(headroom_config(OUT / "field_perbasinguard"), per_basin_scarcity_guard=True)
     flavours = load_flavours_for_pilot(cfg)
     pods = load_pods(cfg.workloads_dir, max_pods=cfg.max_pods)
     signals = build_action_signals(flavours, cfg)
@@ -288,6 +301,7 @@ def main():
     unpatch()
     by_c, rows_c, sig_c, cfg_c = build_field("country")
     digest["country"] = harm_block("country", by_c, rows_c, sig_c, culprit_key="carbon")
+    digest["country"]["methods"] = {k: method_row(r) for k, r in rows_c.items()}
     # emit placement CSVs (country) for the live replay + audit
     write_placements_csv(OUT / "placements_country_packing.csv", by_c["packing"], sig_c)
     write_placements_csv(OUT / "placements_country_carbon_greedy.csv", by_c["carbon"], sig_c)
@@ -297,11 +311,13 @@ def main():
     patch_basin()
     by_b, rows_b, sig_b, cfg_b = build_field("basin")
     digest["basin"] = harm_block("basin", by_b, rows_b, sig_b, culprit_key="carbon")
+    digest["basin"]["methods"] = {k: method_row(r) for k, r in rows_b.items()}
     write_placements_csv(OUT / "placements_basin_packing.csv", by_b["packing"], sig_b)
     write_placements_csv(OUT / "placements_basin_carbon_greedy.csv", by_b["carbon"], sig_b)
     write_placements_csv(OUT / "placements_basin_envelope.csv", by_b["no_harm_flex"], sig_b)
 
-    # ---- BASIN + PER-BASIN GUARD (memo-08 P1, emulated via threshold=0) ----
+    # ---- PER-BASIN GUARD (engine-native, certificate's default accounting) ----
+    unpatch()
     pack_pb, env_pb, row_pb, sig_pb, cfg_pb = perbasin_guarded_envelope(None)
     sc_pack = per_basin_scarcity(pack_pb)
     sc_env = per_basin_scarcity(env_pb)
@@ -315,8 +331,8 @@ def main():
                         "B_scarcity_L": round(sc_pack[reg], 3),
                         "env_perbasin_scarcity_L": round(sc_env.get(reg, 0.0), 3),
                         "delta_L": round(d, 3)})
-    digest["basin_perbasin_guard"] = {
-        "note": "memo-08 P1 emulated via existing drought guard at drought_cf_threshold=0 (no engine edit; default=20 unchanged & bit-identical)",
+    digest["perbasin_guard_engine"] = {
+        "note": "engine-native per_basin_scarcity_guard=True at the certificate's default accounting (on-site basin CF + generation country CF); supersedes the old drought-emulation block",
         "certified": bool(row_pb["no_harm_certificate"]),
         "scarcity_delta_pct": round(row_pb["scarcity_delta_pct"], 3),
         "carbon_delta_pct": round(row_pb["carbon_delta_pct"], 3),
@@ -324,8 +340,7 @@ def main():
         "worst_per_basin_rise_L": round(worst, 4),
         "per_basin": pb_rows,
     }
-    write_placements_csv(OUT / "placements_basin_envelope_perbasinguard.csv", env_pb, sig_pb)
-    unpatch()
+    write_placements_csv(OUT / "placements_envelope_perbasinguard.csv", env_pb, sig_pb)
 
     # ---- live KWOK replay: country placements (the as-shipped headline) ----
     if not args.skip_kwok:
