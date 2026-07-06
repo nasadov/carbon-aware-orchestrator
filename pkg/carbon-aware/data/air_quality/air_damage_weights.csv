@@ -1,0 +1,4 @@
+pollutant,eur_per_kg_low,eur_per_kg_base,eur_per_kg_high,source_note
+so2,11.0,20.0,34.0,ETC/ATNI-2020 / EEA-2024-update-class EU average; demo-grade
+nox,9.0,18.0,39.0,ETC/ATNI-2020 / EEA-2024-update-class EU average; demo-grade
+pm25,25.0,40.0,75.0,ETC/ATNI-2020 / EEA-2024-update-class EU average; demo-grade

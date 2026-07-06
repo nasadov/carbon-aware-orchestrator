@@ -1,0 +1,16 @@
+source_type,pollutant,g_per_kwh_low,g_per_kwh_base,g_per_kwh_high,source_note
+coal,so2,0.4,0.8,1.6,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+coal,nox,0.5,0.8,1.4,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+coal,pm25,0.03,0.06,0.12,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+gas,so2,0.001,0.005,0.01,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+gas,nox,0.15,0.3,0.6,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+gas,pm25,0.003,0.008,0.02,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+oil,so2,0.8,1.5,3.0,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+oil,nox,0.5,1.0,1.8,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+oil,pm25,0.05,0.1,0.2,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+biomass,so2,0.02,0.05,0.1,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+biomass,nox,0.3,0.5,0.9,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+biomass,pm25,0.05,0.1,0.2,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+other,so2,0.001,0.005,0.01,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+other,nox,0.15,0.3,0.6,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
+other,pm25,0.003,0.008,0.02,EMEP/EEA guidebook-class EU-2018 plant-fleet range; demo-grade
