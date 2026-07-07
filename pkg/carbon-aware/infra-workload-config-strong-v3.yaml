@@ -1,0 +1,181 @@
+optimization:
+  use_lexicographic: true
+  unplaced_penalty: 4000
+  emissions:
+    dynamic_weight: 1.0
+    activation_weight: 1.0
+    fallback_surrogate_activation_weight: 0.0
+  pruning:
+    enable: false
+    top_k_per_pod: 6
+    emissions_margin: 0.35
+  constraints:
+    max_unplaced_fraction: 0.1
+  solver:
+    name: cp_sat
+    time_limit: 900
+    gap_tolerance: 0.05
+    threads: 8
+    msg: false
+carbon:
+  enabled: true
+  data_sources:
+    embodied_carbon_reference_csv: data/carbon/embodied_carbon_reference.csv
+  by_hardware_subcategory: {}
+nodes:
+  filename: nodes.yaml
+  regions:
+    region_counts:
+      SE: 1
+      PL: 1
+      ES: 1
+      DE: 1
+      DE-BER: 1
+      DE-MUC: 1
+  assignment_method: exact_counts
+  explicit_assignments:
+    SE:
+      Server: 1
+    PL:
+      Server: 1
+    ES:
+      Server: 1
+    DE:
+      Server: 1
+    DE-BER:
+      Server: 1
+    DE-MUC:
+      Server: 1
+  hardware_assignment:
+    hardware_counts:
+      Server: 6
+  hardware_assignment_method: exact_counts
+  hardware_subcategories:
+    Server:
+      cpu: '32'
+      memory: 128Gi
+      embodied_carbon: 1230.656
+      lifetime: 3.87
+      power:
+        idle: 110.0
+        active: 250.0
+        max: 400.0
+  random_seed: 44
+water:
+  enabled: true
+  operational_scarcity_temporal_resolution: monthly
+  operational_scarcity_spatial_resolution: basin
+  data_sources:
+    aware_country_factors_csv: data/water/aware20_country_nonagri_factors.csv
+    aware_basin_factors_csv: data/water/aware20_basin_nonagri_factors_v3.csv
+    grid_water_factors_csv: data/water/wri_country_grid_water_factors.csv
+    wue_region_slot_csv: data/water/wue_region_slot_base.csv
+    ewif_region_slot_csv: data/water/ewif_region_slot.csv
+    embodied_water_reference_csv: data/water/embodied_water_reference.csv
+    region_weather_sites_csv: data/water/region_weather_sites.csv
+    region_cooling_profiles_csv: data/water/region_cooling_profiles.csv
+  defaults:
+    pue: 1.2
+    embodied_water: 0.0
+    wue: 0.0
+    ewif: 0.0
+    direct_scarcity_cf: 1.0
+    indirect_scarcity_cf: 1.0
+    embodied_scarcity_cf: 1.0
+    criticality: 1.0
+  region_to_country:
+    SE: SE
+    PL: PL
+    ES: ES
+    DE: DE
+    DE-BER: DE
+    DE-MUC: DE
+  by_region:
+    SE:
+      pue: 1.1
+      wue: 0.02
+      criticality: 1.0
+      weather_reference:
+        name: Lulea metro proxy
+        latitude: 65.5841
+        longitude: 22.1547
+    PL:
+      pue: 1.18
+      wue: 0.1
+      criticality: 1.05
+      weather_reference:
+        name: Warsaw metro proxy
+        latitude: 52.2297
+        longitude: 21.0122
+    ES:
+      pue: 1.24
+      wue: 0.32
+      criticality: 1.35
+      weather_reference:
+        name: Madrid metro proxy
+        latitude: 40.4168
+        longitude: -3.7038
+    DE:
+      pue: 1.16
+      wue: 0.12
+      criticality: 1.02
+      weather_reference:
+        name: Frankfurt am Main metro proxy
+        latitude: 50.1109
+        longitude: 8.6821
+    DE-BER:
+      pue: 1.16
+      wue: 0.12
+      criticality: 1.02
+      weather_reference:
+        name: Berlin metro proxy (Spree/Elbe basin)
+        latitude: 52.52
+        longitude: 13.405
+    DE-MUC:
+      pue: 1.16
+      wue: 0.12
+      criticality: 1.02
+      weather_reference:
+        name: Munich metro proxy (Isar/Danube basin)
+        latitude: 48.1372
+        longitude: 11.5755
+  by_country:
+    SE: {}
+    PL: {}
+    ES: {}
+    DE: {}
+  by_hardware_subcategory: {}
+workload:
+  output_dir: workloads
+  vanilla_output_dir: workloads-vanilla
+  num_timeslots: 16
+  generation_strategy: exact_total
+  poisson_lambda: 4
+  exact_total_pods: 360
+  min_services: 1
+  base_name: m
+  durations:
+  - 1
+  - 2
+  - 3
+  - 4
+  duration_assignment_method: cycle
+  deadline_strategy: flexible
+  deadline_flexibility_hours:
+  - 4
+  - 6
+  - 8
+  - 10
+  cpu_options:
+  - 4000m
+  - 2000m
+  - 1000m
+  - 500m
+  - 250m
+  mem_options:
+  - 8Gi
+  - 4Gi
+  - 2Gi
+  - 1Gi
+  - 512Mi
+  random_seed: 20220801

@@ -15,57 +15,9 @@
 #
 
 
-REGISTRY := gitlab-registry.fbk.eu
-ACCOUNT := fogatlas-k8s
-REPO := algorithms
-IMAGE := $(ACCOUNT)/$(REPO)
-
-registry-login:    
-	docker login $(REGISTRY)
-
-
-build-silly:                 
-	@docker build -f ./pkg/silly/server-go/Dockerfile -t $(REGISTRY)/$(IMAGE)/silly:latest .
-
-push-silly:                  
-	@docker push $(REGISTRY)/$(IMAGE)/silly:latest
-
-build-silly-local:                 
-	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o silly pkg/silly/server-go/silly.go
-
-# NOTE: the Go/gRPC deployment half was archived to legacy/deployment/ (frozen since Mar-2025, unused
-# by the Python research codebase). The proto/build targets below are repointed there for revival.
-generate-go:
-	@rm -rf ./legacy/deployment/generated-go; mkdir ./legacy/deployment/generated-go
-	@protoc -I./legacy/deployment/idl --go_out=./legacy/deployment/generated-go --go-grpc_out=./legacy/deployment/generated-go ./legacy/deployment/idl/idl.proto
-
-generate-py:
-	@echo "Recall to activate the conda grpc environment otherwise the following commands will fail"
-	@python -m grpc_tools.protoc -I ./legacy/deployment/idl/ --python_out=./pkg/carbon-aware/server-python --pyi_out=./pkg/carbon-aware/server-python --grpc_python_out=./pkg/carbon-aware/server-python ./legacy/deployment/idl/idl.proto
-
-build-carbon-aware:
-	@echo "⚠️ Make sure your conda environment is activated"
-	@echo "Installing PyInstaller if needed..."
-	@pip install pyinstaller > /dev/null || (echo "Failed to install PyInstaller"; exit 1)
-	@echo "Building carbon-aware executable..."
-	@cd ./pkg/carbon-aware/server-python && pyinstaller --onefile --name carbon-aware \
-        --distpath $(CURDIR)/bin \
-        --hidden-import grpc \
-        --hidden-import google.protobuf \
-        --hidden-import google.protobuf.internal \
-        --hidden-import grpcio \
-        --hidden-import carbon_aware.models \
-        --hidden-import carbon_aware.utils \
-        --hidden-import carbon_aware.server \
-        --hidden-import carbon_aware.state \
-        --hidden-import carbon_aware.algorithms \
-        --hidden-import carbon_aware.algorithms.base \
-        --hidden-import carbon_aware.algorithms.heuristic \
-        --add-data "$(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json:." \
-        $(CURDIR)/legacy/deployment/main.py
-	@echo "✅ Executable created at $(CURDIR)/bin/carbon-aware"
-	@echo "📄 Copying carbon intensity data file to bin directory for convenience..."
-	@cp $(CURDIR)/pkg/carbon-aware/server-python/all_forecasts.json $(CURDIR)/bin/
+# NOTE: the Go/gRPC deployment half (Docker/silly/protoc/PyInstaller targets) was archived to
+# legacy/deployment/ (frozen since Mar-2025, unused by the Python research codebase) and removed
+# from the working tree in the 2026-07-06 cleanup; recover the old targets from git history.
 
 PYTHON ?= python3
 

@@ -372,3 +372,58 @@ def test_relief_move_set_never_worsens_weighted_stress(tmp_path: Path) -> None:
     _rematerialize_under_realized(lns, flavours, config)
     assert schedule_totals(lns, signals)["weighted_stress_kwh"] <= \
         schedule_totals(greedy, signals)["weighted_stress_kwh"] + 1e-9
+
+
+# ------------------------------------------------------------------ G1: basin-CF table override
+def test_basin_cf_csv_off_is_bit_identical(tmp_path: Path) -> None:
+    """basin_cf_csv is flag-gated: the default (never set) must produce byte-identical placements
+    and totals to a config that explicitly sets the field to None (bundled AWARE basin table)."""
+    from dataclasses import replace as dc_replace
+    config = _pilot_config(tmp_path / "a", max_pods=30)
+    _, signals, _, packing = _prep(config)
+    same_cfg = dc_replace(_pilot_config(tmp_path / "b", max_pods=30), basin_cf_csv=None)
+    _, signals2, _, packing2 = _prep(same_cfg)
+    assert _placement_map(packing) == _placement_map(packing2)
+    assert schedule_totals(packing, signals) == schedule_totals(packing2, signals2)
+
+
+def test_basin_cf_csv_override_reaches_scarcity_characterization(tmp_path: Path) -> None:
+    """Pointing basin_cf_csv at a table with inflated basin CFs must raise the scarcity-water
+    characterization of the same (water-blind packing) schedule: witnesses that the override
+    actually reaches the engine's CF resolution instead of the bundled table. Placements are
+    unchanged (packing ignores water); only the characterization moves, and only the DIRECT
+    (basin-charged) component scales, so the total rises by a bounded factor > 2x."""
+    import csv as _csv
+    from dataclasses import replace as dc_replace
+    bundled = REPO_ROOT / "pkg" / "carbon-aware" / "data" / "water" / "aware20_basin_nonagri_factors.csv"
+    with bundled.open() as fh:
+        rows = list(_csv.DictReader(fh))
+    for r in rows:
+        for k in r:
+            if k.endswith("_cf"):
+                r[k] = str(float(r[k]) * 100.0)
+    override = tmp_path / "basin_x100.csv"
+    with override.open("w", newline="") as fh:
+        w = _csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+
+    cfg_a = _pilot_config(tmp_path / "a", max_pods=30)
+    _, sig_a, _, pack_a = _prep(cfg_a)
+    tot_a = schedule_totals(pack_a, sig_a)
+    cfg_b = dc_replace(_pilot_config(tmp_path / "b", max_pods=30), basin_cf_csv=override)
+    _, sig_b, _, pack_b = _prep(cfg_b)
+    tot_b = schedule_totals(pack_b, sig_b)
+
+    assert _placement_map(pack_a) == _placement_map(pack_b)
+    assert tot_b["scarcity_water"] > 2.0 * tot_a["scarcity_water"]
+    assert tot_b["carbon_kg"] == tot_a["carbon_kg"]
+
+
+def test_basin_cf_csv_missing_override_fails_loud(tmp_path: Path) -> None:
+    """A typo'd basin_cf_csv must raise, not silently re-price basins at the country CF."""
+    import pytest
+    from dataclasses import replace as dc_replace
+    cfg = dc_replace(_pilot_config(tmp_path, max_pods=30), basin_cf_csv=tmp_path / "nope.csv")
+    with pytest.raises(FileNotFoundError, match="basin_cf_csv"):
+        _prep(cfg)

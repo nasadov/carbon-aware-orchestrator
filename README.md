@@ -28,12 +28,10 @@ analysis utilities for scheduler evaluation.
 
 ## Repository Layout
 
-- `pkg/idl/idl.proto` — gRPC interface for the placement service.
-- `pkg/carbon-aware/` — scheduler implementation and data, including the generator, `nodes.yaml`, generated workloads, Python server, and Go client.
+- `pkg/carbon-aware/` — scheduler implementation and data: the engine (`server-python/carbon_aware/`), time-aligned signal datasets (`data/timealigned*`), `nodes.yaml`, and generated workloads. (The Go/gRPC deployment half was removed in the 2026-07 cleanup; recover from git history if ever needed.)
 - `pkg/carbon-aware/data/water/` — optional water reference tables and preprocessing utilities.
 - `analysis/` — plotting, diagnostics, and sensitivity utilities; shared defaults live in `analysis/repo_paths.py`.
-- `scripts/` — runnable sweep and maintenance entry points such as `water_sweep.py`, `time_complexity_sweep.py`, `sweep_podcounts_and_precompute.sh`, and `update_config.py`.
-- `scripts/archive/` — retained legacy helpers that are not part of the normal workflow.
+- `scripts/` — runnable experiment and maintenance entry points, flat by design: the layout mirrors the reproduction artifact shipped with the paper (`scripts/README.md` has the inventory; the exhibit → script → witness map is in the artifact README).
 - `tests/` — smoke tests, repository hygiene checks, placement validators, and batch experiment checks.
 - `experiments/` — generated run outputs (gitignored); figures go under `experiments/figures/`.
 - `docs/`, `media/`, `external/`, `workloads*` — supporting documentation, data, and generated workloads.

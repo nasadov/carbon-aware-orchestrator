@@ -68,6 +68,11 @@ def main() -> int:
     ax.text(0.47 * (ci["DE"] + ci["FR"]), 0.42 * (sw["FR"] + sw["DE"]) + 12,
             "carbon-greedy shift toward the\ncleanest grid raises scarcity-water",
             color=sty.WATER_RED, fontsize=7.0, ha="center", va="bottom")
+    # the measured consequence, on the figure (figstory fix: gradient -> backfire);
+    # values = \PNcfCulpritCarbon / \PNcfCulpritWater (paper_numbers.tex, Table 1 window);
+    # placed in the empty upper-left zone, clear of the arrow and country labels
+    ax.text(12, 84, "measured on the July-2018 window:\n$-24.0\\%$ C, $\\mathbf{+63.8\\%}$ W (Table 1)",
+            color=sty.WATER_RED, fontsize=6.4, ha="left", va="top")
     ax.set_xlabel("measured carbon intensity (gCO$_2$/kWh)  $\\rightarrow$ dirtier")
     ax.set_ylabel("scarcity-water (L$_{\\mathrm{eq}}$/kWh)\n$\\rightarrow$ thirstier")
     ax.grid(alpha=0.2)

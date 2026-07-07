@@ -154,11 +154,24 @@ def annotate_burden_shift(ax, digests):
     if not ringed:
         return
     tx, ty = min(ringed, key=lambda p: p[0] + p[1])  # deepest into the quadrant
+    # explanatory note in INK — red is reserved for fail signals (rings, off-chart water-greedy)
     ax.annotate("in the quadrant, yet uncertified:\nthe sum hides a basin rise (Fig. 4)",
                 xy=(tx, ty), xytext=(0.05, 0.60), textcoords="axes fraction",
-                fontsize=6.8, color=sty.WATER_RED, weight="bold", ha="left", va="center",
-                arrowprops=dict(arrowstyle="-|>", color=sty.WATER_RED, lw=1.0,
+                fontsize=6.8, color=sty.INK, weight="bold", ha="left", va="center",
+                arrowprops=dict(arrowstyle="-|>", color=sty.INK, lw=1.0,
                                 connectionstyle="arc3,rad=0.15"))
+
+
+def annotate_headline_star(ax, digests):
+    """Direct-label the Azure headline member (d0): the paper's water headline lives ON the
+    money figure, not only in the tables (figstory fix #4)."""
+    stars = [(d["window"], d["no_harm_flex"]) for d in digests]
+    w, rec = min(stars, key=lambda s: s[1]["scarcity_delta_pct"])  # deepest water cut = d0
+    x, y = rec["carbon_delta_pct"], rec["scarcity_delta_pct"]
+    assert "d0" in w and abs(y - -10.5) < 0.06 and abs(x - -6.5) < 0.06, (w, x, y)
+    ax.annotate(f"d0: ${y:.1f}\\%$ W, ${x:.1f}\\%$ C",
+                xy=(x, y), textcoords="offset points", xytext=(0, -19),
+                fontsize=6.8, color=sty.ENV_DARK, weight="bold", ha="left", va="top")
 
 
 def main():
@@ -167,10 +180,11 @@ def main():
     if not az or not al:
         raise SystemExit("missing digests — run scripts/run_water_basin_certification.py first")
     assert_record_semantics(az + al)
-    fig, axes = plt.subplots(1, 2, figsize=(sty.TEXTW, 2.80))
+    fig, axes = plt.subplots(1, 2, figsize=(sty.TEXTW, 2.65))
     panel(axes[0], az, f"(a) Azure — general cloud (CPU/RAM), {len(az)} windows",
           xlim=(-30, 14), ylim=(-46, 6))
     annotate_burden_shift(axes[0], az)
+    annotate_headline_star(axes[0], az)
     panel(axes[1], al, f"(b) Alibaba — GPU/AI cluster, {len(al)} windows",
           xlim=(-6, 5), ylim=(-9.5, 6))
     # zoom inset: the near-neutral GPU cluster (everything within ±0.6% of the origin);
@@ -184,6 +198,8 @@ def main():
     axi.xaxis.tick_top()
     axi.tick_params(labelsize=6, pad=1.5)
     axi.set_xticks([-0.5, 0, 0.5]); axi.set_yticks([-0.5, 0, 0.5])
+    axi.text(0.5, 0.05, "certified-near-neutral", transform=axi.transAxes,
+             fontsize=6, color=sty.ENV_DARK, ha="center", va="bottom", weight="bold")
     axes[1].indicate_inset_zoom(axi, edgecolor="gray", lw=0.7)
     # shared, de-duplicated legend below the panels
     handles, labels = [], []

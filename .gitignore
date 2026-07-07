@@ -139,3 +139,10 @@ tests/reports/
 
 # But track the configuration files
 !infra-workload-config.yaml
+
+# Quarantine folders from repo cleanups (never track)
+.trash-*/
+# Seminar/animation assets are local-only (manim renders)
+media/
+# Bit-identical duplicate of the tracked timealigned_us2018_v2 cache
+pkg/carbon-aware/data/timealigned_us2018_az/cache/

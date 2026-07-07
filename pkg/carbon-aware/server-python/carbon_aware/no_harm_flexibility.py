@@ -92,6 +92,7 @@ class PilotConfig:
     lever_mode: str = "both"  # both | temporal (same site, shift time) | spatial (same time, move site)
     wue_csv: Optional[Path] = None  # override the scenario WUE table (e.g. a time-aligned real window)
     ewif_csv: Optional[Path] = None  # override the EWIF table with a time-aligned in-window one (mirrors wue_csv)
+    basin_cf_csv: Optional[Path] = None  # override the bundled AWARE basin-CF table (mirrors ewif_csv; e.g. a scenario adding sub-national basins). Default None -> bundled file, bit-identical.
     scenario_month: str = "jul"  # AWARE CF month column (jul default; "aug" for the Aug-2022 strong window)
     forecast_noise: float = 0.0  # RQ3: stdev of multiplicative carbon-forecast error used for DECISIONS
     forecast_seed: int = 0
@@ -429,7 +430,11 @@ def apply_pilot_scenario_to_flavours(flavours: Sequence[EnvironmentalFlavor], co
     """
     wue_rows = _read_region_slot_csv(scenario_wue_path(config))
     country_aware_rows = _read_aware_rows(_water_data_path(config.repo_root, "aware20_country_nonagri_factors.csv"))
-    basin_aware_rows = _read_basin_cf_rows(_water_data_path(config.repo_root, "aware20_basin_nonagri_factors.csv"))
+    if config.basin_cf_csv is not None and not config.basin_cf_csv.exists():
+        # An explicit override must fail loud: _read_basin_cf_rows returns {} on a missing path,
+        # which would silently re-price every basin at the country CF.
+        raise FileNotFoundError(f"basin_cf_csv override does not exist: {config.basin_cf_csv}")
+    basin_aware_rows = _read_basin_cf_rows(config.basin_cf_csv or _water_data_path(config.repo_root, "aware20_basin_nonagri_factors.csv"))
     month_col = f"{config.scenario_month}_cf"
     # Indirect (power-plant) water: EWIF per kWh of grid electricity, from a flow-traced
     # generation mix x literature water-consumption factors (Macknick 2012; Spang 2014).

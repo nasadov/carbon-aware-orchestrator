@@ -175,35 +175,44 @@ def run_headroom(window: str, util: float, *, seed: int) -> dict:
 
 
 def run_strong() -> dict:
-    """Favorable EU drought, BASIN scarcity (the Table-6 drought regime). SE/PL/ES/DE, Aug-2022.
-    The engine runs basin-resolution natively; we add the per-basin delta + per-basin guard (Aug CFs)."""
-    regions = ["SE", "PL", "ES", "DE"]
-    cf_basin_all = _cf_for_month(BASIN_CF_CSV, "aug_cf")
+    """Favorable EU drought, BASIN scarcity (the Table-6 drought regime). v3 = German-basin fleet:
+    SE/PL/ES + Germany split into its three AWARE watersheds (DE=Rhine-Main, DE-BER=Spree-Elbe,
+    DE-MUC=Isar-Danube), Aug-2022. DE-BER/DE-MUC share DE's grid signals (one DE-LU bidding zone:
+    intra-German moves are carbon/price-neutral) but carry real Berlin/Munich weather and their own
+    basin CFs (2.54x intra-DE Aug gradient; country resolution sees 1.00x). Sub-national rows enter
+    via the default-off basin_cf_csv override (engine-flag-check gated 2026-07-07)."""
+    regions = ["SE", "PL", "ES", "DE", "DE-BER", "DE-MUC"]
+    v3_signals = REPO_ROOT / "pkg" / "carbon-aware" / "data" / "timealigned_strong_real2022_v3"
+    v3_config = REPO_ROOT / "pkg" / "carbon-aware" / "infra-workload-config-strong-v3.yaml"
+    v3_basin_csv = REPO_ROOT / "pkg" / "carbon-aware" / "data" / "water" / "aware20_basin_nonagri_factors_v3.csv"
+    cf_basin_all = _cf_for_month(v3_basin_csv, "aug_cf")
     cf_country_all = _cf_for_month(COUNTRY_CF_CSV, "aug_cf", key_col="country_code")
     cf_basin = {r: cf_basin_all[r] for r in regions}
     cf_country = {r: cf_country_all[_country_for_region(r)] for r in regions}
 
-    run_dir = OUT_ROOT / "strong"
+    run_dir = OUT_ROOT / "strong_v3"
     run_dir.mkdir(parents=True, exist_ok=True)
-    nodes_file = REPO_ROOT / "experiments" / "strong_scenario" / "fleet" / "nodes.yaml"
+    nodes_file = REPO_ROOT / "experiments" / "strong_scenario" / "fleet_v3" / "nodes.yaml"
     workloads = REPO_ROOT / "experiments" / "strong_scenario" / "fleet" / "workloads"
     pc = PilotConfig(
         repo_root=REPO_ROOT, nodes_file=nodes_file, workloads_dir=workloads,
-        forecasts_file=STRONG_SIGNALS / "forecasts.json", config_file=STRONG_CONFIG,
+        forecasts_file=v3_signals / "forecasts.json", config_file=v3_config,
         output_dir=run_dir / "out", max_timeslots=24, max_pods=400,
         scenario="heatwave-drought", lever_mode="both",
         scenario_month="aug",  # Aug-2022 window -> engine characterizes scarcity on the Aug CFs natively
-        grid_signal_csv=STRONG_SIGNALS / "grid_residual_region_slot.csv",
-        wue_csv=STRONG_SIGNALS / "wue_region_slot.csv",
-        # in-window Aug-2022 off-site water (same Energy-Charts mix as the strong CI), when present
-        ewif_csv=((STRONG_SIGNALS / "ewif_region_slot.csv") if (STRONG_SIGNALS / "ewif_region_slot.csv").exists() else None),
+        grid_signal_csv=v3_signals / "grid_residual_region_slot.csv",
+        wue_csv=v3_signals / "wue_region_slot.csv",
+        # in-window Aug-2022 off-site water (same Energy-Charts mix as the strong CI)
+        ewif_csv=v3_signals / "ewif_region_slot.csv",
+        basin_cf_csv=v3_basin_csv,
     )
     pc.output_dir.mkdir(parents=True, exist_ok=True)
     res = run_no_harm_flexibility_pilot(pc)
     summary = {r["method_key"]: r for r in res["summary_rows"]}
     block = _per_basin_block(pc.output_dir, regions, cf_basin, cf_country, summary)
-    block.update({"regime": "strong/drought (favorable EU, basin)", "window": "strong_SE_PL_ES_DE",
-                  "n_nodes": 4, "n_pods": len(load_pods(workloads)), "cf_month": "aug"})
+    block.update({"regime": "strong/drought v3 (favorable EU, German basins)",
+                  "window": "strong_v3_SE_PL_ES_DE_DEBER_DEMUC",
+                  "n_nodes": 6, "n_pods": len(load_pods(workloads)), "cf_month": "aug"})
     return block
 
 

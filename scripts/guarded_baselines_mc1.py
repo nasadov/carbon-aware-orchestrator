@@ -147,6 +147,9 @@ def main() -> int:
     # provision a realistic CPU fleet to --target-util (mirrors run_azure_no_harm.py via azure_common).
     ap.add_argument("--azure-window", default=None)
     ap.add_argument("--target-util", type=float, default=0.55)
+    ap.add_argument("--basin-cf-csv", default=None,
+                    help="AWARE basin-CF override table (default-off engine flag basin_cf_csv; "
+                         "e.g. data/water/aware20_basin_nonagri_factors_v3.csv for the German-basin fleet)")
     args = ap.parse_args()
     import logging
     logging.disable(logging.CRITICAL)
@@ -193,6 +196,7 @@ def main() -> int:
         # in-window off-site water (same measured mix as the CI), when present in the signals dir
         ewif_csv=((signals_dir / "ewif_region_slot.csv")
                   if (signals_dir / "ewif_region_slot.csv").exists() else None),
+        basin_cf_csv=((REPO_ROOT / args.basin_cf_csv).resolve() if args.basin_cf_csv else None),
     )
     config.output_dir.mkdir(parents=True, exist_ok=True)
 

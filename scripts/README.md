@@ -1,11 +1,12 @@
 # Scripts
 
 Runnable experiment and maintenance entry points for the Python research codebase.
+The full exhibit → script → witness map for the T-SUSC submission lives in the README
+inside `docs/paper-three/Paper/tsusc_artifact.zip`.
 
 ## Top-level entry points
 - `water_sweep.py`: public carbon-water sweep entry point (pinned by `tests/test_repo_hygiene.py`).
 - `time_complexity_sweep.py`: runtime-scaling experiment runner.
-- `update_config.py`: small YAML update helper used by sweep wrappers.
 - `check_python_syntax.py`: import-free syntax check used by `make syntax-check`.
 
 ## No-Harm Flexibility Envelope (paper-three) — current testbed
@@ -29,13 +30,20 @@ and PilotConfig — differing only in workload class and binding resource. Both 
   real generation-mix CI). This is the cooling/CI model the paper uses (Path A).
 - `real_traces/`: trace converters (Alibaba GPU v2020, Azure Packing 2020).
 
-## Subdirectories
-- `shell/`: convenience shell wrappers (`run_water_*.sh`, `sweep_podcounts_and_precompute.sh`) around
-  the Python sweep entry points.
-- `archive/`: retained legacy helpers not in the normal workflow — the synthetic-generator sweeps
-  (`fleet_scale_sweep.py`, `lever_ablation.py`, `waterwise_baseline_contrast.py`) superseded by the
-  Alibaba (`alibaba_*`) sweeps, and the first Alibaba converter (`convert_alibaba_gpu_trace.py`)
-  superseded by `real_traces/convert_alibaba_gpu_v2020.py` (measured-utilization + censoring-aware).
+## Supplementary exhibits and pilots
+- `escrow_inflation_replay.py` / `biocreep_replay.py`: baseline-inflation (escrow) and
+  comparator-anchoring (bio-creep) audit exhibits (supp.).
+- `run_air_axis_demo.py`: air-quality leak exhibit (supp.); reads `pkg/carbon-aware/data/air_quality/`.
+- `pilot_az_basin_gradient.py`: extreme-gradient US/AZ basin probe (supp.); reads
+  `pkg/carbon-aware/data/timealigned_us2018_az/`.
+- `pilot_imbalance_value.py` / `pilot_relief_eps_frontier.py`: parked sequel pilots — see
+  `docs/paper-three/next-paper/PILOT_*.md`. ⚠️ `pilot_imbalance_value.py`'s docstring conflates
+  TenneT-NL passive balancing with DE (intentional imbalance prohibited, §4(2) StromNZV) — fix
+  before any use.
+
+## Removed in the 2026-07-06 cleanup (recoverable from `.trash-20260706/` or git history)
+`shell/` wrappers + `update_config.py` (water-study-era orchestration), `archive/` legacy helpers,
+`optgap_lp_bound.py` (LP bound removed from the paper at round 4).
 
 ## Conventions
 - Generated outputs go under `experiments/`; figures under `experiments/figures/`.

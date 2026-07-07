@@ -21,13 +21,22 @@ DEPLOY = [REPO / "docs" / "paper-three" / "Paper" / "figures", REPO / "experimen
 COLW = 3.487    # \columnwidth in inches (252 TeX pt / 72.27)
 TEXTW = 7.140   # \textwidth in inches (516 TeX pt / 72.27)
 
-# palette shared with the draft's TikZ/table colors
-ENV_GREEN = "#1a9850"     # certified / envelope
-ENV_ACCENT = "#534AB7"    # envaccent (draft preamble)
-CARBON_BLUE = "#4575b4"   # carbon-greedy
-WATER_RED = "#d73027"     # water-greedy / harm
-WW_PURPLE = "#7b3294"     # WaterWise
-AGG_LILAC = "#8a86d8"     # aggregate-guarded member (diagnostic level)
+# ---------------------------------------------------------------------------
+# SEMANTIC COLOR CONTRACT (figstory audit 2026-07-06, docs/paper-three/Paper/meta/wow/figstory/).
+# One hue per method across ALL exhibits; a hue never changes meaning between
+# figures. Red is reserved for fail/harm signals only (rings, offending rises,
+# the breaker series) — explanatory annotations use INK. Envelope members are
+# stars everywhere: filled = relief-first, open = footprint-first.
+ENV_GREEN = "#1a9850"     # envelope (ours) / certified
+ENV_DARK = "#13602f"      # envelope label text
+ENV_ACCENT = "#534AB7"    # envaccent (draft preamble; TikZ/table use only)
+CARBON_BLUE = "#4575b4"   # carbon-greedy / guarded-carbon
+WATER_RED = "#d73027"     # water-greedy / harm / fail signals
+WW_PURPLE = "#7b3294"     # WaterWise / guarded-WaterWise — purple means ONLY WaterWise
+AGG_ORANGE = "#E69F00"    # aggregate-guarded member (diagnostic guard strength; Okabe–Ito orange)
+RANDOM_GRAY = "#6f6f6f"   # guarded-random control
+SKY_BLUE = "#56B4E9"      # residual-load signal (forecast figure; Okabe–Ito sky blue)
+INK = "#333333"           # explanatory annotations (never red)
 HARM_BG = "#d73027"       # use with alpha≈0.06 for harm bands
 HOLD_BG = "#1a9850"       # use with alpha≈0.10 for certified bands
 
